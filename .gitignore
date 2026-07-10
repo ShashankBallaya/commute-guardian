@@ -48,3 +48,8 @@ app.*.map.json
 COMMUTE_GUARDIAN_HANDOVER.md
 Commute-Guardian-Wireframes.pdf
 CLAUDE.md
+
+# Third-party agent skills (installed via `npx skills`), kept local only
+.agents/
+.claude/
+skills-lock.json
