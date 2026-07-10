@@ -85,6 +85,16 @@ class GeofenceChainService {
 
     await _tts.setLanguage('en-IN');
     await _tts.setSpeechRate(0.45);
+    if (Platform.isAndroid) {
+      // flutter_tts defaults to QUEUE_FLUSH on Android: a second speak()
+      // cuts off whatever is still playing. If a GPS gap drops the first
+      // fix inside both of a two-stage station's fences, both ENTERs speak
+      // back-to-back and the long interchange script could be flushed
+      // mid-sentence by the short approach ping. QUEUE_ADD (1) plays each
+      // announcement in full, in order. iOS queues natively and does not
+      // implement setQueueMode, hence the platform guard.
+      await _tts.setQueueMode(1);
+    }
 
     Geofencing.instance.setup(printsDebugLog: true);
     Geofencing.instance.addGeofenceStatusChangedListener(_onStatusChanged);

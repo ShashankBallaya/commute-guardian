@@ -9,7 +9,7 @@ void geofenceTaskStartCallback() {
   FlutterForegroundTask.setTaskHandler(GeofenceTaskHandler());
 }
 
-/// Runs the Shahad -> Ghatkopar geofence chain inside the Android foreground
+/// Runs the Kalyan -> Digha geofence chain inside the Android foreground
 /// service isolate so it survives screen lock / app backgrounding.
 class GeofenceTaskHandler extends TaskHandler {
   GeofenceChainService? _chain;
