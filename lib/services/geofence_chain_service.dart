@@ -12,7 +12,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../data/station_repository.dart';
 import '../models/station.dart';
 
-/// Phase 0 proof of concept: a hardcoded Dombivli -> Shahad geofence chain.
+/// Phase 0 proof of concept: a hardcoded Shahad -> Ghatkopar geofence chain.
 /// Registers one circular region per station on that segment, speaks the
 /// station name on every ENTER event, and logs every event so accuracy can
 /// be judged from a real ride (see CLAUDE.md Phase 0 exit criteria).
@@ -20,7 +20,7 @@ class GeofenceChainService {
   GeofenceChainService({required this.onLog});
 
   static const originStationId = 'shahad';
-  static const destinationStationId = 'dombivli';
+  static const destinationStationId = 'ghatkopar';
   static const _lineId = 'central_csmt_kalyan';
 
   final void Function(String message) onLog;

@@ -24,7 +24,7 @@ class CommuteGuardianDebugApp extends StatelessWidget {
   }
 }
 
-/// Phase 0 proof-of-concept screen: start/stop the hardcoded Dombivli -> Shahad
+/// Phase 0 proof-of-concept screen: start/stop the hardcoded Shahad -> Ghatkopar
 /// geofence chain and watch ENTER events stream in. Not product UI.
 class GeofenceDebugScreen extends StatefulWidget {
   const GeofenceDebugScreen({super.key});
@@ -110,7 +110,7 @@ class _GeofenceDebugScreenState extends State<GeofenceDebugScreen> {
     final result = await FlutterForegroundTask.startService(
       serviceId: 1,
       notificationTitle: 'Travel Mode active',
-      notificationText: 'Shahad -> Dombivli geofence chain running',
+      notificationText: 'Shahad -> Ghatkopar geofence chain running',
       callback: geofenceTaskStartCallback,
     );
 
@@ -131,7 +131,7 @@ class _GeofenceDebugScreenState extends State<GeofenceDebugScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Geofence chain: Shahad -> Dombivli')),
+      appBar: AppBar(title: const Text('Geofence chain: Shahad -> Ghatkopar')),
       body: Column(
         children: [
           Padding(

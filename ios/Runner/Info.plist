@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Commute Guardian needs your location to detect which station you are passing so it can announce it.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
