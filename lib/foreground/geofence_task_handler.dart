@@ -9,7 +9,7 @@ void geofenceTaskStartCallback() {
   FlutterForegroundTask.setTaskHandler(GeofenceTaskHandler());
 }
 
-/// Runs the Dadar -> Kalyan geofence chain inside the Android foreground
+/// Runs the Dombivli -> Shahad geofence chain inside the Android foreground
 /// service isolate so it survives screen lock / app backgrounding.
 class GeofenceTaskHandler extends TaskHandler {
   GeofenceChainService? _chain;
@@ -30,6 +30,13 @@ class GeofenceTaskHandler extends TaskHandler {
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
     await _chain?.stop();
     _chain = null;
+  }
+
+  @override
+  void onReceiveData(Object data) {
+    if (data == 'test_tts') {
+      _chain?.testAnnounce();
+    }
   }
 
   void _sendLog(String message) {

@@ -24,7 +24,7 @@ class CommuteGuardianDebugApp extends StatelessWidget {
   }
 }
 
-/// Phase 0 proof-of-concept screen: start/stop the hardcoded Dadar -> Kalyan
+/// Phase 0 proof-of-concept screen: start/stop the hardcoded Dombivli -> Shahad
 /// geofence chain and watch ENTER events stream in. Not product UI.
 class GeofenceDebugScreen extends StatefulWidget {
   const GeofenceDebugScreen({super.key});
@@ -110,7 +110,7 @@ class _GeofenceDebugScreenState extends State<GeofenceDebugScreen> {
     final result = await FlutterForegroundTask.startService(
       serviceId: 1,
       notificationTitle: 'Travel Mode active',
-      notificationText: 'Dadar -> Kalyan geofence chain running',
+      notificationText: 'Shahad -> Dombivli geofence chain running',
       callback: geofenceTaskStartCallback,
     );
 
@@ -124,10 +124,14 @@ class _GeofenceDebugScreenState extends State<GeofenceDebugScreen> {
     setState(() => _isRunning = false);
   }
 
+  void _testTts() {
+    FlutterForegroundTask.sendDataToTask('test_tts');
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Geofence chain: Dadar -> Kalyan')),
+      appBar: AppBar(title: const Text('Geofence chain: Shahad -> Dombivli')),
       body: Column(
         children: [
           Padding(
@@ -148,6 +152,16 @@ class _GeofenceDebugScreenState extends State<GeofenceDebugScreen> {
                   ),
                 ),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _isRunning ? _testTts : null,
+                child: const Text('Test TTS announcement'),
+              ),
             ),
           ),
           Expanded(
