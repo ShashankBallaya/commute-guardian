@@ -12,16 +12,55 @@ import 'package:permission_handler/permission_handler.dart';
 import '../data/station_repository.dart';
 import '../models/station.dart';
 
-/// Phase 0 proof of concept: a hardcoded Shahad -> Ghatkopar geofence chain.
-/// Registers one circular region per station on that segment, speaks the
-/// station name on every ENTER event, and logs every event so accuracy can
-/// be judged from a real ride (see CLAUDE.md Phase 0 exit criteria).
+/// Phase 0 proof of concept: a hardcoded Kalyan -> Digha geofence chain.
+/// This ride spans two lines: Central Main down-line Kalyan to Thane, then a
+/// change at Thane onto the Trans-Harbour line to Digha (the alighting point).
+/// The chain is defined in travel order by the `harbour_ride_kalyan_digha`
+/// line. Registers a circular region per station on that chain (plus a second,
+/// larger outer approach fence for the interchange and destination), speaks an
+/// announcement on every ENTER event, and logs every event so accuracy can be
+/// judged from a real ride (see CLAUDE.md Phase 0 exit criteria).
 class GeofenceChainService {
   GeofenceChainService({required this.onLog});
 
-  static const originStationId = 'shahad';
-  static const destinationStationId = 'ghatkopar';
-  static const _lineId = 'central_csmt_kalyan';
+  static const originStationId = 'kalyan';
+
+  /// Alighting point: the ENTER here is announced as "arrived".
+  static const destinationStationId = 'digha';
+
+  /// Last fence registered, one station past the destination on the
+  /// Trans-Harbour line. Kept as an overshoot safety net so a missed Digha
+  /// alight still gets an announcement.
+  static const _chainEndStationId = 'airoli';
+
+  static const _lineId = 'harbour_ride_kalyan_digha';
+
+  /// Two-stage announcement stations: each id here gets a second, larger
+  /// outer "approach" fence (radius in meters) in addition to its normal
+  /// station fence, so the ride announces the station is coming BEFORE the
+  /// train reaches the platform. Used for the points the rider has to act on
+  /// (the Thane interchange and the Digha destination), giving a heads-up
+  /// while there is still time to get to the doors.
+  static const _approachRadiusM = <String, int>{
+    'thane': 1200,
+    'digha': 1000,
+  };
+
+  /// Spoken when the inner station fence is entered for a two-stage station
+  /// (the "you have reached / arrived" stage). Stations not listed here just
+  /// get the default "Now approaching ..." ping on their single fence.
+  static const _arrivalAnnouncements = <String, String>{
+    'thane':
+        'You have reached Thane. Change here from the Central line to the '
+        'Trans Harbour line. Get off the train, go to platform number 9, 10, '
+        'or 10 A, then board the Trans Harbour train to continue to your '
+        'destination.',
+    destinationStationId: 'You have arrived at your destination, Digha.',
+  };
+
+  /// Marks the outer approach fence for a two-stage station, keeping its
+  /// region id distinct from the inner station fence.
+  static const _approachSuffix = '#approach';
 
   final void Function(String message) onLog;
 
@@ -42,7 +81,7 @@ class GeofenceChainService {
     );
 
     final repo = await StationRepository.load();
-    _chain = repo.segment(_lineId, originStationId, destinationStationId);
+    _chain = repo.segment(_lineId, originStationId, _chainEndStationId);
 
     await _tts.setLanguage('en-IN');
     await _tts.setSpeechRate(0.45);
@@ -51,16 +90,28 @@ class GeofenceChainService {
     Geofencing.instance.addGeofenceStatusChangedListener(_onStatusChanged);
     Geofencing.instance.addGeofenceErrorCallbackListener(_onGeofenceError);
 
-    final regions = _chain
-        .map(
-          (station) => GeofenceRegion.circular(
-            id: station.id,
+    final regions = <GeofenceRegion>{};
+    for (final station in _chain) {
+      regions.add(
+        GeofenceRegion.circular(
+          id: station.id,
+          data: station.name,
+          center: LatLng(station.lat, station.lng),
+          radius: station.radiusM.toDouble(),
+        ),
+      );
+      final approachRadius = _approachRadiusM[station.id];
+      if (approachRadius != null) {
+        regions.add(
+          GeofenceRegion.circular(
+            id: '${station.id}$_approachSuffix',
             data: station.name,
             center: LatLng(station.lat, station.lng),
-            radius: station.radiusM.toDouble(),
+            radius: approachRadius.toDouble(),
           ),
-        )
-        .toSet();
+        );
+      }
+    }
 
     _log(
       'Starting geofence chain: ${_chain.map((s) => s.name).join(' -> ')}',
@@ -129,17 +180,26 @@ class GeofenceChainService {
       return;
     }
 
-    final station = _chain.firstWhere((s) => s.id == region.id);
+    final isApproach = region.id.endsWith(_approachSuffix);
+    final stationId = isApproach
+        ? region.id.substring(0, region.id.length - _approachSuffix.length)
+        : region.id;
+    final station = _chain.firstWhere((s) => s.id == stationId);
+
     _log(
-      'ENTER ${station.name} '
+      'ENTER ${isApproach ? 'APPROACH' : 'ARRIVE'} ${station.name} '
       '(fix ${location.latitude.toStringAsFixed(5)}, '
       '${location.longitude.toStringAsFixed(5)}, '
       'accuracy ${location.accuracy.toStringAsFixed(0)}m)',
     );
 
-    final announcement = station.id == destinationStationId
-        ? 'You have arrived at ${station.name}.'
-        : 'Now approaching ${station.name}.';
+    // Outer fence: heads-up ping. Inner fence: the custom "reached / arrived"
+    // line for two-stage stations, else the same approaching ping for a plain
+    // single-fence station.
+    final announcement = isApproach
+        ? 'Now approaching ${station.name}.'
+        : _arrivalAnnouncements[station.id] ??
+            'Now approaching ${station.name}.';
     await _tts.speak(announcement);
   }
 

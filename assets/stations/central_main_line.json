@@ -1,5 +1,5 @@
 {
-  "note": "DATA QUALITY WARNING: on 10 Jul 2026 the original coords for shahad, kalyan, and thakurli were found to be 800-1500m off the real stations (beyond fence radius, causing a total geofence miss on the first field ride), and on re-check kopar and diva were 3-4km off. The full shahad-to-ghatkopar corridor (15 stations) is now set from OpenStreetMap station nodes. Stations OUTSIDE that corridor (csmt-vidyavihar trunk, kalyan-karjat, titwala-kasara) remain UNVERIFIED and several look rounded to arc-minutes (e.g. badlapur, vangani, khardi); verify each against OSM before including it in any ride chain. Field-verify lat/lng and radiusM from logged GPS crossings before trusting this data in production.",
+  "note": "DATA QUALITY WARNING: on 10 Jul 2026 the original coords for shahad, kalyan, and thakurli were found to be 800-1500m off the real stations (beyond fence radius, causing a total geofence miss on the first field ride), and on re-check kopar and diva were 3-4km off. The full shahad-to-ghatkopar corridor (15 stations) is now set from OpenStreetMap station nodes. On 11 Jul 2026, prepping the Kalyan-Digha Trans-Harbour ride, an OSM re-check of the Kalyan-to-Thane down-line found two more residual errors: diva was still 1.6km off (its coord sat on the Diva Jn. Cabin technical_station, not the passenger platform) and thane was 540m off (beyond its own 500m radius); both are now OSM station-node corrected, as are kalwa (was 217m off) and kalyan (393m). digha (Digha Gaon) and airoli were added from OSM station nodes for the Trans-Harbour leg. Stations OUTSIDE the verified set (csmt-vidyavihar trunk, kalyan-karjat, titwala-kasara) remain UNVERIFIED and several look rounded to arc-minutes (e.g. badlapur, vangani, khardi); verify each against OSM before including it in any ride chain. Field-verify lat/lng and radiusM from logged GPS crossings before trusting this data in production.",
   "stations": [
     { "id": "csmt", "name": "CSMT", "nameHi": "छत्रपति शिवाजी महाराज टर्मिनस", "nameMr": "छत्रपती शिवाजी महाराज टर्मिनस", "lat": 18.9398, "lng": 72.8355, "radiusM": 400 },
     { "id": "masjid", "name": "Masjid", "nameHi": "मस्जिद", "nameMr": "मशीद", "lat": 18.9478, "lng": 72.8365, "radiusM": 300 },
@@ -19,15 +19,18 @@
     { "id": "bhandup", "name": "Bhandup", "nameHi": "भांडुप", "nameMr": "भांडुप", "lat": 19.14387, "lng": 72.93877, "radiusM": 400 },
     { "id": "nahur", "name": "Nahur", "nameHi": "नाहूर", "nameMr": "नाहूर", "lat": 19.15461, "lng": 72.94678, "radiusM": 350 },
     { "id": "mulund", "name": "Mulund", "nameHi": "मुलुंड", "nameMr": "मुलुंड", "lat": 19.17164, "lng": 72.95627, "radiusM": 400 },
-    { "id": "thane", "name": "Thane", "nameHi": "ठाणे", "nameMr": "ठाणे", "lat": 19.18461, "lng": 72.97103, "radiusM": 500 },
-    { "id": "kalwa", "name": "Kalwa", "nameHi": "कळवा", "nameMr": "कळवा", "lat": 19.19623, "lng": 72.99810, "radiusM": 400 },
+    { "id": "thane", "name": "Thane", "nameHi": "ठाणे", "nameMr": "ठाणे", "lat": 19.1864830, "lng": 72.9757664, "radiusM": 500 },
+    { "id": "kalwa", "name": "Kalwa", "nameHi": "कळवा", "nameMr": "कळवा", "lat": 19.1952243, "lng": 72.9963331, "radiusM": 400 },
     { "id": "mumbra", "name": "Mumbra", "nameHi": "मुंब्रा", "nameMr": "मुंब्रा", "lat": 19.18979, "lng": 73.02325, "radiusM": 400 },
-    { "id": "diva", "name": "Diva Junction", "nameHi": "दिवा जंक्शन", "nameMr": "दिवा जंक्शन", "lat": 19.19461, "lng": 73.05546, "radiusM": 400 },
+    { "id": "diva", "name": "Diva Junction", "nameHi": "दिवा जंक्शन", "nameMr": "दिवा जंक्शन", "lat": 19.1887564, "lng": 73.0414169, "radiusM": 400 },
     { "id": "kopar", "name": "Kopar", "nameHi": "कोपर", "nameMr": "कोपर", "lat": 19.21194, "lng": 73.07860, "radiusM": 400 },
     { "id": "dombivli", "name": "Dombivli", "nameHi": "डोंबिवली", "nameMr": "डोंबिवली", "lat": 19.21815, "lng": 73.08673, "radiusM": 450 },
     { "id": "thakurli", "name": "Thakurli", "nameHi": "ठाकुर्ली", "nameMr": "ठाकुर्ली", "lat": 19.22611, "lng": 73.09811, "radiusM": 400 },
-    { "id": "kalyan", "name": "Kalyan", "nameHi": "कल्याण", "nameMr": "कल्याण", "lat": 19.23522, "lng": 73.13449, "radiusM": 500 },
+    { "id": "kalyan", "name": "Kalyan", "nameHi": "कल्याण", "nameMr": "कल्याण", "lat": 19.2358216, "lng": 73.1308101, "radiusM": 500 },
     { "id": "shahad", "name": "Shahad", "nameHi": "शहाड", "nameMr": "शहाड", "lat": 19.24512, "lng": 73.15874, "radiusM": 350 },
+
+    { "id": "digha", "name": "Digha Gaon", "nameHi": "दिघा गाँव", "nameMr": "दिघा गाँव", "lat": 19.1807762, "lng": 72.9944301, "radiusM": 350 },
+    { "id": "airoli", "name": "Airoli", "nameHi": "ऐरोली", "nameMr": "ऐरोली", "lat": 19.1585231, "lng": 72.9994023, "radiusM": 400 },
 
     { "id": "vithalwadi", "name": "Vithalwadi", "nameHi": "विठ्ठलवाडी", "nameMr": "विठ्ठलवाडी", "lat": 19.2167, "lng": 73.1500, "radiusM": 400 },
     { "id": "ulhasnagar", "name": "Ulhasnagar", "nameHi": "उल्हासनगर", "nameMr": "उल्हासनगर", "lat": 19.2215, "lng": 73.1645, "radiusM": 400 },
@@ -63,6 +66,12 @@
       "id": "central_kalyan_kasara",
       "name": "Kalyan - Kasara",
       "stationIds": ["kalyan", "shahad", "titwala", "khadavli", "vasind", "asangaon", "atgaon", "thansit", "khardi", "kasara"]
+    },
+    {
+      "id": "harbour_ride_kalyan_digha",
+      "name": "Ride: Kalyan - Digha (Central to Thane, change to Trans-Harbour)",
+      "note": "Field-ride chain in travel order. Central Main down-line Kalyan to Thane, then Trans-Harbour Thane to Digha (alighting point). Airoli is one station past Digha, kept as an overshoot safety announcement. All coords OSM station-node verified on 11 Jul 2026.",
+      "stationIds": ["kalyan", "thakurli", "dombivli", "kopar", "diva", "mumbra", "kalwa", "thane", "digha", "airoli"]
     }
   ]
 }
