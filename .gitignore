@@ -47,3 +47,4 @@ app.*.map.json
 # Product strategy documents, deliberately kept out of the public repo
 COMMUTE_GUARDIAN_HANDOVER.md
 Commute-Guardian-Wireframes.pdf
+CLAUDE.md
