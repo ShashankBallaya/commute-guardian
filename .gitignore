@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Product strategy documents, deliberately kept out of the public repo
+COMMUTE_GUARDIAN_HANDOVER.md
+Commute-Guardian-Wireframes.pdf
