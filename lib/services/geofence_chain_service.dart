@@ -103,7 +103,7 @@ class GeofenceChainService {
   }
 
   /// One file per Travel Mode session, on Android under the app's
-  /// external files dir (Android/data/<package>/files), pullable with
+  /// external files dir (`Android/data/<package>/files`), pullable with
   /// `adb pull` with no extra storage permission needed. Survives even if
   /// the on-screen log list is lost to Activity recreation during a long
   /// backgrounded ride.
