@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer' as dev;
 import 'dart:io';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:fl_location/fl_location.dart' as fl;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -11,6 +12,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../data/station_repository.dart';
 import '../models/station.dart';
+import 'ride_progress.dart';
 
 /// Phase 0 proof of concept: a hardcoded Kalyan -> Digha geofence chain.
 /// This ride spans two lines: Central Main down-line Kalyan to Thane, then a
@@ -66,8 +68,10 @@ class GeofenceChainService {
 
   final FlutterTts _tts = FlutterTts();
   List<Station> _chain = [];
+  RideProgress? _rideProgress;
   File? _logFile;
   StreamSubscription<fl.Location>? _rawLocationSub;
+  StreamSubscription<AudioInterruptionEvent>? _interruptionSub;
 
   Future<void> start() async {
     _logFile = await _createLogFile();
@@ -82,9 +86,18 @@ class GeofenceChainService {
 
     final repo = await StationRepository.load();
     _chain = repo.segment(_lineId, originStationId, _chainEndStationId);
+    _rideProgress = RideProgress(
+      chain: _chain,
+      destinationStationId: destinationStationId,
+      approachRadiusM: _approachRadiusM,
+      arrivalAnnouncements: _arrivalAnnouncements,
+    );
+
+    await _configureAudio();
 
     await _tts.setLanguage('en-IN');
     await _tts.setSpeechRate(0.45);
+    await _tts.awaitSpeakCompletion(true);
     if (Platform.isAndroid) {
       // flutter_tts defaults to QUEUE_FLUSH on Android: a second speak()
       // cuts off whatever is still playing. If a GPS gap drops the first
@@ -142,6 +155,39 @@ class GeofenceChainService {
     }
   }
 
+  /// Owns a spoken-audio session so announcements duck other audio (music)
+  /// instead of being blocked, and reclaims the session after a call so speech
+  /// is audible again without an app restart (the field-test iOS bug). iOS gets
+  /// a matching flutter_tts audio category (duck + mix).
+  Future<void> _configureAudio() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration.speech());
+    await session.setActive(true);
+    _interruptionSub = session.interruptionEventStream.listen((event) async {
+      if (event.begin) {
+        _log('Audio session interrupted (call or other audio).');
+      } else {
+        // A call (or other interruption) ended: reactivate so later
+        // announcements are audible again. Without this the session stays dead
+        // until the app is restarted.
+        await session.setActive(true);
+        _log('Audio session reactivated after interruption.');
+      }
+    });
+
+    if (Platform.isIOS) {
+      await _tts.setSharedInstance(true);
+      await _tts.setIosAudioCategory(
+        IosTextToSpeechAudioCategory.playback,
+        [
+          IosTextToSpeechAudioCategoryOptions.duckOthers,
+          IosTextToSpeechAudioCategoryOptions.mixWithOthers,
+        ],
+        IosTextToSpeechAudioMode.voicePrompt,
+      );
+    }
+  }
+
   /// Debug-only: speaks a test line through the same [FlutterTts] instance
   /// and isolate real station announcements use, without needing a real or
   /// mocked GPS fix to trigger a geofence ENTER.
@@ -159,6 +205,9 @@ class GeofenceChainService {
     await Geofencing.instance.stop();
     await _rawLocationSub?.cancel();
     _rawLocationSub = null;
+    await _interruptionSub?.cancel();
+    _interruptionSub = null;
+    _rideProgress = null;
     _log('Geofence chain stopped.');
     _logFile = null;
   }
@@ -196,30 +245,41 @@ class GeofenceChainService {
         : region.id;
     final station = _chain.firstWhere((s) => s.id == stationId);
 
+    // Logged for native-vs-backstop comparison only. RideProgress (fed by the
+    // raw location stream in _onRawLocation) is the single source of spoken
+    // announcements now, so the native ENTER no longer speaks.
     _log(
-      'ENTER ${isApproach ? 'APPROACH' : 'ARRIVE'} ${station.name} '
+      'ENTER ${isApproach ? 'APPROACH' : 'ARRIVE'} ${station.name} (native) '
       '(fix ${location.latitude.toStringAsFixed(5)}, '
       '${location.longitude.toStringAsFixed(5)}, '
       'accuracy ${location.accuracy.toStringAsFixed(0)}m)',
     );
-
-    // Outer fence: heads-up ping. Inner fence: the custom "reached / arrived"
-    // line for two-stage stations, else the same approaching ping for a plain
-    // single-fence station.
-    final announcement = isApproach
-        ? 'Now approaching ${station.name}.'
-        : _arrivalAnnouncements[station.id] ??
-            'Now approaching ${station.name}.';
-    await _tts.speak(announcement);
   }
 
-  void _onRawLocation(fl.Location location) {
+  Future<void> _onRawLocation(fl.Location location) async {
     _log(
       'FIX lat ${location.latitude.toStringAsFixed(5)}, '
       'lng ${location.longitude.toStringAsFixed(5)}, '
       'accuracy ${location.accuracy.toStringAsFixed(0)}m, '
       'mock ${location.isMock}',
     );
+
+    // RideProgress, fed by every raw fix, is the single source of spoken
+    // announcements: it still fires a station the native geofence engine
+    // jumped or a blackout hid (see ride_progress.dart).
+    final announcements = _rideProgress?.onFix(
+          lat: location.latitude,
+          lng: location.longitude,
+          accuracyM: location.accuracy,
+        ) ??
+        const <Announcement>[];
+    for (final announcement in announcements) {
+      _log(
+        'SPEAK ${announcement.kind.name} ${announcement.stationId}: '
+        '${announcement.text}',
+      );
+      await _tts.speak(announcement.text);
+    }
   }
 
   void _onRawLocationError(Object error, StackTrace stackTrace) {
