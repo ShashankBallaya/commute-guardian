@@ -147,6 +147,12 @@ class GeofenceChainService {
       // fixes are arriving at all, and at what accuracy.
       _rawLocationSub = fl.FlLocation.getLocationStream(
         accuracy: fl.LocationAccuracy.navigation,
+        // Ask for ~1 Hz (fl_location default is 5000ms). iOS already delivers
+        // ~1s; on Android this tightens cadence WHEN GPS is flowing, giving the
+        // RideProgress backstop more fixes and better lead time. It does NOT
+        // beat OEM Doze gaps (a phone that suppresses location for minutes
+        // ignores this) - that is the separate background-survival fix.
+        interval: 1000,
       ).listen(_onRawLocation, onError: _onRawLocationError);
 
       await Geofencing.instance.start(regions: regions);
@@ -261,6 +267,8 @@ class GeofenceChainService {
       'FIX lat ${location.latitude.toStringAsFixed(5)}, '
       'lng ${location.longitude.toStringAsFixed(5)}, '
       'accuracy ${location.accuracy.toStringAsFixed(0)}m, '
+      'speed ${location.speed.toStringAsFixed(1)}m/s, '
+      'heading ${location.heading.toStringAsFixed(0)}, '
       'mock ${location.isMock}',
     );
 
