@@ -7,6 +7,8 @@ class Interchange {
     required this.fromLineId,
     required this.toLineId,
     required this.toLineShortName,
+    required this.towardsStationName,
+    required this.isSameNamedService,
     this.platform,
   });
 
@@ -17,8 +19,19 @@ class Interchange {
   /// Spoken name of the line being changed ONTO, e.g. `Trans Harbour`.
   final String toLineShortName;
 
+  /// Spoken name of the station the onward line ends at in the direction of
+  /// travel, e.g. `Karjat`. The only way to describe a change when both lines
+  /// share a name (see [isSameNamedService]).
+  final String towardsStationName;
+
+  /// True when both lines are spoken the same way (Kasara branch onto the
+  /// Karjat branch: both are just "Central"). "Change here to the Central line"
+  /// while sitting on a Central train is nonsense, so these announce by
+  /// direction instead.
+  final bool isSameNamedService;
+
   /// Spoken platform to walk to, e.g. `9, 10, or 10 A`, when known. Null means
-  /// the announcement names the line change but not the platform.
+  /// the announcement names the change but not the platform.
   final String? platform;
 }
 
@@ -75,12 +88,17 @@ class Journey {
     for (final interchange in interchanges) {
       final name = byId[interchange.stationId]?.name ?? interchange.stationId;
       final platform = interchange.platform;
-      announcements[interchange.stationId] =
-          'You have reached $name. Change here to the '
-          '${interchange.toLineShortName} line. Get off the train, '
-          '${platform == null ? '' : 'go to platform number $platform, then '}'
-          'board the ${interchange.toLineShortName} train to continue to your '
-          'destination.';
+      final walk =
+          platform == null ? '' : 'go to platform number $platform, then ';
+      announcements[interchange.stationId] = interchange.isSameNamedService
+          ? 'You have reached $name. Change trains here. Get off the train, '
+              '${walk}board the train towards '
+              '${interchange.towardsStationName} to continue to your '
+              'destination.'
+          : 'You have reached $name. Change here to the '
+              '${interchange.toLineShortName} line. Get off the train, '
+              '${walk}board the ${interchange.toLineShortName} train to '
+              'continue to your destination.';
     }
 
     final destination = byId[destinationStationId]?.name ?? destinationStationId;

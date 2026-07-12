@@ -130,7 +130,8 @@ class GeofenceChainService {
     for (final interchange in journey.interchanges) {
       _log(
         'Change trains at ${interchange.stationId} onto '
-        '${interchange.toLineShortName}'
+        '${interchange.toLineShortName} towards '
+        '${interchange.towardsStationName}'
         '${interchange.platform == null ? '' : ' (platform ${interchange.platform})'}',
       );
     }
@@ -302,10 +303,19 @@ class GeofenceChainService {
     final stationId = isApproach
         ? region.id.substring(0, region.id.length - _approachSuffix.length)
         : region.id;
-    final station = _journey?.chain.firstWhere((s) => s.id == stationId);
-    if (station == null) {
+    // A stale event for a fence this journey does not own (regions from a
+    // previous ride racing a stop/start) must not throw here: an uncaught
+    // error inside the service isolate takes the whole ride down. Note
+    // firstWhere throws on no match, so a null check on it guards nothing.
+    final chain = _journey?.chain;
+    if (chain == null) {
       return;
     }
+    final index = chain.indexWhere((s) => s.id == stationId);
+    if (index == -1) {
+      return;
+    }
+    final station = chain[index];
 
     // Logged for native-vs-backstop comparison only. RideProgress (fed by the
     // raw location stream in _onRawLocation) is the single source of spoken

@@ -185,6 +185,32 @@ void main() {
     }
   });
 
+  test('through services reference real lines that share a junction', () {
+    // A through pair that misnames a line would silently vanish in the planner
+    // (unknown ids just never match), and a pair with no shared station is
+    // physically meaningless: there is no junction for the train to run through.
+    final linesByIdJson = {for (final l in lines) l['id'] as String: l};
+    final through = (doc['throughServices'] as List)
+        .map((pair) => (pair as List).cast<String>());
+
+    expect(through, isNotEmpty);
+    for (final pair in through) {
+      expect(pair, hasLength(2));
+      final a = linesByIdJson[pair[0]];
+      final b = linesByIdJson[pair[1]];
+      expect(a, isNotNull, reason: '${pair[0]} is not a line');
+      expect(b, isNotNull, reason: '${pair[1]} is not a line');
+      final shared = (a!['stationIds'] as List)
+          .toSet()
+          .intersection((b!['stationIds'] as List).toSet());
+      expect(
+        shared,
+        isNotEmpty,
+        reason: '${pair[0]} and ${pair[1]} share no junction station',
+      );
+    }
+  });
+
   test('every line can be spoken and lists its interchange platforms', () {
     for (final line in lines) {
       expect(line['shortName'], isNotEmpty,

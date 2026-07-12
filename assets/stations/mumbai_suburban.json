@@ -1541,5 +1541,15 @@
       ],
       "platforms": {}
     }
+  ],
+  "throughServices": [
+    [
+      "central_csmt_kalyan",
+      "central_kalyan_kasara"
+    ],
+    [
+      "central_csmt_kalyan",
+      "central_kalyan_karjat"
+    ]
   ]
 }

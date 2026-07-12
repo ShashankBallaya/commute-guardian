@@ -427,27 +427,32 @@ class _JourneySummary extends StatelessWidget {
 
     final ride = journey!;
     // The overshoot pin is a safety net, not part of the trip, so it would only
-    // confuse the summary.
-    final stops = ride.chain
-        .where((s) => s.id != ride.overshootStationId)
-        .map((s) => s.name)
-        .join(' -> ');
+    // confuse the summary. Counting off the filtered list also keeps the count
+    // honest at a terminus, where there is no overshoot pin to exclude.
+    final stops =
+        ride.chain.where((s) => s.id != ride.overshootStationId).toList();
     final nameOf = {for (final s in ride.chain) s.id: s.name};
     final changes = ride.interchanges.isEmpty
         ? 'No change of train.'
         : ride.interchanges
-            .map((i) => 'Change at ${nameOf[i.stationId] ?? i.stationId} onto '
-                '${i.toLineShortName}'
-                '${i.platform == null ? '' : ' (platform ${i.platform})'}.')
+            .map((i) => i.isSameNamedService
+                ? 'Change at ${nameOf[i.stationId] ?? i.stationId} for the '
+                    'train towards ${i.towardsStationName}.'
+                : 'Change at ${nameOf[i.stationId] ?? i.stationId} onto '
+                    '${i.toLineShortName}'
+                    '${i.platform == null ? '' : ' (platform ${i.platform})'}.')
             .join(' ');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(stops, style: theme.textTheme.bodySmall),
+        Text(
+          stops.map((s) => s.name).join(' -> '),
+          style: theme.textTheme.bodySmall,
+        ),
         const SizedBox(height: 4),
         Text(
-          '${ride.chain.length - 1} stations. $changes',
+          '${stops.length} stations. $changes',
           style: theme.textTheme.bodySmall
               ?.copyWith(color: theme.colorScheme.primary),
         ),

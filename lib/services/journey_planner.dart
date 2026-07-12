@@ -14,10 +14,33 @@ import '../models/station.dart';
 /// footbridge with luggage), so the search minimizes CHANGES first and only then
 /// stations travelled.
 class JourneyPlanner {
-  JourneyPlanner({required this.stationsById, required this.linesById});
+  JourneyPlanner({
+    required this.stationsById,
+    required this.linesById,
+    this.throughServices = const [],
+  });
 
   final Map<String, Station> stationsById;
   final Map<String, Line> linesById;
+
+  /// Pairs of line ids one physical train continues across (the Kasara branch
+  /// onto the Central trunk at Kalyan). Crossing between them is free in the
+  /// search and never announced. Declared in the station data, NOT inferred:
+  /// inferring it from the shared "Central" short name silently merged the
+  /// Kasara and Karjat branches too, and no train runs branch to branch.
+  final List<List<String>> throughServices;
+
+  late final Set<String> _throughKeys = {
+    for (final pair in throughServices) _pairKey(pair[0], pair[1]),
+  };
+
+  static String _pairKey(String a, String b) =>
+      a.compareTo(b) <= 0 ? '$a|$b' : '$b|$a';
+
+  /// Whether riding from [lineId] onto [otherLineId] is the same physical train.
+  bool _runsThrough(String lineId, String otherLineId) =>
+      lineId == otherLineId ||
+      _throughKeys.contains(_pairKey(lineId, otherLineId));
 
   Journey plan({required String originId, required String destinationId}) {
     final origin = stationsById[originId];
@@ -79,7 +102,7 @@ class JourneyPlanner {
       for (final route in reached) {
         final leg = route.last;
         for (final lineId in _linesThrough(leg.toId)) {
-          if (_isSameService(lineId, leg.lineId)) continue;
+          if (_runsThrough(lineId, leg.lineId)) continue;
           if (!seen.add('${leg.toId}@$lineId')) continue;
           next.add([
             ...route,
@@ -95,12 +118,14 @@ class JourneyPlanner {
 
   /// Every station [route] reaches WITHOUT the rider changing train.
   ///
-  /// That is not the same as "without leaving the current line". The Kasara and
-  /// Karjat branches are separate lines in the data but the same service in real
-  /// life: a Kasara train runs through Kalyan and carries on down the trunk to
-  /// CSMT, and the rider sits still through it. So this also follows any line
-  /// that is the same service as the current one, at no cost, which is what makes
-  /// Shahad to Dombivli come out as the one train it actually is.
+  /// That is not the same as "without leaving the current line". A Kasara train
+  /// runs through Kalyan and carries on down the trunk to CSMT while the rider
+  /// sits still, so this also follows any line declared as through-running with
+  /// the current one, at no cost. That is what makes Shahad to Dombivli come out
+  /// as the one train it actually is. Note the through hop only fires at
+  /// stations the current leg rides THROUGH, never back at the leg's own start,
+  /// which is what stops Kasara -> trunk -> Karjat chaining into a phantom
+  /// three-line "one train" at Kalyan.
   List<List<_Leg>> _rideOut(List<_Leg> route, Set<String> seen) {
     final reached = <List<_Leg>>[];
     final pending = <List<_Leg>>[route];
@@ -117,10 +142,10 @@ class JourneyPlanner {
         ];
         reached.add(extended);
 
-        // The train carries on down a branch of the same service.
+        // The train carries on across a declared through junction.
         for (final lineId in _linesThrough(stopId)) {
           if (lineId == leg.lineId) continue;
-          if (!_isSameService(lineId, leg.lineId)) continue;
+          if (!_runsThrough(lineId, leg.lineId)) continue;
           if (!seen.add('$stopId@$lineId')) continue;
           pending.add([
             ...extended,
@@ -132,13 +157,6 @@ class JourneyPlanner {
 
     return reached;
   }
-
-  /// Whether two lines are the same service, i.e. one train, and crossing between
-  /// them is not a change the rider has to do anything about. Keyed off the spoken
-  /// short name, which is exactly the distinction: "Central" and "Central" is one
-  /// railway with branches, "Central" and "Trans Harbour" is two railways.
-  bool _isSameService(String lineId, String otherLineId) =>
-      linesById[lineId]!.shortName == linesById[otherLineId]!.shortName;
 
   Journey _buildJourney(
     List<_Leg> legs,
@@ -154,20 +172,24 @@ class JourneyPlanner {
     }
 
     // An interchange is where one leg hands over to the next AND that means
-    // getting off a train. Crossing between branches of one service (Kasara onto
+    // getting off a train. Crossing a declared through junction (Kasara onto
     // the trunk at Kalyan) is a leg boundary but not a change: the train runs
     // through and the rider stays put. Announcing "get off at Kalyan" there would
     // put them on a platform for no reason.
     final interchanges = <Interchange>[];
     for (var i = 1; i < legs.length; i++) {
-      if (_isSameService(legs[i].lineId, legs[i - 1].lineId)) continue;
+      if (_runsThrough(legs[i].lineId, legs[i - 1].lineId)) continue;
       final onto = linesById[legs[i].lineId]!;
+      final from = linesById[legs[i - 1].lineId]!;
       interchanges.add(
         Interchange(
           stationId: legs[i].fromId,
-          fromLineId: legs[i - 1].lineId,
+          fromLineId: from.id,
           toLineId: onto.id,
           toLineShortName: onto.shortName,
+          towardsStationName:
+              stationsById[_directionTerminalId(legs[i])]!.name,
+          isSameNamedService: onto.shortName == from.shortName,
           platform: onto.platforms[legs[i].fromId],
         ),
       );
@@ -188,6 +210,18 @@ class JourneyPlanner {
       overshootStationId: overshootId,
       interchanges: interchanges,
     );
+  }
+
+  /// The station the onward leg's line ends at in its direction of travel, e.g.
+  /// Karjat for a leg riding the Karjat branch away from Kalyan. This is how a
+  /// train change is described when the line name alone cannot disambiguate it
+  /// ("change to Central" while already on Central says nothing; "board the
+  /// train towards Karjat" does).
+  String _directionTerminalId(_Leg leg) {
+    final ids = linesById[leg.lineId]!.stationIds;
+    final from = ids.indexOf(leg.fromId);
+    final to = ids.indexOf(leg.toId);
+    return to >= from ? ids.last : ids.first;
   }
 
   /// The next station after [destinationId] on the final leg's line, continuing in

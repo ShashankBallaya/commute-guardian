@@ -372,6 +372,21 @@ INTERCHANGE_PLATFORMS = {
     "trans_harbour_thane_vashi": {"thane": "9, 10, or 10 A"},
 }
 
+# Pairs of lines one physical train continues across, so crossing their shared
+# junction is NOT a change of train and must never be announced as one. This is
+# deliberately NOT inferred from SHORT_NAMES: the Kasara branch, the trunk and the
+# Karjat branch are all spoken as "Central", but only branch-to-trunk trains run
+# through Kalyan. No train runs Kasara branch to Karjat branch, so that pair is
+# absent and the planner announces a change at Kalyan for it.
+# kasara<->trunk: owner-confirmed 12 Jul 2026 (Kasara locals run through Kalyan
+# down the trunk). karjat<->trunk: standard CSMT-Karjat/Badlapur services.
+# Open questions before declaring more (ask the owner, do not guess): Harbour
+# branch-to-branch through Vadala Road, and Vasai Road-Diva-Panvel through MEMUs.
+THROUGH_SERVICES = [
+    ("central_csmt_kalyan", "central_kalyan_kasara"),
+    ("central_csmt_kalyan", "central_kalyan_karjat"),
+]
+
 MIN_RADIUS_M = 200
 CLEARANCE_M = 100  # required gap between two adjacent stations' fences
 
@@ -561,6 +576,13 @@ def sanity_check(resolved: dict) -> list[str]:
 
 
 def main() -> int:
+    line_ids = {lid for lid, _, _ in LINES}
+    bad_pairs = [p for p in THROUGH_SERVICES
+                 if p[0] not in line_ids or p[1] not in line_ids]
+    if bad_pairs:
+        print(f"ABORT: THROUGH_SERVICES references unknown lines: {bad_pairs}")
+        return 1
+
     resolved, problems = resolve()
 
     fatal = [p for p in problems
@@ -601,6 +623,7 @@ def main() -> int:
                    "stationIds": ids,
                    "platforms": INTERCHANGE_PLATFORMS.get(lid, {})}
                   for lid, name, ids in LINES],
+        "throughServices": [list(pair) for pair in THROUGH_SERVICES],
     }
     OUT.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
                    encoding="utf-8")

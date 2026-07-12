@@ -20,6 +20,10 @@ JourneyPlanner _planner() {
   return JourneyPlanner(
     stationsById: {for (final s in stations) s.id: s},
     linesById: {for (final l in lines) l.id: l},
+    throughServices: [
+      for (final pair in doc['throughServices'] as List)
+        (pair as List).cast<String>(),
+    ],
   );
 }
 
@@ -106,6 +110,43 @@ void main() {
     // And so the only thing said at Kalyan is the ordinary passing ping.
     expect(journey.arrivalAnnouncements.containsKey('kalyan'), isFalse);
     expect(journey.approachRadiusM.containsKey('kalyan'), isFalse);
+  });
+
+  test('branch to branch across Kalyan IS a change, announced by direction', () {
+    // Kasara trains run through Kalyan onto the trunk (owner-confirmed), but no
+    // train runs Kasara branch to Karjat branch. Inferring service identity
+    // from the shared "Central" short name silently merged all three, planned
+    // Shahad -> Ulhasnagar as "no change of train", and would have let the
+    // rider sleep through a change they had to make. Hence explicit
+    // throughServices pairs in the data instead.
+    final journey =
+        _planner().plan(originId: 'shahad', destinationId: 'ulhasnagar');
+
+    expect(journey.interchanges, hasLength(1));
+    final change = journey.interchanges.single;
+    expect(change.stationId, 'kalyan');
+    expect(change.isSameNamedService, isTrue);
+    expect(change.towardsStationName, 'Karjat');
+
+    // "Change here to the Central line" while sitting on a Central train says
+    // nothing. Same-named changes are described by direction instead.
+    expect(
+      journey.arrivalAnnouncements['kalyan'],
+      'You have reached Kalyan. Change trains here. Get off the train, '
+      'board the train towards Karjat to continue to your destination.',
+    );
+  });
+
+  test('the through service works in both directions', () {
+    // Up the trunk and onto the Kasara branch: still one train, still silent
+    // at Kalyan.
+    final journey =
+        _planner().plan(originId: 'dombivli', destinationId: 'shahad');
+
+    expect(journey.interchanges, isEmpty);
+    expect(_ids(journey.chain), [
+      'dombivli', 'thakurli', 'kalyan', 'shahad', 'ambivli',
+    ]);
   });
 
   test('a change between two real services is still a change', () {
