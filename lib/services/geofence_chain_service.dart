@@ -72,6 +72,12 @@ class GeofenceChainService {
   File? _logFile;
   StreamSubscription<fl.Location>? _rawLocationSub;
   StreamSubscription<AudioInterruptionEvent>? _interruptionSub;
+  AudioSession? _session;
+
+  /// Serializes announcements so two never overlap, and so the ducking window
+  /// spans a whole run of them (see [_speak]).
+  Future<void> _speaking = Future<void>.value();
+  int _pendingSpeaks = 0;
 
   Future<void> start() async {
     _logFile = await _createLogFile();
@@ -161,27 +167,53 @@ class GeofenceChainService {
     }
   }
 
-  /// Owns a spoken-audio session so announcements duck other audio (music)
-  /// instead of being blocked, and reclaims the session after a call so speech
-  /// is audible again without an app restart (the field-test iOS bug). iOS gets
-  /// a matching flutter_tts audio category (duck + mix).
+  /// Configures a ducking spoken-audio session, but deliberately does NOT
+  /// activate it: [_speak] activates only for as long as it is actually
+  /// speaking. Holding the session active for the whole ride is what caused the
+  /// 12 Jul field bug, where a podcast already playing when Travel Mode started
+  /// was ducked and then stayed quiet for the rest of the journey.
   Future<void> _configureAudio() async {
     final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration.speech());
-    await session.setActive(true);
-    _interruptionSub = session.interruptionEventStream.listen((event) async {
-      if (event.begin) {
-        _log('Audio session interrupted (call or other audio).');
-      } else {
-        // A call (or other interruption) ended: reactivate so later
-        // announcements are audible again. Without this the session stays dead
-        // until the app is restarted.
-        await session.setActive(true);
-        _log('Audio session reactivated after interruption.');
-      }
+    _session = session;
+    await session.configure(
+      const AudioSessionConfiguration.speech().copyWith(
+        // `speech()` on its own is EXCLUSIVE on iOS (category playback with no
+        // options): activating it over a podcast interrupts the podcast rather
+        // than ducking it. Duck + mix makes announcements ride over other audio.
+        avAudioSessionCategoryOptions:
+            AVAudioSessionCategoryOptions.duckOthers |
+                AVAudioSessionCategoryOptions.mixWithOthers,
+        // What actually tells the other app to come back to full volume when we
+        // deactivate at the end of an announcement.
+        avAudioSessionSetActiveOptions:
+            AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation,
+        // `speech()` asks Android for AUDIOFOCUS_GAIN (permanent), which tells a
+        // music app to stop outright and never hands focus back. Transient
+        // may-duck is what a navigation prompt takes.
+        androidAudioFocusGainType:
+            AndroidAudioFocusGainType.gainTransientMayDuck,
+        androidAudioAttributes: const AndroidAudioAttributes(
+          contentType: AndroidAudioContentType.speech,
+          usage: AndroidAudioUsage.assistanceNavigationGuidance,
+        ),
+        // We are the one doing the ducking, so we must not duck ourselves.
+        androidWillPauseWhenDucked: false,
+      ),
+    );
+
+    // Diagnostics only. Reclaiming the session after a call is no longer needed
+    // now that every announcement activates it for itself.
+    _interruptionSub = session.interruptionEventStream.listen((event) {
+      _log(
+        event.begin
+            ? 'Audio session interrupted (call or other audio).'
+            : 'Audio session interruption ended.',
+      );
     });
 
     if (Platform.isIOS) {
+      // Makes flutter_tts speak through the shared session configured above
+      // instead of standing up a second one of its own.
       await _tts.setSharedInstance(true);
       await _tts.setIosAudioCategory(
         IosTextToSpeechAudioCategory.playback,
@@ -194,12 +226,39 @@ class GeofenceChainService {
     }
   }
 
+  /// Speaks [text], ducking other audio only for the duration of the speech.
+  ///
+  /// Calls are serialized on one chain, so a fix arriving mid-announcement
+  /// queues behind it rather than cutting it off. The session is deactivated
+  /// only once the last queued announcement has finished, so a run of them (the
+  /// Thane approach ping followed by the interchange script) ducks the music
+  /// once rather than bobbing its volume between sentences.
+  Future<void> _speak(String text) {
+    _pendingSpeaks++;
+    _speaking = _speaking.then((_) async {
+      try {
+        await _session?.setActive(true);
+        await _tts.speak(text);
+      } catch (error) {
+        // Swallowed so one failed announcement cannot poison the chain and
+        // silence every announcement after it for the rest of the ride.
+        _log('Announcement failed: $error');
+      } finally {
+        _pendingSpeaks--;
+        if (_pendingSpeaks == 0) {
+          await _session?.setActive(false);
+        }
+      }
+    });
+    return _speaking;
+  }
+
   /// Debug-only: speaks a test line through the same [FlutterTts] instance
   /// and isolate real station announcements use, without needing a real or
   /// mocked GPS fix to trigger a geofence ENTER.
   Future<void> testAnnounce() async {
     _log('Test announcement requested.');
-    await _tts.speak(
+    await _speak(
       'This is a test announcement from Commute Guardian. '
       'If you can hear this, text to speech is working.',
     );
@@ -213,6 +272,10 @@ class GeofenceChainService {
     _rawLocationSub = null;
     await _interruptionSub?.cancel();
     _interruptionSub = null;
+    await _tts.stop();
+    // Hands audio focus back, in case Stop was pressed mid-announcement.
+    await _session?.setActive(false);
+    _session = null;
     _rideProgress = null;
     _log('Geofence chain stopped.');
     _logFile = null;
@@ -286,7 +349,7 @@ class GeofenceChainService {
         'SPEAK ${announcement.kind.name} ${announcement.stationId}: '
         '${announcement.text}',
       );
-      await _tts.speak(announcement.text);
+      unawaited(_speak(announcement.text));
     }
   }
 
