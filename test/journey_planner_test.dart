@@ -88,6 +88,36 @@ void main() {
     expect(journey.overshootStationId, isNull);
   });
 
+  test('riding a branch through its junction is not a change of train', () {
+    // Shahad sits on the Kasara branch, Dombivli on the trunk, so the two are
+    // separate lines in the data and crossing Kalyan looks like an interchange.
+    // It is not: a Kasara train runs THROUGH Kalyan and on down the trunk, and the
+    // rider sits still. The debug build announced "Change at Kalyan onto Central"
+    // to a rider already on Central, which would have put them on a platform for
+    // no reason.
+    final journey = _planner().plan(originId: 'shahad', destinationId: 'dombivli');
+
+    expect(_ids(journey.chain), [
+      'shahad', 'kalyan', 'thakurli', 'dombivli', 'kopar',
+    ]);
+    expect(journey.interchanges, isEmpty);
+    expect(journey.overshootStationId, 'kopar');
+
+    // And so the only thing said at Kalyan is the ordinary passing ping.
+    expect(journey.arrivalAnnouncements.containsKey('kalyan'), isFalse);
+    expect(journey.approachRadiusM.containsKey('kalyan'), isFalse);
+  });
+
+  test('a change between two real services is still a change', () {
+    // The guard above must not swallow genuine interchanges: Central to
+    // Trans-Harbour at Thane is two different railways and a real walk.
+    final journey = _planner().plan(originId: 'shahad', destinationId: 'digha');
+
+    expect(journey.interchanges, hasLength(1));
+    expect(journey.interchanges.single.stationId, 'thane');
+    expect(journey.interchanges.single.toLineShortName, 'Trans Harbour');
+  });
+
   test('the route with the fewest changes wins', () {
     // Kalyan -> Vashi is reachable via Thane (one change, Central to
     // Trans-Harbour) or via Kurla (Central to Harbour). Either is one change;

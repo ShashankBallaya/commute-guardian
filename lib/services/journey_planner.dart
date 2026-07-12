@@ -40,48 +40,46 @@ class JourneyPlanner {
     return _buildJourney(legs, originId, destinationId);
   }
 
-  /// Breadth-first search over the network, expanded one CHANGE at a time rather
-  /// than one station at a time, so the first route that reaches the destination
-  /// is by construction the one with the fewest changes. Within a change count,
-  /// the frontier is ordered by stations travelled, so the shortest of the
-  /// equally-convenient routes wins.
+  /// Breadth-first search over the network, expanded one CHANGE OF TRAIN at a
+  /// time rather than one station at a time, so the first route to reach the
+  /// destination has by construction the fewest changes. Among routes with the
+  /// same number of changes, the shortest ride wins.
   List<_Leg>? _findLegs(String originId, String destinationId) {
-    // Routes under construction, shortest-first. Each is the sequence of legs
-    // taken so far; the last leg's `to` is where we currently stand.
     var frontier = <List<_Leg>>[
       for (final lineId in _linesThrough(originId))
         [_Leg(lineId: lineId, fromId: originId, toId: originId)],
     ];
-    // A station is worth boarding a given line at only once: reaching it again on
-    // the same line with more changes behind us can never be better.
+    // Boarding a given line at a given station is worth doing once: arriving
+    // there again with more changes behind us can never be better.
     final seen = <String>{
       for (final lineId in _linesThrough(originId)) '$originId@$lineId',
     };
 
     while (frontier.isNotEmpty) {
-      // Every station reachable on the current lines WITHOUT changing again. If
-      // the destination is among them we are done, at the current change count.
+      // Everywhere reachable without getting off the train.
       final reached = <List<_Leg>>[];
       for (final route in frontier) {
-        final leg = route.last;
-        for (final stopId in linesById[leg.lineId]!.stationIds) {
-          if (stopId == leg.fromId) continue;
-          final extended = [
-            ...route.sublist(0, route.length - 1),
-            leg.copyWith(toId: stopId),
-          ];
-          if (stopId == destinationId) return extended;
-          reached.add(extended);
-        }
+        reached.addAll(_rideOut(route, seen));
       }
 
-      // Nothing reached the destination on this many changes, so change trains
-      // once more, everywhere a change is possible, and search again.
+      // Done if any of them is the destination. Take the shortest, since they all
+      // cost the same number of changes.
+      final arrivals =
+          reached.where((r) => r.last.toId == destinationId).toList();
+      if (arrivals.isNotEmpty) {
+        arrivals.sort(
+          (a, b) => _stationsTravelled(a).compareTo(_stationsTravelled(b)),
+        );
+        return arrivals.first;
+      }
+
+      // Not reachable on this many changes, so change trains once more, wherever
+      // a change is possible, and search again.
       final next = <List<_Leg>>[];
       for (final route in reached) {
         final leg = route.last;
         for (final lineId in _linesThrough(leg.toId)) {
-          if (lineId == leg.lineId) continue;
+          if (_isSameService(lineId, leg.lineId)) continue;
           if (!seen.add('${leg.toId}@$lineId')) continue;
           next.add([
             ...route,
@@ -89,15 +87,58 @@ class JourneyPlanner {
           ]);
         }
       }
-
-      // Fewest stations travelled first, so that among routes with the same
-      // number of changes we prefer the shorter ride.
-      next.sort((a, b) => _stationsTravelled(a).compareTo(_stationsTravelled(b)));
       frontier = next;
     }
 
     return null;
   }
+
+  /// Every station [route] reaches WITHOUT the rider changing train.
+  ///
+  /// That is not the same as "without leaving the current line". The Kasara and
+  /// Karjat branches are separate lines in the data but the same service in real
+  /// life: a Kasara train runs through Kalyan and carries on down the trunk to
+  /// CSMT, and the rider sits still through it. So this also follows any line
+  /// that is the same service as the current one, at no cost, which is what makes
+  /// Shahad to Dombivli come out as the one train it actually is.
+  List<List<_Leg>> _rideOut(List<_Leg> route, Set<String> seen) {
+    final reached = <List<_Leg>>[];
+    final pending = <List<_Leg>>[route];
+
+    while (pending.isNotEmpty) {
+      final current = pending.removeLast();
+      final leg = current.last;
+
+      for (final stopId in linesById[leg.lineId]!.stationIds) {
+        if (stopId == leg.fromId) continue;
+        final extended = [
+          ...current.sublist(0, current.length - 1),
+          leg.copyWith(toId: stopId),
+        ];
+        reached.add(extended);
+
+        // The train carries on down a branch of the same service.
+        for (final lineId in _linesThrough(stopId)) {
+          if (lineId == leg.lineId) continue;
+          if (!_isSameService(lineId, leg.lineId)) continue;
+          if (!seen.add('$stopId@$lineId')) continue;
+          pending.add([
+            ...extended,
+            _Leg(lineId: lineId, fromId: stopId, toId: stopId),
+          ]);
+        }
+      }
+    }
+
+    return reached;
+  }
+
+  /// Whether two lines are the same service, i.e. one train, and crossing between
+  /// them is not a change the rider has to do anything about. Keyed off the spoken
+  /// short name, which is exactly the distinction: "Central" and "Central" is one
+  /// railway with branches, "Central" and "Trans Harbour" is two railways.
+  bool _isSameService(String lineId, String otherLineId) =>
+      linesById[lineId]!.shortName == linesById[otherLineId]!.shortName;
 
   Journey _buildJourney(
     List<_Leg> legs,
@@ -112,9 +153,14 @@ class JourneyPlanner {
       chainIds.addAll(chainIds.isEmpty ? ids : ids.skip(1));
     }
 
-    // The interchange is the station where one leg hands over to the next.
+    // An interchange is where one leg hands over to the next AND that means
+    // getting off a train. Crossing between branches of one service (Kasara onto
+    // the trunk at Kalyan) is a leg boundary but not a change: the train runs
+    // through and the rider stays put. Announcing "get off at Kalyan" there would
+    // put them on a platform for no reason.
     final interchanges = <Interchange>[];
     for (var i = 1; i < legs.length; i++) {
+      if (_isSameService(legs[i].lineId, legs[i - 1].lineId)) continue;
       final onto = linesById[legs[i].lineId]!;
       interchanges.add(
         Interchange(

@@ -9,15 +9,29 @@ void geofenceTaskStartCallback() {
   FlutterForegroundTask.setTaskHandler(GeofenceTaskHandler());
 }
 
-/// Runs the Kalyan -> Digha geofence chain inside the Android foreground
-/// service isolate so it survives screen lock / app backgrounding.
+/// Keys the picked ride is passed under. The service runs in its OWN isolate with
+/// its own heap, so it cannot read the picker's state directly; these are written
+/// by the UI before the service starts and read back here. See
+/// [FlutterForegroundTask.saveData].
+const originIdKey = 'origin_station_id';
+const destinationIdKey = 'destination_station_id';
+
+/// Runs the ride inside the Android foreground service isolate so it survives
+/// screen lock and app backgrounding.
 class GeofenceTaskHandler extends TaskHandler {
   GeofenceChainService? _chain;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    final originId = await FlutterForegroundTask.getData<String>(key: originIdKey);
+    final destinationId =
+        await FlutterForegroundTask.getData<String>(key: destinationIdKey);
+    if (originId == null || destinationId == null) {
+      return;
+    }
+
     _chain = GeofenceChainService(onLog: _sendLog);
-    await _chain!.start();
+    await _chain!.start(originId: originId, destinationId: destinationId);
   }
 
   @override

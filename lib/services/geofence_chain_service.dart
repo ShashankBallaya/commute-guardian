@@ -14,22 +14,15 @@ import '../data/station_repository.dart';
 import '../models/journey.dart';
 import 'ride_progress.dart';
 
-/// Runs one [Journey]: registers a geofence per station on its chain (plus a
-/// second, larger outer approach fence for each interchange and the
-/// destination), speaks an announcement as the ride passes each one, and logs
-/// every event so accuracy can be judged from a real ride.
+/// Runs one ride, between any two stations on the network.
 ///
-/// The ride is no longer hardcoded: [JourneyPlanner] derives the chain, the
-/// interchanges and the overshoot pin from the real line network. Origin and
-/// destination are still fixed here because there is no picker yet; that is the
-/// next slice, and it only has to change these two constants.
+/// Given the rider's origin and destination, [JourneyPlanner] works out the
+/// chain, the interchanges and the overshoot pin; this registers a geofence per
+/// station on that chain (plus a second, larger outer approach fence for each
+/// interchange and the destination), speaks an announcement as the ride passes
+/// each one, and logs every event so accuracy can be judged from a real ride.
 class GeofenceChainService {
   GeofenceChainService({required this.onLog});
-
-  static const originStationId = 'kalyan';
-
-  /// Alighting point: the ENTER here is announced as "arrived".
-  static const destinationStationId = 'thane';
 
   /// Marks the outer approach fence for a two-stage station, keeping its
   /// region id distinct from the inner station fence.
@@ -51,7 +44,10 @@ class GeofenceChainService {
   Future<void> _speaking = Future<void>.value();
   int _pendingSpeaks = 0;
 
-  Future<void> start() async {
+  Future<void> start({
+    required String originId,
+    required String destinationId,
+  }) async {
     _logFile = await _createLogFile();
 
     final locationAlways = await Permission.locationAlways.status;
@@ -63,10 +59,19 @@ class GeofenceChainService {
     );
 
     final repo = await StationRepository.load();
-    final journey = repo.planner.plan(
-      originId: originStationId,
-      destinationId: destinationStationId,
-    );
+    final Journey journey;
+    try {
+      journey = repo.planner.plan(
+        originId: originId,
+        destinationId: destinationId,
+      );
+    } catch (error) {
+      // The picker plans the same route before enabling Start, so this should be
+      // unreachable. Log rather than throw: a crash inside the foreground-service
+      // isolate takes the whole ride down silently.
+      _log('Cannot plan $originId -> $destinationId: $error');
+      return;
+    }
     _journey = journey;
     _rideProgress = RideProgress(
       chain: journey.chain,

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart' show rootBundle;
 
@@ -20,10 +21,15 @@ class StationRepository {
   late final JourneyPlanner planner =
       JourneyPlanner(stationsById: stationsById, linesById: linesById);
 
-  static const _assetPath = 'assets/stations/mumbai_suburban.json';
+  static const assetPath = 'assets/stations/mumbai_suburban.json';
 
-  static Future<StationRepository> load() async {
-    final raw = await rootBundle.loadString(_assetPath);
+  static Future<StationRepository> load() async =>
+      StationRepository.parse(await rootBundle.loadString(assetPath));
+
+  /// Builds a repository from the raw asset JSON. Separate from [load] so callers
+  /// that already have the bytes (a test reading the file straight off disk) do
+  /// not have to go through the asset bundle to get one.
+  factory StationRepository.parse(String raw) {
     final json = jsonDecode(raw) as Map<String, dynamic>;
 
     final stations = (json['stations'] as List)
@@ -45,4 +51,45 @@ class StationRepository {
     }
     return station;
   }
+
+  /// The station closest to a position, used to default a ride's origin to where
+  /// the rider is actually standing. Straight-line distance: at Mumbai station
+  /// spacing (roughly 1 to 2 km) the nearest station by air is the nearest one on
+  /// foot, and picking the wrong one is a dropdown away from being corrected.
+  Station nearestStation(double lat, double lng) {
+    Station? best;
+    var bestDistance = double.infinity;
+    for (final station in stationsById.values) {
+      final distance = _distanceM(lat, lng, station.lat, station.lng);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = station;
+      }
+    }
+    return best!;
+  }
+
+  /// Metres between [station] and a position. Used to sanity-check that a fix is
+  /// anywhere near the network before trusting the station it names as nearest.
+  double distanceToM(Station station, double lat, double lng) =>
+      _distanceM(lat, lng, station.lat, station.lng);
+
+  static double _distanceM(
+    double lat1,
+    double lng1,
+    double lat2,
+    double lng2,
+  ) {
+    const earthRadiusM = 6371000.0;
+    final dLat = _toRad(lat2 - lat1);
+    final dLng = _toRad(lng2 - lng1);
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_toRad(lat1)) *
+            math.cos(_toRad(lat2)) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    return earthRadiusM * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
+  static double _toRad(double deg) => deg * math.pi / 180.0;
 }
