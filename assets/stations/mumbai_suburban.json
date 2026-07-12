@@ -3,6 +3,7 @@
   "stations": [
     {
       "id": "csmt",
+      "code": "CSMT",
       "name": "CSMT",
       "nameHi": "मुंबई सीएसएमटी",
       "nameMr": "मुंबई सीएसएमटी",
@@ -12,6 +13,7 @@
     },
     {
       "id": "masjid",
+      "code": "MSD",
       "name": "Masjid",
       "nameHi": "मस्जिद",
       "nameMr": "मस्जिद",
@@ -21,6 +23,7 @@
     },
     {
       "id": "sandhurst_road",
+      "code": "SNRD",
       "name": "Sandhurst Road",
       "nameHi": "सैंडहर्स्ट रोड",
       "nameMr": "सँडहर्स्ट रोड",
@@ -30,6 +33,7 @@
     },
     {
       "id": "byculla",
+      "code": "BY",
       "name": "Byculla",
       "nameHi": "भायखला",
       "nameMr": "भायखळा",
@@ -39,6 +43,7 @@
     },
     {
       "id": "chinchpokli",
+      "code": "CHG",
       "name": "Chinchpokli",
       "nameHi": "चिंचपोकली",
       "nameMr": "चिंचपोकळी",
@@ -48,6 +53,7 @@
     },
     {
       "id": "currey_road",
+      "code": "CRD",
       "name": "Currey Road",
       "nameHi": "करी रोड",
       "nameMr": "करी रोड",
@@ -57,6 +63,7 @@
     },
     {
       "id": "parel",
+      "code": "PR",
       "name": "Parel",
       "nameHi": "परेल",
       "nameMr": "परळ",
@@ -66,6 +73,7 @@
     },
     {
       "id": "dadar",
+      "code": "DR",
       "name": "Dadar",
       "nameHi": "दादर",
       "nameMr": "दादर",
@@ -75,6 +83,7 @@
     },
     {
       "id": "matunga",
+      "code": "MTN",
       "name": "Matunga",
       "nameHi": "माटुंगा",
       "nameMr": "माटुंगा",
@@ -84,6 +93,7 @@
     },
     {
       "id": "sion",
+      "code": "SIN",
       "name": "Sion",
       "nameHi": "शीव",
       "nameMr": "शीव",
@@ -93,6 +103,7 @@
     },
     {
       "id": "kurla",
+      "code": "CLA",
       "name": "Kurla",
       "nameHi": "कुर्ला",
       "nameMr": "कुर्ला",
@@ -102,6 +113,7 @@
     },
     {
       "id": "vidyavihar",
+      "code": "VVH",
       "name": "Vidyavihar",
       "nameHi": "विद्याविहार",
       "nameMr": "विद्याविहार",
@@ -111,6 +123,7 @@
     },
     {
       "id": "ghatkopar",
+      "code": "GC",
       "name": "Ghatkopar",
       "nameHi": "घाटकोपर",
       "nameMr": "घाटकोपर",
@@ -120,6 +133,7 @@
     },
     {
       "id": "vikhroli",
+      "code": "VK",
       "name": "Vikhroli",
       "nameHi": "विक्रोली",
       "nameMr": "विक्रोळी",
@@ -129,6 +143,7 @@
     },
     {
       "id": "kanjurmarg",
+      "code": "KJRD",
       "name": "Kanjurmarg",
       "nameHi": "कांजुर मार्ग",
       "nameMr": "कांजुर मार्ग",
@@ -138,6 +153,7 @@
     },
     {
       "id": "bhandup",
+      "code": "BND",
       "name": "Bhandup",
       "nameHi": "भांडुप",
       "nameMr": "भांडुप",
@@ -147,6 +163,7 @@
     },
     {
       "id": "nahur",
+      "code": "NHU",
       "name": "Nahur",
       "nameHi": "नाहूर",
       "nameMr": "नाहूर",
@@ -156,6 +173,7 @@
     },
     {
       "id": "mulund",
+      "code": "MLND",
       "name": "Mulund",
       "nameHi": "मुलुंड",
       "nameMr": "मुलुंड",
@@ -165,6 +183,7 @@
     },
     {
       "id": "thane",
+      "code": "TNA",
       "name": "Thane",
       "nameHi": "ठाणे",
       "nameMr": "ठाणे",
@@ -174,6 +193,7 @@
     },
     {
       "id": "kalwa",
+      "code": "KLVA",
       "name": "Kalwa",
       "nameHi": "कलवा",
       "nameMr": "कळवा",
@@ -183,6 +203,7 @@
     },
     {
       "id": "mumbra",
+      "code": "MBQ",
       "name": "Mumbra",
       "nameHi": "मुंब्रा",
       "nameMr": "मुंब्रा",
@@ -192,6 +213,7 @@
     },
     {
       "id": "diva",
+      "code": "DIVA",
       "name": "Diva Junction",
       "nameHi": "दिवा जंक्शन",
       "nameMr": "दिवा जंक्शन",
@@ -201,6 +223,7 @@
     },
     {
       "id": "kopar",
+      "code": "KOPR",
       "name": "Kopar",
       "nameHi": "कोपर",
       "nameMr": "कोपर",
@@ -210,6 +233,7 @@
     },
     {
       "id": "dombivli",
+      "code": "DI",
       "name": "Dombivli",
       "nameHi": "डोम्बिवली",
       "nameMr": "डोंबिवली",
@@ -219,6 +243,7 @@
     },
     {
       "id": "thakurli",
+      "code": "THK",
       "name": "Thakurli",
       "nameHi": "ठाकुर्ली",
       "nameMr": "ठाकुर्ली",
@@ -228,6 +253,7 @@
     },
     {
       "id": "kalyan",
+      "code": "KYN",
       "name": "Kalyan",
       "nameHi": "कल्याण जंक्शन",
       "nameMr": "कल्याण जंक्शन",
@@ -237,6 +263,7 @@
     },
     {
       "id": "shahad",
+      "code": "SHAD",
       "name": "Shahad",
       "nameHi": "शहद",
       "nameMr": "शहाड",
@@ -246,6 +273,7 @@
     },
     {
       "id": "ambivli",
+      "code": "ABY",
       "name": "Ambivli",
       "nameHi": "आम्बीवली",
       "nameMr": "आंबिवली",
@@ -255,6 +283,7 @@
     },
     {
       "id": "titwala",
+      "code": "TLA",
       "name": "Titwala",
       "nameHi": "टिटवाला",
       "nameMr": "टिटवाळा",
@@ -264,6 +293,7 @@
     },
     {
       "id": "khadavli",
+      "code": "KDV",
       "name": "Khadavli",
       "nameHi": "खडवली",
       "nameMr": "खडवली",
@@ -273,6 +303,7 @@
     },
     {
       "id": "vasind",
+      "code": "VSD",
       "name": "Vasind",
       "nameHi": "वासिंद",
       "nameMr": "वाशिंद",
@@ -282,6 +313,7 @@
     },
     {
       "id": "asangaon",
+      "code": "ASO",
       "name": "Asangaon",
       "nameHi": "आसनगांव",
       "nameMr": "आसनगांव",
@@ -291,6 +323,7 @@
     },
     {
       "id": "atgaon",
+      "code": "ATG",
       "name": "Atgaon",
       "nameHi": "आटगांव",
       "nameMr": "आटगांव",
@@ -300,6 +333,7 @@
     },
     {
       "id": "thansit",
+      "code": "THS",
       "name": "Thansit",
       "nameHi": "तानशेत",
       "nameMr": "तानशेत",
@@ -309,6 +343,7 @@
     },
     {
       "id": "khardi",
+      "code": "KE",
       "name": "Khardi",
       "nameHi": "खर्डी",
       "nameMr": "खर्डी",
@@ -318,6 +353,7 @@
     },
     {
       "id": "umbermali",
+      "code": "OMB",
       "name": "Umbermali",
       "nameHi": "उंबरमाली",
       "nameMr": "उंबरमाळी",
@@ -327,6 +363,7 @@
     },
     {
       "id": "kasara",
+      "code": "KSRA",
       "name": "Kasara",
       "nameHi": "कसारा",
       "nameMr": "कसारा",
@@ -336,6 +373,7 @@
     },
     {
       "id": "vithalwadi",
+      "code": "VLDI",
       "name": "Vithalwadi",
       "nameHi": "विठ्ठलवाडी",
       "nameMr": "विठ्ठलवाडी",
@@ -345,6 +383,7 @@
     },
     {
       "id": "ulhasnagar",
+      "code": "ULNR",
       "name": "Ulhasnagar",
       "nameHi": "उल्हासनगर",
       "nameMr": "उल्हासनगर",
@@ -354,6 +393,7 @@
     },
     {
       "id": "ambernath",
+      "code": "ABH",
       "name": "Ambernath",
       "nameHi": "अम्बरनाथ",
       "nameMr": "अंबरनाथ",
@@ -363,6 +403,7 @@
     },
     {
       "id": "badlapur",
+      "code": "BUD",
       "name": "Badlapur",
       "nameHi": "बदलापुर",
       "nameMr": "बदलापुर",
@@ -372,6 +413,7 @@
     },
     {
       "id": "vangani",
+      "code": "VGI",
       "name": "Vangani",
       "nameHi": "वांगनी",
       "nameMr": "वांगणी",
@@ -381,6 +423,7 @@
     },
     {
       "id": "shelu",
+      "code": "SHLU",
       "name": "Shelu",
       "nameHi": "शेलु",
       "nameMr": "शेलुू",
@@ -390,6 +433,7 @@
     },
     {
       "id": "neral",
+      "code": "NRL",
       "name": "Neral Junction",
       "nameHi": "नेरल जंक्शन",
       "nameMr": "नेरळ जंक्शन",
@@ -399,6 +443,7 @@
     },
     {
       "id": "bhivpuri_road",
+      "code": "BVS",
       "name": "Bhivpuri Road",
       "nameHi": "भिवपुरी रोड",
       "nameMr": "भिवपुरी रोड",
@@ -408,6 +453,7 @@
     },
     {
       "id": "karjat",
+      "code": "KJT",
       "name": "Karjat",
       "nameHi": "कर्जत",
       "nameMr": "कर्जत",
@@ -417,6 +463,7 @@
     },
     {
       "id": "churchgate",
+      "code": "CCG",
       "name": "Churchgate",
       "nameHi": "चर्चगेट",
       "nameMr": "चर्चगेट",
@@ -426,6 +473,7 @@
     },
     {
       "id": "marine_lines",
+      "code": "MEL",
       "name": "Marine Lines",
       "nameHi": "मरीन लाइन्स",
       "nameMr": "मरीन लाइन्स",
@@ -435,6 +483,7 @@
     },
     {
       "id": "charni_road",
+      "code": "CYR",
       "name": "Charni Road",
       "nameHi": "चर्नी रोड",
       "nameMr": "चर्नी रोड",
@@ -444,6 +493,7 @@
     },
     {
       "id": "grant_road",
+      "code": "GTR",
       "name": "Grant Road",
       "nameHi": "ग्रांट रोड",
       "nameMr": "ग्रँट रोड",
@@ -453,6 +503,7 @@
     },
     {
       "id": "mumbai_central",
+      "code": "MMCT",
       "name": "Mumbai Central",
       "nameHi": "मुंबई सेंट्रल",
       "nameMr": "मुंबई सेंट्रल",
@@ -462,6 +513,7 @@
     },
     {
       "id": "mahalaxmi",
+      "code": "MX",
       "name": "Mahalaxmi",
       "nameHi": "महालक्ष्मी",
       "nameMr": "महालक्ष्मी",
@@ -471,6 +523,7 @@
     },
     {
       "id": "lower_parel",
+      "code": "PL",
       "name": "Lower Parel",
       "nameHi": "लोअर परेल",
       "nameMr": "लोअर परळ",
@@ -480,6 +533,7 @@
     },
     {
       "id": "prabhadevi",
+      "code": "PBHD",
       "name": "Prabhadevi",
       "nameHi": "प्रभादेवी",
       "nameMr": "प्रभादेवी",
@@ -489,6 +543,7 @@
     },
     {
       "id": "dadar_western",
+      "code": "DDR",
       "name": "Dadar",
       "nameHi": "दादर",
       "nameMr": "दादर",
@@ -498,6 +553,7 @@
     },
     {
       "id": "matunga_road",
+      "code": "MRU",
       "name": "Matunga Road",
       "nameHi": "माटुंगा रोड",
       "nameMr": "माटुंगा रोड",
@@ -507,6 +563,7 @@
     },
     {
       "id": "mahim",
+      "code": "MM",
       "name": "Mahim Junction",
       "nameHi": "माहिम जंक्शन",
       "nameMr": "माहिम जंक्शन",
@@ -516,6 +573,7 @@
     },
     {
       "id": "bandra",
+      "code": "BA",
       "name": "Bandra",
       "nameHi": "बांद्रा",
       "nameMr": "वांद्रे",
@@ -525,6 +583,7 @@
     },
     {
       "id": "khar_road",
+      "code": "KHAR",
       "name": "Khar Road",
       "nameHi": "खार रोड",
       "nameMr": "खार रोड",
@@ -534,6 +593,7 @@
     },
     {
       "id": "santacruz",
+      "code": "STC",
       "name": "Santacruz",
       "nameHi": "सांताक्रुज़",
       "nameMr": "सांताक्रूझ",
@@ -543,6 +603,7 @@
     },
     {
       "id": "vile_parle",
+      "code": "VLP",
       "name": "Vile Parle",
       "nameHi": "विले पार्ले",
       "nameMr": "विले पार्ले",
@@ -552,6 +613,7 @@
     },
     {
       "id": "andheri",
+      "code": "ADH",
       "name": "Andheri",
       "nameHi": "अन्धेरी",
       "nameMr": "अंधेरी",
@@ -561,6 +623,7 @@
     },
     {
       "id": "jogeshwari",
+      "code": "JOS",
       "name": "Jogeshwari",
       "nameHi": "जोगेश्वरी",
       "nameMr": "जोगेश्वरी",
@@ -570,6 +633,7 @@
     },
     {
       "id": "ram_mandir",
+      "code": "RMAR",
       "name": "Ram Mandir",
       "nameHi": "राम मंदिर",
       "nameMr": "राम मंदिर",
@@ -579,6 +643,7 @@
     },
     {
       "id": "goregaon",
+      "code": "GMN",
       "name": "Goregaon",
       "nameHi": "गोरेगाँव",
       "nameMr": "गोरेगाव",
@@ -588,6 +653,7 @@
     },
     {
       "id": "malad",
+      "code": "MDD",
       "name": "Malad",
       "nameHi": "मालाड",
       "nameMr": "मालाड",
@@ -597,6 +663,7 @@
     },
     {
       "id": "kandivali",
+      "code": "KILE",
       "name": "Kandivali",
       "nameHi": "कांदिवली",
       "nameMr": "कांदिवली",
@@ -606,6 +673,7 @@
     },
     {
       "id": "borivali",
+      "code": "BVI",
       "name": "Borivali",
       "nameHi": "बोरिवली",
       "nameMr": "बोरिवली",
@@ -615,6 +683,7 @@
     },
     {
       "id": "dahisar",
+      "code": "DIC",
       "name": "Dahisar",
       "nameHi": "दहीसर",
       "nameMr": "दहिसर",
@@ -624,6 +693,7 @@
     },
     {
       "id": "mira_road",
+      "code": "MIRA",
       "name": "Mira Road",
       "nameHi": "मीरा रोड",
       "nameMr": "मिरा रोड",
@@ -633,6 +703,7 @@
     },
     {
       "id": "bhayandar",
+      "code": "BYR",
       "name": "Bhayandar",
       "nameHi": "भायंदर",
       "nameMr": "भाईंदर",
@@ -642,6 +713,7 @@
     },
     {
       "id": "naigaon",
+      "code": "NIG",
       "name": "Naigaon",
       "nameHi": "नायगाव",
       "nameMr": "नायगाव",
@@ -651,6 +723,7 @@
     },
     {
       "id": "vasai_road",
+      "code": "BSR",
       "name": "Vasai Road",
       "nameHi": "वसई रोड",
       "nameMr": "वसई रोड",
@@ -660,6 +733,7 @@
     },
     {
       "id": "nallasopara",
+      "code": "NSP",
       "name": "Nallasopara",
       "nameHi": "नाला सोपारा",
       "nameMr": "नाला सोपारा",
@@ -669,6 +743,7 @@
     },
     {
       "id": "virar",
+      "code": "VR",
       "name": "Virar",
       "nameHi": "विरार",
       "nameMr": "विरार",
@@ -678,6 +753,7 @@
     },
     {
       "id": "vaitarna",
+      "code": "VTN",
       "name": "Vaitarna",
       "nameHi": "वैतरना",
       "nameMr": "वैतरणा",
@@ -687,6 +763,7 @@
     },
     {
       "id": "saphale",
+      "code": "SAH",
       "name": "Saphale",
       "nameHi": "सफाले",
       "nameMr": "सफाळे",
@@ -696,6 +773,7 @@
     },
     {
       "id": "kelve_road",
+      "code": "KLV",
       "name": "Kelve Road",
       "nameHi": "केलवे रोड",
       "nameMr": "केळवे रोड",
@@ -705,6 +783,7 @@
     },
     {
       "id": "palghar",
+      "code": "PLG",
       "name": "Palghar",
       "nameHi": "पालघर",
       "nameMr": "पालघर",
@@ -714,6 +793,7 @@
     },
     {
       "id": "umroli",
+      "code": "UOI",
       "name": "Umroli",
       "nameHi": "उमरोली",
       "nameMr": "उमरोळी",
@@ -723,6 +803,7 @@
     },
     {
       "id": "boisar",
+      "code": "BOR",
       "name": "Boisar",
       "nameHi": "बोईसर",
       "nameMr": "बोईसर",
@@ -732,6 +813,7 @@
     },
     {
       "id": "vangaon",
+      "code": "VGN",
       "name": "Vangaon",
       "nameHi": "वानगांव",
       "nameMr": "वाणगांव",
@@ -741,6 +823,7 @@
     },
     {
       "id": "dahanu_road",
+      "code": "DRD",
       "name": "Dahanu Road",
       "nameHi": "डहाणू रोड",
       "nameMr": "डहाणू रोड",
@@ -750,6 +833,7 @@
     },
     {
       "id": "dockyard_road",
+      "code": "DKRD",
       "name": "Dockyard Road",
       "nameHi": "डॉकयार्ड रोड",
       "nameMr": "डॉकयार्ड रोड",
@@ -759,6 +843,7 @@
     },
     {
       "id": "reay_road",
+      "code": "RRD",
       "name": "Reay Road",
       "nameHi": "रे रोड",
       "nameMr": "रे रोड",
@@ -768,6 +853,7 @@
     },
     {
       "id": "cotton_green",
+      "code": "CTGN",
       "name": "Cotton Green",
       "nameHi": "कॉटन ग्रीन",
       "nameMr": "कॉटन ग्रीन",
@@ -777,6 +863,7 @@
     },
     {
       "id": "sewri",
+      "code": "SVE",
       "name": "Sewri",
       "nameHi": "शिवड़ी",
       "nameMr": "शिवडी",
@@ -786,6 +873,7 @@
     },
     {
       "id": "vadala_road",
+      "code": "VDLR",
       "name": "Vadala Road",
       "nameHi": "वडाला रोड",
       "nameMr": "वडाळा रोड",
@@ -795,6 +883,7 @@
     },
     {
       "id": "gtb_nagar",
+      "code": "GTBN",
       "name": "GTB Nagar",
       "nameHi": "गुरु तेज बहादुर नगर",
       "nameMr": "जीटीबी नगर",
@@ -804,6 +893,7 @@
     },
     {
       "id": "chunabhatti",
+      "code": "CHF",
       "name": "Chunabhatti",
       "nameHi": "चुना भट्टी",
       "nameMr": "चुना भट्टी",
@@ -813,6 +903,7 @@
     },
     {
       "id": "tilak_nagar",
+      "code": "TKNG",
       "name": "Tilak Nagar",
       "nameHi": "तिलक नगर",
       "nameMr": "टिळक नगर",
@@ -822,6 +913,7 @@
     },
     {
       "id": "chembur",
+      "code": "CMBR",
       "name": "Chembur",
       "nameHi": "चेंबुर",
       "nameMr": "चेंबूर",
@@ -831,6 +923,7 @@
     },
     {
       "id": "govandi",
+      "code": "GV",
       "name": "Govandi",
       "nameHi": "गोवंडी",
       "nameMr": "गोवंडी",
@@ -840,6 +933,7 @@
     },
     {
       "id": "mankhurd",
+      "code": "MNKD",
       "name": "Mankhurd",
       "nameHi": "मानखुर्द",
       "nameMr": "मानखुर्द",
@@ -849,6 +943,7 @@
     },
     {
       "id": "vashi",
+      "code": "VSH",
       "name": "Vashi",
       "nameHi": "वाशी",
       "nameMr": "वाशी",
@@ -858,6 +953,7 @@
     },
     {
       "id": "sanpada",
+      "code": "SNCR",
       "name": "Sanpada",
       "nameHi": "सानपाडा",
       "nameMr": "सानपाडा",
@@ -867,6 +963,7 @@
     },
     {
       "id": "juinagar",
+      "code": "JNJ",
       "name": "Juinagar",
       "nameHi": "जुईनगर",
       "nameMr": "जुईनगर",
@@ -876,6 +973,7 @@
     },
     {
       "id": "nerul",
+      "code": "NEU",
       "name": "Nerul",
       "nameHi": "नेरुल",
       "nameMr": "नेरूळ",
@@ -885,6 +983,7 @@
     },
     {
       "id": "seawoods",
+      "code": "SWDV",
       "name": "Seawoods Darave",
       "nameHi": "सीवुड्ज़",
       "nameMr": "सीवूड्स दारावे",
@@ -894,6 +993,7 @@
     },
     {
       "id": "belapur",
+      "code": "BEPR",
       "name": "CBD Belapur",
       "nameHi": "सीबीडी बेलापुर",
       "nameMr": "सी बी डी बेलापूर",
@@ -903,6 +1003,7 @@
     },
     {
       "id": "kharghar",
+      "code": "KHAG",
       "name": "Kharghar",
       "nameHi": "खारघर",
       "nameMr": "खारघर",
@@ -912,6 +1013,7 @@
     },
     {
       "id": "mansarovar",
+      "code": "MANR",
       "name": "Mansarovar",
       "nameHi": "मानसरोवर",
       "nameMr": "मानसरोवर",
@@ -921,6 +1023,7 @@
     },
     {
       "id": "khandeshwar",
+      "code": "KNDS",
       "name": "Khandeshwar",
       "nameHi": "खांदेश्वर",
       "nameMr": "खांदेश्वर",
@@ -930,15 +1033,17 @@
     },
     {
       "id": "panvel",
+      "code": "PNVL",
       "name": "Panvel",
       "nameHi": "पनवेल",
       "nameMr": "पनवेल",
-      "lat": 18.9894239,
-      "lng": 73.122695,
+      "lat": 18.9909392,
+      "lng": 73.120605,
       "radiusM": 500
     },
     {
       "id": "kings_circle",
+      "code": "KCE",
       "name": "King's Circle",
       "nameHi": "किंग्ज सर्कल",
       "nameMr": "किंग्ज सर्कल",
@@ -947,16 +1052,8 @@
       "radiusM": 350
     },
     {
-      "id": "jogeshwari_harbour",
-      "name": "Jogeshwari",
-      "nameHi": "जोगेश्वरी",
-      "nameMr": "जोगेश्वरी",
-      "lat": 19.1411537,
-      "lng": 72.8494209,
-      "radiusM": 400
-    },
-    {
       "id": "digha",
+      "code": "DIGH",
       "name": "Digha Gaon",
       "nameHi": "दिघा गाँव",
       "nameMr": "दिघा गाँव",
@@ -966,6 +1063,7 @@
     },
     {
       "id": "airoli",
+      "code": "AIRL",
       "name": "Airoli",
       "nameHi": "ऐरोली",
       "nameMr": "ऐरोली",
@@ -975,6 +1073,7 @@
     },
     {
       "id": "rabale",
+      "code": "RABE",
       "name": "Rabale",
       "nameHi": "रबाळे",
       "nameMr": "रबाळे",
@@ -984,6 +1083,7 @@
     },
     {
       "id": "ghansoli",
+      "code": "GNSL",
       "name": "Ghansoli",
       "nameHi": "घनसोली",
       "nameMr": "घणसोली",
@@ -993,6 +1093,7 @@
     },
     {
       "id": "koparkhairane",
+      "code": "KPHN",
       "name": "Koparkhairane",
       "nameHi": "कोपरखैरने",
       "nameMr": "कोपरखैरणे",
@@ -1002,6 +1103,7 @@
     },
     {
       "id": "turbhe",
+      "code": "TUH",
       "name": "Turbhe",
       "nameHi": "तुर्भे",
       "nameMr": "तुर्भे",
@@ -1011,6 +1113,7 @@
     },
     {
       "id": "targhar",
+      "code": "TRGHR",
       "name": "Targhar",
       "nameHi": "तरघर",
       "nameMr": "तरघर",
@@ -1020,6 +1123,7 @@
     },
     {
       "id": "bamandongri",
+      "code": "BMDR",
       "name": "Bamandongri",
       "nameHi": "बामणडोंगरी",
       "nameMr": "बामणडोंगरी",
@@ -1029,6 +1133,7 @@
     },
     {
       "id": "kharkopar",
+      "code": "KARP",
       "name": "Kharkopar",
       "nameHi": "खारकोपर",
       "nameMr": "खारकोपर",
@@ -1038,6 +1143,7 @@
     },
     {
       "id": "ranjanpada",
+      "code": "RJNPD",
       "name": "Ranjanpada",
       "nameHi": "रांजणपाडा",
       "nameMr": "रांजणपाडा",
@@ -1047,6 +1153,7 @@
     },
     {
       "id": "nhava_sheva",
+      "code": "NHVSV",
       "name": "Nhava Sheva",
       "nameHi": "न्हावा शेवा",
       "nameMr": "न्हावा शेवा",
@@ -1056,6 +1163,7 @@
     },
     {
       "id": "dronagiri",
+      "code": "DRNGR",
       "name": "Dronagiri",
       "nameHi": "द्रोणागिरी",
       "nameMr": "द्रोणागिरी",
@@ -1065,6 +1173,7 @@
     },
     {
       "id": "uran",
+      "code": "UNCT",
       "name": "Uran City",
       "nameHi": "उरण सिटी",
       "nameMr": "उरण सिटी",
@@ -1074,6 +1183,7 @@
     },
     {
       "id": "juichandra",
+      "code": "JCNR",
       "name": "Juichandra",
       "nameHi": "जुईचंद्र",
       "nameMr": "जुईचंद्र",
@@ -1083,6 +1193,7 @@
     },
     {
       "id": "kaman_road",
+      "code": "KARD",
       "name": "Kaman Road",
       "nameHi": "कामण रोड",
       "nameMr": "कामण रोड",
@@ -1092,6 +1203,7 @@
     },
     {
       "id": "kharbao",
+      "code": "KHBV",
       "name": "Kharbao",
       "nameHi": "खारबाव",
       "nameMr": "खारबाव",
@@ -1101,6 +1213,7 @@
     },
     {
       "id": "bhiwandi_road",
+      "code": "BIRD",
       "name": "Bhiwandi Road",
       "nameHi": "भिवंडी रोड",
       "nameMr": "भिवंडी रोड",
@@ -1110,6 +1223,7 @@
     },
     {
       "id": "dativali",
+      "code": "DTVL",
       "name": "Dativali",
       "nameHi": "दातिवली",
       "nameMr": "दातिवली",
@@ -1119,6 +1233,7 @@
     },
     {
       "id": "nilaje",
+      "code": "NIIJ",
       "name": "Nilaje",
       "nameHi": "निलजे",
       "nameMr": "निळजे",
@@ -1128,6 +1243,7 @@
     },
     {
       "id": "taloja",
+      "code": "TPND",
       "name": "Taloja Panchanand",
       "nameHi": "तलोजे पंचानन्द",
       "nameMr": "तळोजे पंचानंद",
@@ -1137,6 +1253,7 @@
     },
     {
       "id": "navade_road",
+      "code": "NVRD",
       "name": "Navade Road",
       "nameHi": "नवडे रोड",
       "nameMr": "नवडे रोड",
@@ -1146,6 +1263,7 @@
     },
     {
       "id": "kalamboli",
+      "code": "KLMC",
       "name": "Kalamboli",
       "nameHi": "कळंबोली",
       "nameMr": "कळंबोली",
@@ -1314,7 +1432,7 @@
         "santacruz",
         "vile_parle",
         "andheri",
-        "jogeshwari_harbour",
+        "jogeshwari",
         "ram_mandir",
         "goregaon"
       ]

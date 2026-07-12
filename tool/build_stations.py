@@ -41,9 +41,24 @@ CACHE = ROOT / "tool" / ".osm_cache.json"
 # OSM name given in NAME_OVERRIDE.
 # ---------------------------------------------------------------------------
 
-# Stations whose OSM element carries no `ref`, matched by exact OSM name instead.
+# OSM has no `ref` on Vadala Road, so it is matched by exact OSM name and its code
+# is supplied here by hand.
 NAME_ONLY = {
-    "vadala_road": "Vadala Road",
+    "vadala_road": ("Vadala Road", "VDLR"),
+}
+
+# Some stations are mapped by more than one OSM element sharing the same ref: a
+# node plus a platform way, a suburban plus a mainline element, or simply a
+# duplicate. Where the copies disagree, name the one to trust.
+PREFER_OSM_NAME = {
+    # Two nodes, both ref=JOS, 563m apart: one mapper split the Western and Harbour
+    # platform groups. Jogeshwari is one station. The Western node is the correct
+    # one: it puts Andheri-Jogeshwari-Ram Mandir at 1.83km/1.66km, matching the real
+    # spacing, where the Harbour node skews it to 2.39km/1.10km.
+    "JOS": "Jogeshwari (Western Line)",
+    # Panvel is mapped twice, 250m apart. This is a suburban app, so take the
+    # suburban platform rather than the mainline one.
+    "PNVL": "Panvel (Suburban)",
 }
 
 # id: (name, ref, preferred_radius_m)
@@ -114,7 +129,7 @@ STATIONS = {
     "santacruz": ("Santacruz", "STC", 400),
     "vile_parle": ("Vile Parle", "VLP", 400),
     "andheri": ("Andheri", "ADH", 500),
-    "jogeshwari": ("Jogeshwari", "JOS-W", 400),
+    "jogeshwari": ("Jogeshwari", "JOS", 400),
     "ram_mandir": ("Ram Mandir", "RMAR", 350),
     "goregaon": ("Goregaon", "GMN", 450),
     "malad": ("Malad", "MDD", 400),
@@ -159,7 +174,6 @@ STATIONS = {
     "panvel": ("Panvel", "PNVL", 500),
     # --- Harbour: Vadala Road to Goregaon ----------------------------------
     "kings_circle": ("King's Circle", "KCE", 350),
-    "jogeshwari_harbour": ("Jogeshwari", "JOS-H", 400),
     # --- Trans-Harbour: Thane to Vashi/Panvel ------------------------------
     "digha": ("Digha Gaon", "DIGH", 350),
     "airoli": ("Airoli", "AIRL", 400),
@@ -185,12 +199,6 @@ STATIONS = {
     "taloja": ("Taloja Panchanand", "TPND", 400),
     "navade_road": ("Navade Road", "NVRD", 400),
     "kalamboli": ("Kalamboli", "KLMC", 400),
-}
-
-# OSM tags both Jogeshwari platforms with ref=JOS. Disambiguate by name.
-REF_DISAMBIGUATION = {
-    "JOS-W": ("JOS", "Jogeshwari (Western Line)"),
-    "JOS-H": ("JOS", "Jogeshwari (Harbour Line)"),
 }
 
 # Fallbacks for stations OSM has not tagged with name:hi / name:mr. Each side is
@@ -242,6 +250,9 @@ DEVANAGARI_FALLBACK = {
     "rabale": ("रबाळे", "रबाळे"),
     "koparkhairane": ("कोपरखैरने", "कोपरखैरणे"),
     "turbhe": ("तुर्भे", "तुर्भे"),
+    # The mainline Panvel node carries name:hi/name:mr, but PREFER_OSM_NAME points
+    # us at the suburban platform element, which does not.
+    "panvel": ("पनवेल", "पनवेल"),
 }
 
 # ---------------------------------------------------------------------------
@@ -294,7 +305,7 @@ LINES = [
         "Harbour: CSMT - Goregaon",
         ["csmt", "masjid", "sandhurst_road", "dockyard_road", "reay_road",
          "cotton_green", "sewri", "vadala_road", "kings_circle", "mahim", "bandra",
-         "khar_road", "santacruz", "vile_parle", "andheri", "jogeshwari_harbour",
+         "khar_road", "santacruz", "vile_parle", "andheri", "jogeshwari",
          "ram_mandir", "goregaon"],
     ),
     (
@@ -401,21 +412,34 @@ def resolve() -> tuple[dict, list[str]]:
     problems: list[str] = []
 
     for sid, (name, ref, radius) in STATIONS.items():
-        rec = None
-        if ref in REF_DISAMBIGUATION:
-            real_ref, osm_name = REF_DISAMBIGUATION[ref]
-            cands = [c for c in by_ref.get(real_ref, [])
-                     if c["tags"].get("name") == osm_name]
-            rec = cands[0] if cands else None
-        elif ref:
+        if ref:
+            code = ref
             cands = by_ref.get(ref, [])
-            # A ref can appear on several elements (a node plus a platform way,
-            # or a suburban plus a mainline element). Prefer railway=station and
-            # then the one whose name matches, else just take the first.
+            # A code can appear on several OSM elements: a node plus a platform way,
+            # a suburban plus a mainline element, or an outright duplicate. Prefer a
+            # railway=station element, then the copy named in PREFER_OSM_NAME.
             cands = [c for c in cands if c["tags"].get("railway") == "station"] or cands
+            if ref in PREFER_OSM_NAME and len(cands) > 1:
+                cands = [c for c in cands
+                         if c["tags"].get("name") == PREFER_OSM_NAME[ref]] or cands
+            elif len(cands) > 1:
+                # Duplicate elements that sit on top of each other are harmless,
+                # take either. Duplicates that disagree about where the station is
+                # need a human to pick, so say so.
+                spread = max(
+                    haversine_m((a["lat"], a["lon"]), (b["lat"], b["lon"]))
+                    for a in cands for b in cands
+                )
+                if spread > 100:
+                    problems.append(
+                        f"AMBIGUOUS {sid}: {len(cands)} OSM elements carry ref={ref} "
+                        f"and they disagree by {spread:.0f}m; took "
+                        f"{cands[0]['tags'].get('name')!r}. Add {ref!r} to "
+                        f"PREFER_OSM_NAME to choose."
+                    )
             rec = cands[0] if cands else None
         else:
-            osm_name = NAME_ONLY[sid]
+            osm_name, code = NAME_ONLY[sid]
             cands = by_name.get(osm_name, [])
             rec = cands[0] if cands else None
 
@@ -439,14 +463,27 @@ def resolve() -> tuple[dict, list[str]]:
 
         resolved[sid] = {
             "id": sid,
+            "code": code,
             "name": name,
             "nameHi": hi or name,
             "nameMr": mr or name,
             "lat": round(rec["lat"], 7),
             "lng": round(rec["lon"], 7),
             "radiusM": radius,
-            "_ref": tags.get("ref", ""),
         }
+
+    # Two stations sharing a code means one real station has been split in two.
+    # That is how the Jogeshwari duplicate (Western and Harbour platform groups
+    # mapped as separate nodes, both ref=JOS) got into the data in the first place.
+    seen: dict[str, str] = {}
+    for sid, s in resolved.items():
+        clash = seen.get(s["code"])
+        if clash:
+            problems.append(
+                f"DUPLICATE CODE {s['code']}: {clash} and {sid} are the same "
+                f"station. Merge them."
+            )
+        seen[s["code"]] = sid
 
     return resolved, problems
 
@@ -501,10 +538,11 @@ def sanity_check(resolved: dict) -> list[str]:
 def main() -> int:
     resolved, problems = resolve()
 
-    missing = [p for p in problems if p.startswith("UNRESOLVED")]
-    if missing:
+    fatal = [p for p in problems
+             if p.startswith(("UNRESOLVED", "DUPLICATE CODE"))]
+    if fatal:
         print("\n".join(problems))
-        print(f"\nABORT: {len(missing)} station(s) did not resolve; nothing written.")
+        print(f"\nABORT: {len(fatal)} fatal problem(s); nothing written.")
         return 1
 
     shrink_notes = shrink_radii(resolved)

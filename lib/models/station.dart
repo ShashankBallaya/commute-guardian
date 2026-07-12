@@ -1,6 +1,7 @@
 class Station {
   const Station({
     required this.id,
+    required this.code,
     required this.name,
     required this.nameHi,
     required this.nameMr,
@@ -10,6 +11,13 @@ class Station {
   });
 
   final String id;
+
+  /// Indian Railways station code, e.g. `KYN` for Kalyan. Unique across the
+  /// network, unlike the name: Dadar Central (`DR`) and Dadar Western (`DDR`)
+  /// share a name but are separate stations. Two entries carrying the same code
+  /// therefore means one station has been split in two by mistake.
+  final String code;
+
   final String name;
   final String nameHi;
   final String nameMr;
@@ -19,6 +27,7 @@ class Station {
 
   factory Station.fromJson(Map<String, dynamic> json) => Station(
         id: json['id'] as String,
+        code: json['code'] as String,
         name: json['name'] as String,
         nameHi: json['nameHi'] as String,
         nameMr: json['nameMr'] as String,

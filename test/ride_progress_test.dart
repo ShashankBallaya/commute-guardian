@@ -2,11 +2,15 @@ import 'package:commute_guardian/models/station.dart';
 import 'package:commute_guardian/services/ride_progress.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// OSM station-node coords, transcribed from assets/stations/central_main_line.json
+/// OSM station-node coords, transcribed from assets/stations/mumbai_suburban.json
 /// (the independent source of truth for expected values). Kalyan -> Digha ride order,
 /// with Airoli kept one past the destination as the overshoot backstop.
+///
+/// The code is irrelevant to RideProgress, which keys off the station id, so these
+/// fixtures just reuse the id.
 Station _s(String id, String name, double lat, double lng, int radiusM) => Station(
       id: id,
+      code: id.toUpperCase(),
       name: name,
       nameHi: name,
       nameMr: name,

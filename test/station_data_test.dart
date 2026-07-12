@@ -23,6 +23,23 @@ void main() {
     expect(byId.length, stations.length);
   });
 
+  test('station codes are unique', () {
+    // The Indian Railways code is the real-world identity of a station, so two
+    // entries sharing one means a single station has been split in two. That is
+    // exactly how Jogeshwari got duplicated: OSM maps its Western and Harbour
+    // platform groups as separate nodes 563m apart, both tagged ref=JOS, and a
+    // name-based or id-based check cannot see the problem. This one can.
+    final byCode = <String, String>{};
+    for (final s in stations) {
+      final code = s['code'] as String;
+      expect(code, isNotEmpty, reason: '${s['id']} has no station code');
+      expect(byCode, isNot(contains(code)),
+          reason: '${s['id']} and ${byCode[code]} both claim code $code, so they '
+              'are the same station. Merge them.');
+      byCode[code] = s['id'] as String;
+    }
+  });
+
   test('every station has a name in English, Hindi and Marathi', () {
     for (final s in stations) {
       for (final key in ['name', 'nameHi', 'nameMr']) {
@@ -102,10 +119,12 @@ void main() {
     // signature means one station is mapped twice, or one has the wrong
     // coordinates.
     //
-    // These five are genuine: they are the Central and Western stations that sit a
-    // few hundred metres apart (Parel to Prabhadevi and Currey Road to Lower Parel
-    // are the well-known foot-overbridge pairs), plus the two station complexes OSM
-    // maps as separate platform groups.
+    // These four are genuine: distinct stations, distinct codes, that happen to sit
+    // a few hundred metres apart where the Central and Western corridors run close.
+    // Parel to Prabhadevi and Currey Road to Lower Parel are the well-known
+    // foot-overbridge pairs. Contrast with Jogeshwari, which looked like this but
+    // was one station duplicated: the 'station codes are unique' test is what tells
+    // the two situations apart.
     //
     // CAUTION, and this bites in Phase 1: every one of these pairs has OVERLAPPING
     // geofences. Today that is harmless because each half sits on a different line
@@ -113,13 +132,13 @@ void main() {
     // and Western at Dadar, which is one of the most common Mumbai commutes, both
     // Dadar fences arm at once and the rider gets a double announcement from an
     // ambiguous position. Fixing it properly means grouping platforms under a
-    // complex id and registering at most one fence per complex.
+    // complex id and registering at most one fence per complex. A station code
+    // cannot express that, because DR and DDR really are two different stations.
     const knownComplexes = {
       'dadar|dadar_western',
       'parel|prabhadevi',
       'currey_road|lower_parel',
       'matunga|matunga_road',
-      'jogeshwari|jogeshwari_harbour',
     };
 
     final adjacent = <String>{};
