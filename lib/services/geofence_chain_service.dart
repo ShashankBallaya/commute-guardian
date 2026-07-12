@@ -173,6 +173,12 @@ class GeofenceChainService {
         avAudioSessionCategoryOptions:
             AVAudioSessionCategoryOptions.duckOthers |
                 AVAudioSessionCategoryOptions.mixWithOthers,
+        // `speech()` also carries mode spokenAudio, which iOS defines as "PAUSE
+        // other audio on activation" (it exists for podcast apps). That is what
+        // STOPPED the rider's music outright in the 13 Jul bench test instead
+        // of ducking it. voicePrompt is the navigation-prompt mode: duck, talk,
+        // get out of the way.
+        avAudioSessionMode: AVAudioSessionMode.voicePrompt,
         // What actually tells the other app to come back to full volume when we
         // deactivate at the end of an announcement.
         avAudioSessionSetActiveOptions:
@@ -203,8 +209,16 @@ class GeofenceChainService {
 
     if (Platform.isIOS) {
       // Makes flutter_tts speak through the shared session configured above
-      // instead of standing up a second one of its own.
+      // instead of standing up a second one of its own. CAUTION: inside the
+      // plugin this call also runs AVAudioSession.setActive(true), which is
+      // what grabbed audio focus the moment Travel Mode started in the 13 Jul
+      // bench test. It is undone right below.
       await _tts.setSharedInstance(true);
+      // flutter_tts deactivates the session after EVERY utterance, which would
+      // bob the music's volume between the two back-to-back announcements of a
+      // two-stage station. _speak owns the deactivation instead, releasing once
+      // per RUN of announcements.
+      await _tts.autoStopSharedSession(false);
       await _tts.setIosAudioCategory(
         IosTextToSpeechAudioCategory.playback,
         [
@@ -213,6 +227,15 @@ class GeofenceChainService {
         ],
         IosTextToSpeechAudioMode.voicePrompt,
       );
+      // Release the focus setSharedInstance grabbed. Travel Mode idling between
+      // stations must not hold the duck; _speak activates per announcement and
+      // the configured notifyOthersOnDeactivation tells other apps to come back
+      // to full volume.
+      try {
+        await session.setActive(false);
+      } catch (error) {
+        _log('Could not release audio session at start: $error');
+      }
     }
   }
 
