@@ -5,6 +5,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'foreground/geofence_task_handler.dart';
+import 'services/geofence_chain_service.dart';
 
 void main() {
   FlutterForegroundTask.initCommunicationPort();
@@ -24,8 +25,9 @@ class CommuteGuardianDebugApp extends StatelessWidget {
   }
 }
 
-/// Phase 0 proof-of-concept screen: start/stop the hardcoded Kalyan -> Digha
-/// geofence chain and watch ENTER events stream in. Not product UI.
+/// Debug screen: start/stop the planned ride and watch events stream in.
+/// Not product UI. The route is still fixed in GeofenceChainService because there
+/// is no picker yet.
 class GeofenceDebugScreen extends StatefulWidget {
   const GeofenceDebugScreen({super.key});
 
@@ -34,6 +36,11 @@ class GeofenceDebugScreen extends StatefulWidget {
 }
 
 class _GeofenceDebugScreenState extends State<GeofenceDebugScreen> {
+  /// Read off the service rather than retyped, so the label cannot drift from
+  /// the ride actually being run.
+  static const _route = '${GeofenceChainService.originStationId} -> '
+      '${GeofenceChainService.destinationStationId}';
+
   final List<String> _logs = [];
   bool _isRunning = false;
 
@@ -110,7 +117,7 @@ class _GeofenceDebugScreenState extends State<GeofenceDebugScreen> {
     final result = await FlutterForegroundTask.startService(
       serviceId: 1,
       notificationTitle: 'Travel Mode active',
-      notificationText: 'Kalyan -> Digha geofence chain running',
+      notificationText: '$_route geofence chain running',
       callback: geofenceTaskStartCallback,
     );
 
@@ -131,7 +138,7 @@ class _GeofenceDebugScreenState extends State<GeofenceDebugScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Geofence chain: Kalyan -> Digha')),
+      appBar: AppBar(title: const Text('Geofence chain: $_route')),
       body: Column(
         children: [
           Padding(

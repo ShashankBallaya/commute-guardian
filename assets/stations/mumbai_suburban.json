@@ -1276,6 +1276,7 @@
     {
       "id": "central_csmt_kalyan",
       "name": "Central Main: CSMT - Kalyan",
+      "shortName": "Central",
       "stationIds": [
         "csmt",
         "masjid",
@@ -1303,11 +1304,13 @@
         "dombivli",
         "thakurli",
         "kalyan"
-      ]
+      ],
+      "platforms": {}
     },
     {
       "id": "central_kalyan_kasara",
       "name": "Central: Kalyan - Kasara",
+      "shortName": "Central",
       "stationIds": [
         "kalyan",
         "shahad",
@@ -1321,11 +1324,13 @@
         "khardi",
         "umbermali",
         "kasara"
-      ]
+      ],
+      "platforms": {}
     },
     {
       "id": "central_kalyan_karjat",
       "name": "Central: Kalyan - Karjat",
+      "shortName": "Central",
       "stationIds": [
         "kalyan",
         "vithalwadi",
@@ -1337,11 +1342,13 @@
         "neral",
         "bhivpuri_road",
         "karjat"
-      ]
+      ],
+      "platforms": {}
     },
     {
       "id": "western_churchgate_dahanu",
       "name": "Western: Churchgate - Dahanu Road",
+      "shortName": "Western",
       "stationIds": [
         "churchgate",
         "marine_lines",
@@ -1380,11 +1387,13 @@
         "boisar",
         "vangaon",
         "dahanu_road"
-      ]
+      ],
+      "platforms": {}
     },
     {
       "id": "harbour_csmt_panvel",
       "name": "Harbour: CSMT - Panvel",
+      "shortName": "Harbour",
       "stationIds": [
         "csmt",
         "masjid",
@@ -1411,11 +1420,13 @@
         "mansarovar",
         "khandeshwar",
         "panvel"
-      ]
+      ],
+      "platforms": {}
     },
     {
       "id": "harbour_csmt_goregaon",
       "name": "Harbour: CSMT - Goregaon",
+      "shortName": "Harbour",
       "stationIds": [
         "csmt",
         "masjid",
@@ -1435,11 +1446,13 @@
         "jogeshwari",
         "ram_mandir",
         "goregaon"
-      ]
+      ],
+      "platforms": {}
     },
     {
       "id": "trans_harbour_thane_panvel",
       "name": "Trans-Harbour: Thane - Panvel",
+      "shortName": "Trans Harbour",
       "stationIds": [
         "thane",
         "digha",
@@ -1456,11 +1469,15 @@
         "mansarovar",
         "khandeshwar",
         "panvel"
-      ]
+      ],
+      "platforms": {
+        "thane": "9, 10, or 10 A"
+      }
     },
     {
       "id": "trans_harbour_thane_vashi",
       "name": "Trans-Harbour: Thane - Vashi",
+      "shortName": "Trans Harbour",
       "stationIds": [
         "thane",
         "digha",
@@ -1471,11 +1488,15 @@
         "turbhe",
         "sanpada",
         "vashi"
-      ]
+      ],
+      "platforms": {
+        "thane": "9, 10, or 10 A"
+      }
     },
     {
       "id": "uran_nerul_uran",
       "name": "Uran: Nerul - Uran",
+      "shortName": "Uran",
       "stationIds": [
         "nerul",
         "seawoods",
@@ -1486,11 +1507,13 @@
         "nhava_sheva",
         "dronagiri",
         "uran"
-      ]
+      ],
+      "platforms": {}
     },
     {
       "id": "vasai_diva",
       "name": "Vasai Road - Diva",
+      "shortName": "Vasai Road to Diva",
       "stationIds": [
         "vasai_road",
         "juichandra",
@@ -1500,11 +1523,13 @@
         "dativali",
         "kopar",
         "diva"
-      ]
+      ],
+      "platforms": {}
     },
     {
       "id": "diva_panvel",
       "name": "Diva - Panvel",
+      "shortName": "Diva to Panvel",
       "stationIds": [
         "diva",
         "dativali",
@@ -1513,23 +1538,8 @@
         "navade_road",
         "kalamboli",
         "panvel"
-      ]
-    },
-    {
-      "id": "harbour_ride_kalyan_digha",
-      "name": "Ride: Kalyan - Digha (Central to Thane, change to Trans-Harbour)",
-      "stationIds": [
-        "kalyan",
-        "thakurli",
-        "dombivli",
-        "kopar",
-        "diva",
-        "mumbra",
-        "kalwa",
-        "thane",
-        "digha",
-        "airoli"
-      ]
+      ],
+      "platforms": {}
     }
   ]
 }

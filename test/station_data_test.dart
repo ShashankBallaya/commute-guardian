@@ -165,12 +165,39 @@ void main() {
     }
   });
 
-  test('the Kalyan to Digha field-ride chain is intact', () {
-    final ride = lines.firstWhere((l) => l['id'] == 'harbour_ride_kalyan_digha');
-    expect((ride['stationIds'] as List).cast<String>(), [
-      'kalyan', 'thakurli', 'dombivli', 'kopar', 'diva',
-      'mumbra', 'kalwa', 'thane', 'digha', 'airoli',
-    ]);
+  test('every line is a real line, not a hand-authored ride chain', () {
+    // `harbour_ride_kalyan_digha` used to live here: the Kalyan -> Digha field
+    // ride, hand-authored as a fake "line" because nothing could derive it.
+    // JourneyPlanner derives it now (journey_planner_test asserts it reproduces
+    // that exact chain), so a ride chain in this file is a regression: it means
+    // someone hardcoded a route instead of planning it.
+    for (final line in lines) {
+      expect(
+        line['id'] as String,
+        isNot(startsWith('ride_')),
+        reason: 'ride chains belong in JourneyPlanner, not in the line data',
+      );
+      expect(
+        line['name'] as String,
+        isNot(startsWith('Ride:')),
+        reason: 'ride chains belong in JourneyPlanner, not in the line data',
+      );
+    }
+  });
+
+  test('every line can be spoken and lists its interchange platforms', () {
+    for (final line in lines) {
+      expect(line['shortName'], isNotEmpty,
+          reason: '${line['id']} has no spoken short name');
+      // Platforms are sparse by design, but every station they name must exist.
+      for (final stationId in (line['platforms'] as Map).keys) {
+        expect(byId.containsKey(stationId), isTrue,
+            reason: '${line['id']} names a platform at unknown station $stationId');
+        expect((line['stationIds'] as List), contains(stationId),
+            reason: '${line['id']} names a platform at $stationId, '
+                'which is not on that line');
+      }
+    }
   });
 }
 

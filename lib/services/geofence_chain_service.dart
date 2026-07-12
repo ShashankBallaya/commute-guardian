@@ -11,54 +11,25 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../data/station_repository.dart';
-import '../models/station.dart';
+import '../models/journey.dart';
 import 'ride_progress.dart';
 
-/// Phase 0 proof of concept: a hardcoded Kalyan -> Digha geofence chain.
-/// This ride spans two lines: Central Main down-line Kalyan to Thane, then a
-/// change at Thane onto the Trans-Harbour line to Digha (the alighting point).
-/// The chain is defined in travel order by the `harbour_ride_kalyan_digha`
-/// line. Registers a circular region per station on that chain (plus a second,
-/// larger outer approach fence for the interchange and destination), speaks an
-/// announcement on every ENTER event, and logs every event so accuracy can be
-/// judged from a real ride (see CLAUDE.md Phase 0 exit criteria).
+/// Runs one [Journey]: registers a geofence per station on its chain (plus a
+/// second, larger outer approach fence for each interchange and the
+/// destination), speaks an announcement as the ride passes each one, and logs
+/// every event so accuracy can be judged from a real ride.
+///
+/// The ride is no longer hardcoded: [JourneyPlanner] derives the chain, the
+/// interchanges and the overshoot pin from the real line network. Origin and
+/// destination are still fixed here because there is no picker yet; that is the
+/// next slice, and it only has to change these two constants.
 class GeofenceChainService {
   GeofenceChainService({required this.onLog});
 
   static const originStationId = 'kalyan';
 
   /// Alighting point: the ENTER here is announced as "arrived".
-  static const destinationStationId = 'digha';
-
-  /// Last fence registered, one station past the destination on the
-  /// Trans-Harbour line. Kept as an overshoot safety net so a missed Digha
-  /// alight still gets an announcement.
-  static const _chainEndStationId = 'airoli';
-
-  static const _lineId = 'harbour_ride_kalyan_digha';
-
-  /// Two-stage announcement stations: each id here gets a second, larger
-  /// outer "approach" fence (radius in meters) in addition to its normal
-  /// station fence, so the ride announces the station is coming BEFORE the
-  /// train reaches the platform. Used for the points the rider has to act on
-  /// (the Thane interchange and the Digha destination), giving a heads-up
-  /// while there is still time to get to the doors.
-  static const _approachRadiusM = <String, int>{
-    'thane': 1200,
-    'digha': 1000,
-  };
-
-  /// Spoken when the inner station fence is entered for a two-stage station
-  /// (the "you have reached / arrived" stage). Stations not listed here just
-  /// get the default "Now approaching ..." ping on their single fence.
-  static const _arrivalAnnouncements = <String, String>{
-    'thane':
-        'You have reached Thane. Change here from the Central line to the '
-        'Trans Harbour line. Get off the train, go to platform number 9, 10, '
-        'or 10 A, then board the Trans Harbour train to continue to your '
-        'destination.',
-    destinationStationId: 'You have arrived at your destination, Digha.',
-  };
+  static const destinationStationId = 'thane';
 
   /// Marks the outer approach fence for a two-stage station, keeping its
   /// region id distinct from the inner station fence.
@@ -66,8 +37,9 @@ class GeofenceChainService {
 
   final void Function(String message) onLog;
 
+  Journey? _journey;
+
   final FlutterTts _tts = FlutterTts();
-  List<Station> _chain = [];
   RideProgress? _rideProgress;
   File? _logFile;
   StreamSubscription<fl.Location>? _rawLocationSub;
@@ -91,12 +63,16 @@ class GeofenceChainService {
     );
 
     final repo = await StationRepository.load();
-    _chain = repo.segment(_lineId, originStationId, _chainEndStationId);
+    final journey = repo.planner.plan(
+      originId: originStationId,
+      destinationId: destinationStationId,
+    );
+    _journey = journey;
     _rideProgress = RideProgress(
-      chain: _chain,
-      destinationStationId: destinationStationId,
-      approachRadiusM: _approachRadiusM,
-      arrivalAnnouncements: _arrivalAnnouncements,
+      chain: journey.chain,
+      destinationStationId: journey.destinationStationId,
+      approachRadiusM: journey.approachRadiusM,
+      arrivalAnnouncements: journey.arrivalAnnouncements,
     );
 
     await _configureAudio();
@@ -119,8 +95,9 @@ class GeofenceChainService {
     Geofencing.instance.addGeofenceStatusChangedListener(_onStatusChanged);
     Geofencing.instance.addGeofenceErrorCallbackListener(_onGeofenceError);
 
+    final approachRadiusM = journey.approachRadiusM;
     final regions = <GeofenceRegion>{};
-    for (final station in _chain) {
+    for (final station in journey.chain) {
       regions.add(
         GeofenceRegion.circular(
           id: station.id,
@@ -129,7 +106,7 @@ class GeofenceChainService {
           radius: station.radiusM.toDouble(),
         ),
       );
-      final approachRadius = _approachRadiusM[station.id];
+      final approachRadius = approachRadiusM[station.id];
       if (approachRadius != null) {
         regions.add(
           GeofenceRegion.circular(
@@ -143,8 +120,15 @@ class GeofenceChainService {
     }
 
     _log(
-      'Starting geofence chain: ${_chain.map((s) => s.name).join(' -> ')}',
+      'Planned journey: ${journey.chain.map((s) => s.name).join(' -> ')}',
     );
+    for (final interchange in journey.interchanges) {
+      _log(
+        'Change trains at ${interchange.stationId} onto '
+        '${interchange.toLineShortName}'
+        '${interchange.platform == null ? '' : ' (platform ${interchange.platform})'}',
+      );
+    }
 
     try {
       // Independent of geofencing_api's own internal fl_location stream:
@@ -277,6 +261,7 @@ class GeofenceChainService {
     await _session?.setActive(false);
     _session = null;
     _rideProgress = null;
+    _journey = null;
     _log('Geofence chain stopped.');
     _logFile = null;
   }
@@ -312,7 +297,10 @@ class GeofenceChainService {
     final stationId = isApproach
         ? region.id.substring(0, region.id.length - _approachSuffix.length)
         : region.id;
-    final station = _chain.firstWhere((s) => s.id == stationId);
+    final station = _journey?.chain.firstWhere((s) => s.id == stationId);
+    if (station == null) {
+      return;
+    }
 
     // Logged for native-vs-backstop comparison only. RideProgress (fed by the
     // raw location stream in _onRawLocation) is the single source of spoken

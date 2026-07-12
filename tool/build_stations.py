@@ -338,14 +338,39 @@ LINES = [
         "Diva - Panvel",
         ["diva", "dativali", "nilaje", "taloja", "navade_road", "kalamboli", "panvel"],
     ),
-    # The 11 Jul 2026 field-ride chain. Kept verbatim so past rides stay reproducible.
-    (
-        "harbour_ride_kalyan_digha",
-        "Ride: Kalyan - Digha (Central to Thane, change to Trans-Harbour)",
-        ["kalyan", "thakurli", "dombivli", "kopar", "diva", "mumbra", "kalwa", "thane",
-         "digha", "airoli"],
-    ),
 ]
+# NOTE: there used to be a 12th "line" here, `harbour_ride_kalyan_digha`, which was
+# not a line at all but the hand-authored Kalyan -> Digha field-ride chain. It is gone:
+# JourneyPlanner now derives that chain (and any other) from the real lines above, and
+# a test asserts it reproduces the ridden chain exactly. Do not add ride chains here.
+
+# How a line is SPOKEN. The `name` above is a human label for logs and pickers;
+# it is unusable in a TTS announcement ("change to the Central Main: CSMT - Kalyan
+# line"). Every line id in LINES must appear here.
+SHORT_NAMES = {
+    "central_csmt_kalyan": "Central",
+    "central_kalyan_kasara": "Central",
+    "central_kalyan_karjat": "Central",
+    "western_churchgate_dahanu": "Western",
+    "harbour_csmt_panvel": "Harbour",
+    "harbour_csmt_goregaon": "Harbour",
+    "trans_harbour_thane_panvel": "Trans Harbour",
+    "trans_harbour_thane_vashi": "Trans Harbour",
+    "uran_nerul_uran": "Uran",
+    "vasai_diva": "Vasai Road to Diva",
+    "diva_panvel": "Diva to Panvel",
+}
+
+# Which platform to walk to when CHANGING ONTO a line at a given station, keyed
+# line id -> station id -> spoken platform text. Curated, not from OSM (OSM does
+# not model which platform a service departs from reliably). Sparse on purpose:
+# an interchange with no entry here still announces the line change, just without
+# the platform sentence. Only fill in what has been confirmed on the ground.
+INTERCHANGE_PLATFORMS = {
+    # Confirmed on the 11 and 12 Jul 2026 field rides.
+    "trans_harbour_thane_panvel": {"thane": "9, 10, or 10 A"},
+    "trans_harbour_thane_vashi": {"thane": "9, 10, or 10 A"},
+}
 
 MIN_RADIUS_M = 200
 CLEARANCE_M = 100  # required gap between two adjacent stations' fences
@@ -570,7 +595,11 @@ def main() -> int:
             "Kalyan-Digha ride chain has been crossed with a real GPS trace."
         ),
         "stations": stations,
-        "lines": [{"id": lid, "name": name, "stationIds": ids}
+        "lines": [{"id": lid,
+                   "name": name,
+                   "shortName": SHORT_NAMES[lid],
+                   "stationIds": ids,
+                   "platforms": INTERCHANGE_PLATFORMS.get(lid, {})}
                   for lid, name, ids in LINES],
     }
     OUT.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
