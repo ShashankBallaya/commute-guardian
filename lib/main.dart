@@ -434,14 +434,19 @@ class _JourneySummary extends StatelessWidget {
     final nameOf = {for (final s in ride.chain) s.id: s.name};
     final changes = ride.interchanges.isEmpty
         ? 'No change of train.'
-        : ride.interchanges
-            .map((i) => i.isSameNamedService
-                ? 'Change at ${nameOf[i.stationId] ?? i.stationId} for the '
-                    'train towards ${i.towardsStationName}.'
-                : 'Change at ${nameOf[i.stationId] ?? i.stationId} onto '
-                    '${i.toLineShortName}'
-                    '${i.platform == null ? '' : ' (platform ${i.platform})'}.')
-            .join(' ');
+        : ride.interchanges.map((i) {
+            final at = nameOf[i.stationId] ?? i.stationId;
+            if (i.walkToStationName != null) {
+              return 'At $at walk across to ${i.walkToStationName}, then '
+                  '${i.toLineShortName} towards ${i.towardsStationName}.';
+            }
+            if (i.isSameNamedService) {
+              return 'Change at $at for the train towards '
+                  '${i.towardsStationName}.';
+            }
+            return 'Change at $at onto ${i.toLineShortName}'
+                '${i.platform == null ? '' : ' (platform ${i.platform})'}.';
+          }).join(' ');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

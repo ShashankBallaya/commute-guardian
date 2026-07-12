@@ -5,6 +5,7 @@ class Line {
     required this.shortName,
     required this.stationIds,
     this.platforms = const {},
+    this.lowFrequency = false,
   });
 
   final String id;
@@ -24,11 +25,16 @@ class Line {
   /// announces the line change, just without the platform sentence.
   final Map<String, String> platforms;
 
+  /// Roughly one train an hour (the Diva MEMU shuttles). The planner routes over
+  /// these only when a station is unreachable without them.
+  final bool lowFrequency;
+
   factory Line.fromJson(Map<String, dynamic> json) => Line(
         id: json['id'] as String,
         name: json['name'] as String,
         shortName: json['shortName'] as String,
         stationIds: (json['stationIds'] as List).cast<String>(),
         platforms: (json['platforms'] as Map).cast<String, String>(),
+        lowFrequency: json['lowFrequency'] as bool? ?? false,
       );
 }

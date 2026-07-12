@@ -387,6 +387,22 @@ THROUGH_SERVICES = [
     ("central_csmt_kalyan", "central_kalyan_karjat"),
 ]
 
+# Station pairs joined by a foot overbridge that commuters genuinely use to
+# change lines. The planner treats walking across as one change, like any other
+# interchange. Owner-confirmed 13 Jul 2026: Dadar (THE Mumbai interchange move)
+# and Parel-Prabhadevi. Matunga-Matunga Road and Currey Road-Lower Parel are
+# walkable on the map but nobody plans a line change around them, so they are
+# deliberately absent.
+WALK_INTERCHANGES = [
+    ("dadar", "dadar_western"),
+    ("parel", "prabhadevi"),
+]
+
+# Lines with roughly one train an hour (MEMU shuttles). The planner uses them
+# only when a station is unreachable without them; a rider asked to wait an hour
+# at Kopar has not been given a route. Owner-confirmed 13 Jul 2026.
+LOW_FREQUENCY_LINES = {"vasai_diva", "diva_panvel"}
+
 MIN_RADIUS_M = 200
 CLEARANCE_M = 100  # required gap between two adjacent stations' fences
 
@@ -582,8 +598,19 @@ def main() -> int:
     if bad_pairs:
         print(f"ABORT: THROUGH_SERVICES references unknown lines: {bad_pairs}")
         return 1
+    bad_lf = LOW_FREQUENCY_LINES - line_ids
+    if bad_lf:
+        print(f"ABORT: LOW_FREQUENCY_LINES references unknown lines: {bad_lf}")
+        return 1
 
     resolved, problems = resolve()
+
+    station_ids = set(resolved)
+    bad_walks = [p for p in WALK_INTERCHANGES
+                 if p[0] not in station_ids or p[1] not in station_ids]
+    if bad_walks:
+        print(f"ABORT: WALK_INTERCHANGES references unknown stations: {bad_walks}")
+        return 1
 
     fatal = [p for p in problems
              if p.startswith(("UNRESOLVED", "DUPLICATE CODE"))]
@@ -621,9 +648,11 @@ def main() -> int:
                    "name": name,
                    "shortName": SHORT_NAMES[lid],
                    "stationIds": ids,
-                   "platforms": INTERCHANGE_PLATFORMS.get(lid, {})}
+                   "platforms": INTERCHANGE_PLATFORMS.get(lid, {}),
+                   "lowFrequency": lid in LOW_FREQUENCY_LINES}
                   for lid, name, ids in LINES],
         "throughServices": [list(pair) for pair in THROUGH_SERVICES],
+        "walkInterchanges": [list(pair) for pair in WALK_INTERCHANGES],
     }
     OUT.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
                    encoding="utf-8")

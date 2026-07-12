@@ -48,6 +48,10 @@ void main(List<String> args) {
       for (final pair in (doc['throughServices'] as List? ?? const []))
         (pair as List).cast<String>(),
     ],
+    walkInterchanges: [
+      for (final pair in (doc['walkInterchanges'] as List? ?? const []))
+        (pair as List).cast<String>(),
+    ],
   ).plan(originId: originId, destinationId: destinationId);
 
   stdout.writeln('Journey: ${journey.chain.map((s) => s.name).join(' -> ')}\n');

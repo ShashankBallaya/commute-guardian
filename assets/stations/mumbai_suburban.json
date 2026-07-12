@@ -1305,7 +1305,8 @@
         "thakurli",
         "kalyan"
       ],
-      "platforms": {}
+      "platforms": {},
+      "lowFrequency": false
     },
     {
       "id": "central_kalyan_kasara",
@@ -1325,7 +1326,8 @@
         "umbermali",
         "kasara"
       ],
-      "platforms": {}
+      "platforms": {},
+      "lowFrequency": false
     },
     {
       "id": "central_kalyan_karjat",
@@ -1343,7 +1345,8 @@
         "bhivpuri_road",
         "karjat"
       ],
-      "platforms": {}
+      "platforms": {},
+      "lowFrequency": false
     },
     {
       "id": "western_churchgate_dahanu",
@@ -1388,7 +1391,8 @@
         "vangaon",
         "dahanu_road"
       ],
-      "platforms": {}
+      "platforms": {},
+      "lowFrequency": false
     },
     {
       "id": "harbour_csmt_panvel",
@@ -1421,7 +1425,8 @@
         "khandeshwar",
         "panvel"
       ],
-      "platforms": {}
+      "platforms": {},
+      "lowFrequency": false
     },
     {
       "id": "harbour_csmt_goregaon",
@@ -1447,7 +1452,8 @@
         "ram_mandir",
         "goregaon"
       ],
-      "platforms": {}
+      "platforms": {},
+      "lowFrequency": false
     },
     {
       "id": "trans_harbour_thane_panvel",
@@ -1472,7 +1478,8 @@
       ],
       "platforms": {
         "thane": "9, 10, or 10 A"
-      }
+      },
+      "lowFrequency": false
     },
     {
       "id": "trans_harbour_thane_vashi",
@@ -1491,7 +1498,8 @@
       ],
       "platforms": {
         "thane": "9, 10, or 10 A"
-      }
+      },
+      "lowFrequency": false
     },
     {
       "id": "uran_nerul_uran",
@@ -1508,7 +1516,8 @@
         "dronagiri",
         "uran"
       ],
-      "platforms": {}
+      "platforms": {},
+      "lowFrequency": false
     },
     {
       "id": "vasai_diva",
@@ -1524,7 +1533,8 @@
         "kopar",
         "diva"
       ],
-      "platforms": {}
+      "platforms": {},
+      "lowFrequency": true
     },
     {
       "id": "diva_panvel",
@@ -1539,7 +1549,8 @@
         "kalamboli",
         "panvel"
       ],
-      "platforms": {}
+      "platforms": {},
+      "lowFrequency": true
     }
   ],
   "throughServices": [
@@ -1550,6 +1561,16 @@
     [
       "central_csmt_kalyan",
       "central_kalyan_karjat"
+    ]
+  ],
+  "walkInterchanges": [
+    [
+      "dadar",
+      "dadar_western"
+    ],
+    [
+      "parel",
+      "prabhadevi"
     ]
   ]
 }

@@ -211,6 +211,27 @@ void main() {
     }
   });
 
+  test('walk interchanges are known co-located pairs', () {
+    // A walk interchange the map cannot support (stations a train ride apart)
+    // would plan foot crossings nobody can make. Every declared pair must be
+    // one of the verified co-located complexes above.
+    const knownComplexes = {
+      'dadar|dadar_western',
+      'parel|prabhadevi',
+      'currey_road|lower_parel',
+      'matunga|matunga_road',
+    };
+    final walks = (doc['walkInterchanges'] as List)
+        .map((pair) => (pair as List).cast<String>());
+
+    expect(walks, isNotEmpty);
+    for (final pair in walks) {
+      final key = ([pair[0], pair[1]]..sort()).join('|');
+      expect(knownComplexes, contains(key),
+          reason: '$key is not a verified foot-overbridge pair');
+    }
+  });
+
   test('every line can be spoken and lists its interchange platforms', () {
     for (final line in lines) {
       expect(line['shortName'], isNotEmpty,

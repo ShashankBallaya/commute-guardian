@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:commute_guardian/models/line.dart';
 import 'package:commute_guardian/models/station.dart';
@@ -22,6 +23,10 @@ JourneyPlanner _planner() {
     linesById: {for (final l in lines) l.id: l},
     throughServices: [
       for (final pair in doc['throughServices'] as List)
+        (pair as List).cast<String>(),
+    ],
+    walkInterchanges: [
+      for (final pair in doc['walkInterchanges'] as List)
         (pair as List).cast<String>(),
     ],
   );
@@ -195,6 +200,78 @@ void main() {
       hasLength(journey.chain.length),
       reason: 'chain visits the same station twice',
     );
+  });
+
+  test('Central to Western goes over the Dadar foot overbridge, not the MEMU', () {
+    // The 13 Jul field report: Shahad -> Borivali planned via the hourly
+    // Diva-Vasai MEMU, because Dadar Central and Dadar Western were two
+    // unconnected stations and the human route did not exist in the graph.
+    final journey =
+        _planner().plan(originId: 'shahad', destinationId: 'borivali');
+
+    final ids = _ids(journey.chain);
+    expect(ids, isNot(contains('vasai_road')));
+    expect(ids.indexOf('dadar_western'), ids.indexOf('dadar') + 1,
+        reason: 'the walk crosses from Dadar Central straight to Dadar Western');
+
+    expect(journey.interchanges, hasLength(1));
+    final change = journey.interchanges.single;
+    expect(change.stationId, 'dadar');
+    expect(change.walkToStationName, 'Dadar Western');
+    expect(
+      journey.arrivalAnnouncements['dadar'],
+      'You have reached Dadar. Get off the train and walk across to '
+      'Dadar Western, then board the Western train towards Dahanu Road to '
+      'continue to your destination.',
+    );
+  });
+
+  test('low-frequency MEMU lines are a last resort, not a shortcut', () {
+    // Vasai Road is on the Western line, so it is reachable without the MEMU:
+    // the planner must go over Dadar even though the MEMU would save a change.
+    final viaWestern =
+        _planner().plan(originId: 'dombivli', destinationId: 'vasai_road');
+    expect(_ids(viaWestern.chain), isNot(contains('kharbao')));
+    expect(_ids(viaWestern.chain), contains('dadar_western'));
+
+    // Kharbao is ONLY on the MEMU line, so the fallback must still route there,
+    // and via the nearest boarding point (Kopar), not past it and back.
+    final forced =
+        _planner().plan(originId: 'dombivli', destinationId: 'kharbao');
+    final ids = _ids(forced.chain);
+    expect(ids, contains('kharbao'));
+    expect(forced.interchanges.single.stationId, 'kopar');
+    expect(ids.toSet(), hasLength(ids.length),
+        reason: 'a chain that doubles back visits a station twice');
+  });
+
+  test('any plannable pair yields a sane chain (sampled sweep)', () {
+    // The individual cases above are the ones we know about. This guards the
+    // ones we do not: every chain must start at the origin, contain the
+    // destination, visit no station twice, and keep each interchange on the
+    // chain. Seeded so a failure reproduces.
+    final planner = _planner();
+    final ids = planner.stationsById.keys.toList()..sort();
+    final rng = math.Random(42);
+
+    for (var n = 0; n < 150; n++) {
+      final originId = ids[rng.nextInt(ids.length)];
+      final destinationId = ids[rng.nextInt(ids.length)];
+      if (originId == destinationId) continue;
+
+      final journey =
+          planner.plan(originId: originId, destinationId: destinationId);
+      final chainIds = _ids(journey.chain);
+      final label = '$originId -> $destinationId';
+
+      expect(chainIds.first, originId, reason: label);
+      expect(chainIds, contains(destinationId), reason: label);
+      expect(chainIds.toSet(), hasLength(chainIds.length),
+          reason: '$label visits a station twice: $chainIds');
+      for (final interchange in journey.interchanges) {
+        expect(chainIds, contains(interchange.stationId), reason: label);
+      }
+    }
   });
 
   test('an unknown station is rejected', () {

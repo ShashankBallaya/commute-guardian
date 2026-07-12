@@ -16,6 +16,7 @@ class StationRepository {
     required this.stationsById,
     required this.linesById,
     required this.throughServices,
+    required this.walkInterchanges,
   });
 
   final Map<String, Station> stationsById;
@@ -25,11 +26,16 @@ class StationRepository {
   /// [JourneyPlanner.throughServices].
   final List<List<String>> throughServices;
 
+  /// Station pairs joined by a foot overbridge commuters change lines over
+  /// (Dadar Central to Dadar Western). See [JourneyPlanner.walkInterchanges].
+  final List<List<String>> walkInterchanges;
+
   /// Plans rides over this network. See [JourneyPlanner].
   late final JourneyPlanner planner = JourneyPlanner(
     stationsById: stationsById,
     linesById: linesById,
     throughServices: throughServices,
+    walkInterchanges: walkInterchanges,
   );
 
   static const assetPath = 'assets/stations/mumbai_suburban.json';
@@ -54,6 +60,10 @@ class StationRepository {
       linesById: {for (final l in lines) l.id: l},
       throughServices: [
         for (final pair in (json['throughServices'] as List? ?? const []))
+          (pair as List).cast<String>(),
+      ],
+      walkInterchanges: [
+        for (final pair in (json['walkInterchanges'] as List? ?? const []))
           (pair as List).cast<String>(),
       ],
     );
