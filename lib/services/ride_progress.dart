@@ -73,7 +73,7 @@ class RideProgress {
     // or past that station; otherwise it is still approaching it (so the
     // previous station is the furthest reached).
     final int passedIndex;
-    if (nearestDist <= nearest.radiusM || _isPastToward(lat, lng, n)) {
+    if (nearestDist <= nearest.radiusM || _isPast(lat, lng, n)) {
       passedIndex = n;
     } else {
       passedIndex = n - 1;
@@ -155,20 +155,44 @@ class RideProgress {
     return best;
   }
 
-  /// Whether the fix lies beyond station [index] in the direction of the next
-  /// station on the chain (i.e. the train has passed it). Uses an
-  /// equirectangular projection so longitude and latitude are comparable, then
-  /// a dot product between the station->next and station->fix vectors.
-  bool _isPastToward(double lat, double lng, int index) {
-    if (index >= chain.length - 1) return false;
+  /// Whether the fix lies beyond station [index], i.e. the train has carried on
+  /// past it rather than still being on its way in.
+  ///
+  /// Projects onto the INBOUND leg (previous station -> this one), because that
+  /// is the heading the train is travelling on when it reaches this station, so
+  /// "beyond it" means "further along that same heading". Projecting onto the
+  /// outbound leg (this -> next) instead breaks wherever the chain doubles back:
+  /// at the Thane interchange the train arrives from the east on the Central line
+  /// and leaves to the east again toward Digha, so a fix still short of Thane
+  /// lies on the same side as the next station and reads as past it. On the
+  /// 12 Jul ride that fired the full "you have reached Thane" interchange script
+  /// 1.19 km early on both phones, and left the real arrival silent.
+  ///
+  /// Uses an equirectangular projection so longitude and latitude are comparable,
+  /// then a dot product between the leg and the station->fix vectors.
+  bool _isPast(double lat, double lng, int index) {
     final here = chain[index];
-    final next = chain[index + 1];
+
+    // The chain origin has no inbound leg, so fall back to its outbound one.
+    // Safe: the rider boards at the origin, and the first fix only localizes.
+    final Station from;
+    final Station to;
+    if (index > 0) {
+      from = chain[index - 1];
+      to = here;
+    } else if (chain.length > 1) {
+      from = here;
+      to = chain[index + 1];
+    } else {
+      return false;
+    }
+
     final cosLat = math.cos(_toRad(here.lat));
-    final toNextX = (next.lng - here.lng) * cosLat;
-    final toNextY = next.lat - here.lat;
+    final legX = (to.lng - from.lng) * cosLat;
+    final legY = to.lat - from.lat;
     final toFixX = (lng - here.lng) * cosLat;
     final toFixY = lat - here.lat;
-    return (toNextX * toFixX + toNextY * toFixY) > 0;
+    return (legX * toFixX + legY * toFixY) > 0;
   }
 
   /// Great-circle distance in metres between two lat/lng points (haversine).

@@ -91,6 +91,36 @@ void main() {
     expect(arrival.single.kind, AnnouncementKind.arrival);
   });
 
+  test('approaching Thane from Kalwa does not count as having passed Thane', () {
+    final ride = _newRide();
+
+    // Established at Kalwa, the station before the interchange.
+    ride.onFix(lat: 19.1952243, lng: 72.9963331, accuracyM: 20);
+
+    // The real 12 Jul fix (both phones) at which the ride wrongly spoke the
+    // full "You have reached Thane, get off the train" script: still 1.19 km
+    // SHORT of Thane, on the Kalwa approach. The chain doubles back at Thane
+    // (in from the east on the Central line, out to the east again toward
+    // Digha), so a fix short of Thane sits on the same side as the next
+    // station and must not be mistaken for one past it.
+    final result = ride.onFix(lat: 19.18931, lng: 72.98669, accuracyM: 10);
+
+    expect(
+      result.where((a) => a.kind == AnnouncementKind.arrival),
+      isEmpty,
+      reason: 'the train is 1.19 km short of Thane; it has not arrived',
+    );
+    expect(result, hasLength(1));
+    expect(result.single.stationId, 'thane');
+    expect(result.single.kind, AnnouncementKind.approach);
+
+    // Pulling into the Thane platform is what announces the interchange.
+    final arrival = ride.onFix(lat: 19.1864830, lng: 72.9757664, accuracyM: 20);
+    expect(arrival, hasLength(1));
+    expect(arrival.single.stationId, 'thane');
+    expect(arrival.single.kind, AnnouncementKind.arrival);
+  });
+
   test('a fence jumped between fixes still announces, late (Kalwa backstop)', () {
     final ride = _newRide();
 
