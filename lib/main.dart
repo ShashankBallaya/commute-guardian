@@ -107,10 +107,11 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// A ride starts where the rider is standing, so default the origin to the
   /// nearest station rather than making them find it in a list of 127.
   ///
-  /// Only from a fix worth trusting. Indoors, or on a phone with no SIM, Android
-  /// will happily hand back a fix tens of kilometres out, and the nearest station
-  /// to a garbage fix is a garbage origin, which would silently plan a ride the
-  /// rider is not on. Better to leave the field empty and make them pick.
+  /// Only from a fix worth trusting. The nearest station to a vague fix is a
+  /// guess, and a wrong guess here silently plans a ride the rider is not on,
+  /// which is worse than not guessing: leave the field empty and let them pick.
+  /// Precautionary, not a fix for anything seen in the field, and the thresholds
+  /// below are judgement calls rather than measurements.
   Future<void> _defaultOriginToNearestStation() async {
     final repo = _repo;
     if (repo == null) return;
