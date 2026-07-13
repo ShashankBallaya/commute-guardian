@@ -22,7 +22,11 @@ import 'ride_progress.dart';
 /// interchange and the destination), speaks an announcement as the ride passes
 /// each one, and logs every event so accuracy can be judged from a real ride.
 class GeofenceChainService {
-  GeofenceChainService({required this.onLog, this.onDestinationReached});
+  GeofenceChainService({
+    required this.onLog,
+    this.onDestinationReached,
+    this.onRawFix,
+  });
 
   /// Marks the outer approach fence for a two-stage station, keeping its
   /// region id distinct from the inner station fence.
@@ -35,6 +39,12 @@ class GeofenceChainService {
   /// a ride that never got there: a bench Start/Stop at home planted Kalyan as
   /// the origin while the rider stood near Shahad (13 Jul).
   final void Function()? onDestinationReached;
+
+  /// Every raw fix, as received. The UI keeps the latest one so that at ride
+  /// end it can name the rider's position instantly instead of waking the GPS
+  /// cold, which indoors can hang past any patience (13 Jul bench: blank
+  /// origin under a stale chip).
+  final void Function(fl.Location location)? onRawFix;
 
   Journey? _journey;
 
@@ -358,6 +368,7 @@ class GeofenceChainService {
   }
 
   Future<void> _onRawLocation(fl.Location location) async {
+    onRawFix?.call(location);
     _log(
       'FIX lat ${location.latitude.toStringAsFixed(5)}, '
       'lng ${location.longitude.toStringAsFixed(5)}, '

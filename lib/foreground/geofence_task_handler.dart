@@ -40,6 +40,13 @@ class GeofenceTaskHandler extends TaskHandler {
       onDestinationReached: () {
         FlutterForegroundTask.saveData(key: destinationReachedKey, value: true);
       },
+      onRawFix: (location) {
+        FlutterForegroundTask.sendDataToMain({
+          'fixLat': location.latitude,
+          'fixLng': location.longitude,
+          'fixAccuracyM': location.accuracy,
+        });
+      },
     );
     await _chain!.start(originId: originId, destinationId: destinationId);
   }

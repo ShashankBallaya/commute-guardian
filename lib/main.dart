@@ -115,6 +115,11 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   _GpsState _gpsState = _GpsState.locating;
   String? _nearStationName;
 
+  /// The freshest fix streamed up from the running service. At ride end this
+  /// is seconds old and free, so it names the rider's position instantly; a
+  /// cold GPS acquisition indoors can hang instead (13 Jul bench).
+  ({double lat, double lng, double accuracyM, DateTime at})? _lastServiceFix;
+
   // Owned here rather than left to DropdownMenu's own internal controller, so
   // that filling the origin in from GPS can update the field's text without
   // rebuilding the menu. Rebuilding it would snap a menu the rider had already
@@ -167,56 +172,65 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
 
   /// A ride starts where the rider is standing, so default the origin to the
   /// nearest station rather than making them find it in a list of 127.
-  ///
-  /// Only from a fix worth trusting. The nearest station to a vague fix is a
-  /// guess, and a wrong guess here silently plans a ride the rider is not on,
-  /// which is worse than not guessing: leave the field empty and let them pick.
-  /// Precautionary, not a fix for anything seen in the field, and the thresholds
-  /// below are judgement calls rather than measurements.
   Future<void> _defaultOriginToNearestStation() async {
-    final repo = _repo;
-    if (repo == null) return;
+    if (_repo == null) return;
+    // Shown while acquiring, so the chip never keeps claiming an old position
+    // during a slow fix (it sat on the pre-ride station through the whole
+    // post-ride acquisition on the 13 Jul bench).
+    _setGps(_GpsState.locating);
 
     try {
       if (!await fl.FlLocation.isLocationServicesEnabled) {
         _setGps(_GpsState.unavailable);
         return;
       }
+      // Bounded: without a limit an indoor acquisition can wait forever.
       final location = await fl.FlLocation.getLocation(
         accuracy: fl.LocationAccuracy.balanced,
+        timeLimit: const Duration(seconds: 8),
       );
       if (!mounted) return;
-      if (location.accuracy > _maxOriginAccuracyM) {
-        _setGps(_GpsState.unavailable);
-        return;
-      }
+      _applyOriginFix(location.latitude, location.longitude, location.accuracy);
+    } catch (_) {
+      // No fix in time. The dropdown is the fallback, so this is not an error.
+      _setGps(_GpsState.unavailable);
+    }
+  }
 
-      final nearest = repo.nearestStation(location.latitude, location.longitude);
-      final distance = repo.distanceToM(
-        nearest,
-        location.latitude,
-        location.longitude,
-      );
-      if (distance > _maxOriginDistanceM) {
-        _setGps(_GpsState.unavailable);
-        return;
-      }
+  /// Names the nearest station from a fix: updates the chip, and fills the
+  /// origin when the rider has not picked one (a fix must never overwrite a
+  /// deliberate choice). The one gate for every fix source, live GPS or the
+  /// service stream. Returns whether the fix could name a station.
+  ///
+  /// Only from a fix worth trusting. The nearest station to a vague fix is a
+  /// guess, and a wrong guess here silently plans a ride the rider is not on,
+  /// which is worse than not guessing: leave the field empty and let them
+  /// pick. The thresholds are judgement calls rather than measurements.
+  bool _applyOriginFix(double lat, double lng, double accuracyM) {
+    final repo = _repo;
+    if (repo == null || !mounted) return false;
+    if (accuracyM > _maxOriginAccuracyM) {
+      _setGps(_GpsState.unavailable);
+      return false;
+    }
 
-      _setGps(_GpsState.located, nearStation: nearest.name);
+    final nearest = repo.nearestStation(lat, lng);
+    if (repo.distanceToM(nearest, lat, lng) > _maxOriginDistanceM) {
+      // Position known but nowhere near the network. The chip has no station
+      // to name, and admitting that beats keeping a stale one on screen.
+      _setGps(_GpsState.unavailable);
+      return false;
+    }
 
-      // The fix can land long after the screen is up. If the rider has already
-      // chosen an origin by then, theirs wins: a late GPS result must never
-      // overwrite a deliberate choice.
-      if (_originId != null) return;
+    _setGps(_GpsState.located, nearStation: nearest.name);
+    if (_originId == null) {
       setState(() {
         _originId = nearest.id;
         _originField.text = nearest.name;
       });
       _replan();
-    } catch (_) {
-      // No fix available. The dropdown is the fallback, so this is not an error.
-      _setGps(_GpsState.unavailable);
     }
+    return true;
   }
 
   void _setGps(_GpsState state, {String? nearStation}) {
@@ -291,6 +305,17 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
         setState(() {
           _logs.insert(0, message);
         });
+      }
+
+      final lat = (data['fixLat'] as num?)?.toDouble();
+      final lng = (data['fixLng'] as num?)?.toDouble();
+      final accuracyM = (data['fixAccuracyM'] as num?)?.toDouble();
+      if (lat != null && lng != null && accuracyM != null) {
+        _lastServiceFix =
+            (lat: lat, lng: lng, accuracyM: accuracyM, at: DateTime.now());
+        // Keeps the chip live during the ride too; the origin cannot change
+        // mid-ride because it is already set (see _applyOriginFix).
+        _applyOriginFix(lat, lng, accuracyM);
       }
     }
   }
@@ -382,8 +407,16 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     });
     _replan();
 
-    // Chip from a real fix in every case; fills the origin too when the ride
-    // ended somewhere unproven and the fix is good enough to name a station.
+    // Chip (and origin, when the ride ended somewhere unproven) from a real
+    // fix. The service's last streamed fix is seconds old and free, so prefer
+    // it; a cold acquisition indoors can time out, which left a blank origin
+    // under a stale chip on the 13 Jul bench. Live GPS stays as the fallback.
+    final fix = _lastServiceFix;
+    final fresh = fix != null &&
+        DateTime.now().difference(fix.at) < const Duration(minutes: 3);
+    if (fresh && _applyOriginFix(fix.lat, fix.lng, fix.accuracyM)) {
+      return;
+    }
     await _defaultOriginToNearestStation();
   }
 
