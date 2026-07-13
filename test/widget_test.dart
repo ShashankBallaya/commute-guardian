@@ -55,7 +55,7 @@ void main() {
     // Starting the service with no journey would run a ride nobody chose. The
     // button stays dead until JourneyPlanner has actually planned one.
     final start = tester.widget<ElevatedButton>(
-      find.widgetWithText(ElevatedButton, 'Start Travel Mode'),
+      find.widgetWithText(ElevatedButton, 'Start journey'),
     );
     expect(start.onPressed, isNull);
   });
@@ -70,11 +70,11 @@ void main() {
 
     // The planned ride is shown before Start, so a wrong pick is caught on the
     // platform rather than thirty minutes into the wrong train.
-    expect(find.textContaining('Kalyan -> Thakurli'), findsOneWidget);
+    expect(find.textContaining('Kalyan → Thakurli'), findsOneWidget);
     expect(find.textContaining('No change of train.'), findsOneWidget);
 
     final start = tester.widget<ElevatedButton>(
-      find.widgetWithText(ElevatedButton, 'Start Travel Mode'),
+      find.widgetWithText(ElevatedButton, 'Start journey'),
     );
     expect(start.onPressed, isNotNull);
   });

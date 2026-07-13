@@ -15,6 +15,21 @@ void main() {
   runApp(const CommuteGuardianDebugApp());
 }
 
+/// The locked design system (Figma reviews, 05-09 Jul 2026): dark navy ground,
+/// burgundy card surfaces, cream text. Crimson fill is reserved for the one
+/// action that starts or ends a journey; nothing else may use it. The green
+/// dot means live/tracking, amber means acquiring.
+abstract final class Palette {
+  static const navy = Color(0xFF1B2537);
+  static const burgundy = Color(0xFF3A2528);
+  static const cream = Color(0xFFF2E7D5);
+  static const crimson = Color(0xFFA8202B);
+  static const dotGreen = Color(0xFF3DBC77);
+  static const dotAmber = Color(0xFFD9A03D);
+
+  static Color creamDim(double opacity) => cream.withValues(alpha: opacity);
+}
+
 class CommuteGuardianDebugApp extends StatelessWidget {
   const CommuteGuardianDebugApp({super.key, this.loadRepository});
 
@@ -22,17 +37,54 @@ class CommuteGuardianDebugApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final base = ThemeData(brightness: Brightness.dark, useMaterial3: true);
     return MaterialApp(
       title: 'Commute Guardian (Phase 0 debug)',
-      theme: ThemeData.dark(useMaterial3: true),
+      theme: base.copyWith(
+        scaffoldBackgroundColor: Palette.navy,
+        colorScheme: base.colorScheme.copyWith(
+          surface: Palette.navy,
+          primary: Palette.cream,
+          onSurface: Palette.cream,
+        ),
+        textTheme: base.textTheme.apply(
+          bodyColor: Palette.cream,
+          displayColor: Palette.cream,
+        ),
+        // The pickers: dark wells inside the burgundy card, no hard borders.
+        dropdownMenuTheme: DropdownMenuThemeData(
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: Colors.black.withValues(alpha: 0.25),
+            labelStyle: TextStyle(color: Palette.creamDim(0.6)),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide.none,
+            ),
+          ),
+          menuStyle: const MenuStyle(
+            backgroundColor: WidgetStatePropertyAll(Palette.burgundy),
+          ),
+          textStyle: const TextStyle(color: Palette.cream),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          backgroundColor: Palette.burgundy,
+          contentTextStyle: const TextStyle(color: Palette.cream),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
       home: RideDebugScreen(loadRepository: loadRepository),
     );
   }
 }
 
-/// Debug screen: pick a ride, start it, and watch events stream in. Not product
-/// UI (that is Phase 2, per the Figma designs), but the route is real: any two
-/// stations on the network, planned by JourneyPlanner.
+/// Debug screen: pick a ride, start it, and watch events stream in. Wears the
+/// approved Phase 2 design system (quiet status chip, burgundy cards, crimson
+/// journey CTA, actions in the thumb zone), but it is still the debug tool:
+/// the raw event log stays, which no product screen will have.
 class RideDebugScreen extends StatefulWidget {
   const RideDebugScreen({super.key, this.loadRepository});
 
@@ -45,6 +97,9 @@ class RideDebugScreen extends StatefulWidget {
   State<RideDebugScreen> createState() => _RideDebugScreenState();
 }
 
+/// What the status chip currently knows about where the rider is.
+enum _GpsState { locating, located, unavailable }
+
 class _RideDebugScreenState extends State<RideDebugScreen> {
   final List<String> _logs = [];
   bool _isRunning = false;
@@ -53,6 +108,12 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   List<Station> _stations = const [];
   String? _originId;
   String? _destinationId;
+
+  /// Feeds the "You're near: X" chip. Distinct from the origin pick: the chip
+  /// always reports the latest fix, while the origin field is a one-shot
+  /// default the rider may override.
+  _GpsState _gpsState = _GpsState.locating;
+  String? _nearStationName;
 
   // Owned here rather than left to DropdownMenu's own internal controller, so
   // that filling the origin in from GPS can update the field's text without
@@ -117,15 +178,18 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     if (repo == null) return;
 
     try {
-      if (!await fl.FlLocation.isLocationServicesEnabled) return;
+      if (!await fl.FlLocation.isLocationServicesEnabled) {
+        _setGps(_GpsState.unavailable);
+        return;
+      }
       final location = await fl.FlLocation.getLocation(
         accuracy: fl.LocationAccuracy.balanced,
       );
-      // The fix can land long after the screen is up. If the rider has already
-      // chosen an origin by then, theirs wins: a late GPS result must never
-      // overwrite a deliberate choice.
-      if (!mounted || _originId != null) return;
-      if (location.accuracy > _maxOriginAccuracyM) return;
+      if (!mounted) return;
+      if (location.accuracy > _maxOriginAccuracyM) {
+        _setGps(_GpsState.unavailable);
+        return;
+      }
 
       final nearest = repo.nearestStation(location.latitude, location.longitude);
       final distance = repo.distanceToM(
@@ -133,8 +197,17 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
         location.latitude,
         location.longitude,
       );
-      if (distance > _maxOriginDistanceM) return;
+      if (distance > _maxOriginDistanceM) {
+        _setGps(_GpsState.unavailable);
+        return;
+      }
 
+      _setGps(_GpsState.located, nearStation: nearest.name);
+
+      // The fix can land long after the screen is up. If the rider has already
+      // chosen an origin by then, theirs wins: a late GPS result must never
+      // overwrite a deliberate choice.
+      if (_originId != null) return;
       setState(() {
         _originId = nearest.id;
         _originField.text = nearest.name;
@@ -142,7 +215,16 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
       _replan();
     } catch (_) {
       // No fix available. The dropdown is the fallback, so this is not an error.
+      _setGps(_GpsState.unavailable);
     }
+  }
+
+  void _setGps(_GpsState state, {String? nearStation}) {
+    if (!mounted) return;
+    setState(() {
+      _gpsState = state;
+      _nearStationName = nearStation;
+    });
   }
 
   void _replan() {
@@ -290,6 +372,8 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
 
     if (destination == null) {
       await _defaultOriginToNearestStation();
+    } else {
+      _setGps(_GpsState.located, nearStation: destination.name);
     }
   }
 
@@ -299,86 +383,160 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
 
   String _name(String stationId) => _repo?.stationsById[stationId]?.name ?? stationId;
 
+  void _holdToEndHint() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Hold to end the journey.')),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Commute Guardian (debug)')),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _StationPicker(
-                  label: 'Origin',
-                  stations: _stations,
-                  controller: _originField,
-                  // Changing the ride mid-ride would leave the running service on
-                  // the old one, which is a lie the log would not show.
-                  enabled: !_isRunning,
-                  onChanged: (id) {
-                    setState(() => _originId = id);
-                    _replan();
-                  },
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _StatusChip(state: _gpsState, stationName: _nearStationName),
+              const SizedBox(height: 20),
+              Container(
+                decoration: BoxDecoration(
+                  color: Palette.burgundy,
+                  borderRadius: BorderRadius.circular(24),
                 ),
-                const SizedBox(height: 12),
-                _StationPicker(
-                  label: 'Destination',
-                  stations: _stations,
-                  controller: _destinationField,
-                  enabled: !_isRunning,
-                  onChanged: (id) {
-                    setState(() => _destinationId = id);
-                    _replan();
-                  },
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _StationPicker(
+                      label: 'Origin',
+                      stations: _stations,
+                      controller: _originField,
+                      // Changing the ride mid-ride would leave the running service on
+                      // the old one, which is a lie the log would not show.
+                      enabled: !_isRunning,
+                      onChanged: (id) {
+                        setState(() => _originId = id);
+                        _replan();
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _StationPicker(
+                      label: 'Destination',
+                      stations: _stations,
+                      controller: _destinationField,
+                      enabled: !_isRunning,
+                      onChanged: (id) {
+                        setState(() => _destinationId = id);
+                        _replan();
+                      },
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                _JourneySummary(journey: _journey, error: _planError),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed:
-                        _isRunning || _journey == null ? null : _start,
-                    child: const Text('Start Travel Mode'),
+              ),
+              const SizedBox(height: 12),
+              _JourneySummary(journey: _journey, error: _planError),
+              const SizedBox(height: 12),
+              Expanded(child: _DebugLog(logs: _logs)),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: _isRunning ? _testTts : null,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Palette.creamDim(0.75),
+                  disabledForegroundColor: Palette.creamDim(0.25),
+                  side: BorderSide(
+                    color: _isRunning
+                        ? Palette.creamDim(0.3)
+                        : Palette.creamDim(0.12),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _isRunning ? _stop : null,
-                    child: const Text('Stop'),
-                  ),
-                ),
-              ],
-            ),
+                child: const Text('Test announcement'),
+              ),
+              const SizedBox(height: 12),
+              _JourneyCta(
+                isRunning: _isRunning,
+                canStart: _journey != null,
+                onStart: _start,
+                onEnd: _stop,
+                onEndTap: _holdToEndHint,
+              ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: OutlinedButton(
-              onPressed: _isRunning ? _testTts : null,
-              child: const Text('Test TTS announcement'),
-            ),
-          ),
-          const Divider(height: 1),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              itemCount: _logs.length,
-              itemBuilder: (context, index) => Text(
-                _logs[index],
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+        ),
+      ),
+    );
+  }
+}
+
+/// The quiet status chip: burgundy surface, never loud, the dot alone carries
+/// the GPS state (green = fixed, amber = acquiring, dim = unavailable).
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.state, required this.stationName});
+
+  final _GpsState state;
+  final String? stationName;
+
+  @override
+  Widget build(BuildContext context) {
+    final (dotColor, label, station) = switch (state) {
+      _GpsState.locating => (Palette.dotAmber, 'Locating...', null),
+      _GpsState.located => (Palette.dotGreen, "You're near: ", stationName),
+      _GpsState.unavailable => (
+          Palette.creamDim(0.25),
+          'Location unavailable',
+          null,
+        ),
+    };
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Palette.burgundy,
+          borderRadius: BorderRadius.circular(28),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                color: dotColor,
+                shape: BoxShape.circle,
+                boxShadow: state == _GpsState.located
+                    ? [
+                        BoxShadow(
+                          color: Palette.dotGreen.withValues(alpha: 0.4),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ]
+                    : null,
               ),
             ),
-          ),
-        ],
+            const SizedBox(width: 10),
+            Text.rich(
+              TextSpan(
+                text: label,
+                children: [
+                  if (station != null)
+                    TextSpan(
+                      text: station,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                ],
+              ),
+              style: TextStyle(fontSize: 15, color: Palette.creamDim(0.9)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -416,9 +574,10 @@ class _StationPicker extends StatelessWidget {
           DropdownMenuEntry(
             value: station.id,
             label: station.name,
+            style: MenuItemButton.styleFrom(foregroundColor: Palette.cream),
             trailingIcon: Text(
               station.code,
-              style: Theme.of(context).textTheme.labelSmall,
+              style: TextStyle(fontSize: 11, color: Palette.creamDim(0.5)),
             ),
           ),
       ],
@@ -431,7 +590,8 @@ class _StationPicker extends StatelessWidget {
 
 /// What the picked ride actually is: the stations it will pass, and any train
 /// change it needs. Shown before Start so a wrong pick is obvious on the
-/// platform, not thirty minutes into the wrong train.
+/// platform, not thirty minutes into the wrong train. Info rows are the
+/// quietest element on screen: caption text, bullet separators, no card.
 class _JourneySummary extends StatelessWidget {
   const _JourneySummary({required this.journey, required this.error});
 
@@ -440,19 +600,16 @@ class _JourneySummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     if (error != null) {
       return Text(
         error!,
-        style: theme.textTheme.bodySmall
-            ?.copyWith(color: theme.colorScheme.error),
+        style: const TextStyle(fontSize: 13, color: Palette.dotAmber),
       );
     }
     if (journey == null) {
       return Text(
         'Pick an origin and a destination.',
-        style: theme.textTheme.bodySmall,
+        style: TextStyle(fontSize: 13, color: Palette.creamDim(0.5)),
       );
     }
 
@@ -483,16 +640,148 @@ class _JourneySummary extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          stops.map((s) => s.name).join(' -> '),
-          style: theme.textTheme.bodySmall,
+          '${stops.length} stations • $changes',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Palette.creamDim(0.85),
+          ),
         ),
         const SizedBox(height: 4),
         Text(
-          '${stops.length} stations. $changes',
-          style: theme.textTheme.bodySmall
-              ?.copyWith(color: theme.colorScheme.primary),
+          stops.map((s) => s.name).join(' → '),
+          style: TextStyle(fontSize: 12, color: Palette.creamDim(0.5)),
         ),
       ],
+    );
+  }
+}
+
+/// The raw event stream. Debug-only affordance: kept readable but visually
+/// quiet, so the journey CTA stays the loudest element on screen.
+class _DebugLog extends StatelessWidget {
+  const _DebugLog({required this.logs});
+
+  final List<String> logs;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Palette.creamDim(0.1)),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Debug log',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.6,
+              color: Palette.creamDim(0.4),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Expanded(
+            child: logs.isEmpty
+                ? Center(
+                    child: Text(
+                      'Events will stream here once a journey starts.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Palette.creamDim(0.35),
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: EdgeInsets.zero,
+                    itemCount: logs.length,
+                    itemBuilder: (context, index) => Text(
+                      logs[index],
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        color: Palette.creamDim(0.55),
+                      ),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The one crimson element on screen (locked rule: crimson fill only ever
+/// starts or ends a journey). Idle it reads Start journey; while a ride runs
+/// it becomes End journey with hold-to-confirm, so a pocketed thumb cannot
+/// kill Travel Mode mid-ride.
+class _JourneyCta extends StatelessWidget {
+  const _JourneyCta({
+    required this.isRunning,
+    required this.canStart,
+    required this.onStart,
+    required this.onEnd,
+    required this.onEndTap,
+  });
+
+  final bool isRunning;
+  final bool canStart;
+  final VoidCallback onStart;
+  final VoidCallback onEnd;
+  final VoidCallback onEndTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(20),
+    );
+
+    if (!isRunning) {
+      return ElevatedButton(
+        onPressed: canStart ? onStart : null,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Palette.crimson,
+          foregroundColor: Palette.cream,
+          disabledBackgroundColor: Palette.burgundy,
+          disabledForegroundColor: Palette.creamDim(0.35),
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          shape: shape,
+          elevation: 0,
+        ),
+        child: const Text(
+          'Start journey',
+          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
+      );
+    }
+
+    return ElevatedButton(
+      onPressed: onEndTap,
+      onLongPress: onEnd,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Palette.crimson,
+        foregroundColor: Palette.cream,
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        shape: shape,
+        elevation: 0,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'End journey',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+          ),
+          Text(
+            'hold to confirm',
+            style: TextStyle(fontSize: 12, color: Palette.creamDim(0.7)),
+          ),
+        ],
+      ),
     );
   }
 }
