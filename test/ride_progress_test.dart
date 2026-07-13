@@ -136,8 +136,30 @@ void main() {
       contains('kalwa'),
       reason: 'Kalwa was jumped by the native engine; the backstop must catch it',
     );
+    // Spoken as history, not as a live claim: the train is provably beyond
+    // Kalwa, and "Now approaching Kalwa" here misled on the 13 Jul ride.
     final kalwa = result.firstWhere((a) => a.stationId == 'kalwa');
-    expect(kalwa.kind, AnnouncementKind.arrival);
+    expect(kalwa.kind, AnnouncementKind.passed);
+    expect(kalwa.text, 'You have passed Kalwa.');
+  });
+
+  test('catching up several stations speaks the jumped ones as passed and the '
+      'one the train is at normally (13 Jul blackout)', () {
+    final ride = _newRide();
+
+    // Established at Kalyan, then a GPS blackout: the next usable fix lands
+    // inside the Dombivli fence, two stations later (the real 3T pattern from
+    // the 13 Jul return leg, where Kalwa and Mumbra played back-to-back).
+    ride.onFix(lat: 19.2358216, lng: 73.1308101, accuracyM: 20);
+    final result = ride.onFix(lat: 19.21815, lng: 73.08673, accuracyM: 30);
+
+    expect(result, hasLength(2));
+    expect(result[0].stationId, 'thakurli');
+    expect(result[0].kind, AnnouncementKind.passed);
+    expect(result[0].text, 'You have passed Thakurli.');
+    expect(result[1].stationId, 'dombivli');
+    expect(result[1].kind, AnnouncementKind.arrival,
+        reason: 'the train really is at Dombivli, so the live text is honest');
   });
 
   test('a low-accuracy fix is ignored and does not advance progress', () {
@@ -177,5 +199,9 @@ void main() {
     expect(result.map((a) => a.stationId), contains('airoli'));
     final airoli = result.firstWhere((a) => a.stationId == 'airoli');
     expect(airoli.kind, AnnouncementKind.overshoot);
+    // The warning fires as the train reaches the station, so it must tell the
+    // rider to get off HERE, by name. "Alight at the next station" reads as an
+    // instruction to stay on for one more stop.
+    expect(airoli.text, 'You have passed your stop. Please alight here, at Airoli.');
   });
 }

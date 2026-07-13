@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import '../models/station.dart';
 
 /// The kind of announcement an [Announcement] represents.
-enum AnnouncementKind { approach, arrival, overshoot }
+enum AnnouncementKind { approach, arrival, passed, overshoot }
 
 /// A single announcement the ride wants spoken, decided by [RideProgress].
 class Announcement {
@@ -85,10 +85,16 @@ class RideProgress {
       _reachedIndex = passedIndex;
     } else {
       // Backstop: any un-announced station the train has moved past since the
-      // last fix (a fence the native engine jumped) is announced now, late.
+      // last fix (a fence the native engine jumped) is announced now, late,
+      // and in the past tense: by the time this fires the train is provably
+      // beyond the station, and on the 13 Jul ride "Now approaching Kalwa"
+      // spoken three kilometres past Kalwa read as a live claim and misled.
+      // The station the fix is actually inside is left to the fence arrival
+      // below, which speaks the normal text.
       for (var i = _reachedIndex + 1; i <= passedIndex; i++) {
+        if (i == n && nearestDist <= nearest.radiusM) continue;
         if (_announcedArrivals.add(chain[i].id)) {
-          result.add(_arrival(chain[i]));
+          result.add(_passed(chain[i]));
         }
       }
       if (passedIndex > _reachedIndex) {
@@ -124,20 +130,39 @@ class RideProgress {
   /// Arrival announcement for [station], or an overshoot warning when the
   /// station sits past the destination on the chain (the rider has gone too far).
   Announcement _arrival(Station station) {
+    return _overshootFor(station) ??
+        Announcement(
+          stationId: station.id,
+          kind: AnnouncementKind.arrival,
+          text: arrivalAnnouncements[station.id] ??
+              'Now approaching ${station.name}.',
+        );
+  }
+
+  /// Late catch-up for a station the train is provably beyond. Overshoot beats
+  /// the recap: past the destination the rider needs the warning, not history.
+  Announcement _passed(Station station) {
+    return _overshootFor(station) ??
+        Announcement(
+          stationId: station.id,
+          kind: AnnouncementKind.passed,
+          text: 'You have passed ${station.name}.',
+        );
+  }
+
+  /// The overshoot warning for [station], or null when it is not past the
+  /// destination. Names the station: this fires as the train reaches it, so
+  /// "alight at the next station" would send the rider one stop too far.
+  Announcement? _overshootFor(Station station) {
     final index = chain.indexOf(station);
     final destinationIndex =
         chain.indexWhere((s) => s.id == destinationStationId);
-    if (index > destinationIndex) {
-      return Announcement(
-        stationId: station.id,
-        kind: AnnouncementKind.overshoot,
-        text: 'You have passed your stop. Please alight at the next station.',
-      );
-    }
+    if (index <= destinationIndex) return null;
     return Announcement(
       stationId: station.id,
-      kind: AnnouncementKind.arrival,
-      text: arrivalAnnouncements[station.id] ?? 'Now approaching ${station.name}.',
+      kind: AnnouncementKind.overshoot,
+      text: 'You have passed your stop. Please alight here, at '
+          '${station.name}.',
     );
   }
 

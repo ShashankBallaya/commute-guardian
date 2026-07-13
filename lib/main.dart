@@ -260,6 +260,37 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   Future<void> _stop() async {
     await FlutterForegroundTask.stopService();
     setState(() => _isRunning = false);
+    await _defaultOriginToRideEnd();
+  }
+
+  /// The next ride usually starts where the last one ended (ride out, turn
+  /// around, ride back), so after a stop the origin defaults to the finished
+  /// ride's destination and the old destination is cleared for a fresh pick.
+  /// Before this, the origin kept the morning's value until the app was killed
+  /// (both phones, 13 Jul ride test, at the Thane turnaround).
+  ///
+  /// A rider who bailed out mid-ride is not at the destination, but the field
+  /// is editable and a plausible default beats a stale one. The ride is read
+  /// from the service's store, not [_journey], so it survives the app being
+  /// restarted while the service ran; if even the store has no ride, fall back
+  /// to the GPS fill.
+  Future<void> _defaultOriginToRideEnd() async {
+    final destinationId =
+        await FlutterForegroundTask.getData<String>(key: destinationIdKey);
+    if (!mounted) return;
+    final destination = _repo?.stationsById[destinationId];
+
+    setState(() {
+      _originId = destination?.id;
+      _originField.text = destination?.name ?? '';
+      _destinationId = null;
+      _destinationField.clear();
+    });
+    _replan();
+
+    if (destination == null) {
+      await _defaultOriginToNearestStation();
+    }
   }
 
   void _testTts() {
