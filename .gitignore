@@ -56,3 +56,6 @@ skills-lock.json
 
 # OSM query cache for tool/build_stations.py (regenerate with the script)
 tool/.osm_cache.json
+
+# Personal Dart/Flutter learning workspace (/teach), not part of the app
+teaching/
