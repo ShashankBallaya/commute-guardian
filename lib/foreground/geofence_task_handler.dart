@@ -16,6 +16,11 @@ void geofenceTaskStartCallback() {
 const originIdKey = 'origin_station_id';
 const destinationIdKey = 'destination_station_id';
 
+/// Whether the CURRENT ride announced arrival at its destination. Written false
+/// by the UI at Start, true by the service on arrival, read back by the UI at
+/// Stop to decide if the turnaround origin default can be trusted.
+const destinationReachedKey = 'destination_reached';
+
 /// Runs the ride inside the Android foreground service isolate so it survives
 /// screen lock and app backgrounding.
 class GeofenceTaskHandler extends TaskHandler {
@@ -30,7 +35,12 @@ class GeofenceTaskHandler extends TaskHandler {
       return;
     }
 
-    _chain = GeofenceChainService(onLog: _sendLog);
+    _chain = GeofenceChainService(
+      onLog: _sendLog,
+      onDestinationReached: () {
+        FlutterForegroundTask.saveData(key: destinationReachedKey, value: true);
+      },
+    );
     await _chain!.start(originId: originId, destinationId: destinationId);
   }
 

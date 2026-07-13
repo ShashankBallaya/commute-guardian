@@ -325,6 +325,12 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
       key: destinationIdKey,
       value: journey.destinationStationId,
     );
+    // Armed false here, set true by the service when the destination arrival
+    // actually speaks. Gates the turnaround default in _defaultOriginToRideEnd.
+    await FlutterForegroundTask.saveData(
+      key: destinationReachedKey,
+      value: false,
+    );
 
     final result = await FlutterForegroundTask.startService(
       serviceId: 1,
@@ -351,16 +357,22 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// Before this, the origin kept the morning's value until the app was killed
   /// (both phones, 13 Jul ride test, at the Thane turnaround).
   ///
-  /// A rider who bailed out mid-ride is not at the destination, but the field
-  /// is editable and a plausible default beats a stale one. The ride is read
-  /// from the service's store, not [_journey], so it survives the app being
-  /// restarted while the service ran; if even the store has no ride, fall back
-  /// to the GPS fill.
+  /// ONLY for a ride that provably got there: the service records the
+  /// destination arrival under [destinationReachedKey], and without it the
+  /// default is a guess pointing anywhere. A bench Start/Stop near Shahad
+  /// planted Kalyan as the origin this way (13 Jul). A ride stopped early
+  /// falls back to the GPS fill instead, and either way the status chip is
+  /// re-asked from a real fix, never assumed from the ride.
   Future<void> _defaultOriginToRideEnd() async {
+    final reached = await FlutterForegroundTask.getData<bool>(
+          key: destinationReachedKey,
+        ) ??
+        false;
     final destinationId =
         await FlutterForegroundTask.getData<String>(key: destinationIdKey);
     if (!mounted) return;
-    final destination = _repo?.stationsById[destinationId];
+    final destination =
+        reached ? _repo?.stationsById[destinationId] : null;
 
     setState(() {
       _originId = destination?.id;
@@ -370,11 +382,9 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     });
     _replan();
 
-    if (destination == null) {
-      await _defaultOriginToNearestStation();
-    } else {
-      _setGps(_GpsState.located, nearStation: destination.name);
-    }
+    // Chip from a real fix in every case; fills the origin too when the ride
+    // ended somewhere unproven and the fix is good enough to name a station.
+    await _defaultOriginToNearestStation();
   }
 
   void _testTts() {

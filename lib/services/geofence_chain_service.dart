@@ -22,13 +22,19 @@ import 'ride_progress.dart';
 /// interchange and the destination), speaks an announcement as the ride passes
 /// each one, and logs every event so accuracy can be judged from a real ride.
 class GeofenceChainService {
-  GeofenceChainService({required this.onLog});
+  GeofenceChainService({required this.onLog, this.onDestinationReached});
 
   /// Marks the outer approach fence for a two-stage station, keeping its
   /// region id distinct from the inner station fence.
   static const _approachSuffix = '#approach';
 
   final void Function(String message) onLog;
+
+  /// Fires once, when the ride announces arrival at its destination. The UI's
+  /// turnaround default (next origin = this ride's destination) must not trust
+  /// a ride that never got there: a bench Start/Stop at home planted Kalyan as
+  /// the origin while the rider stood near Shahad (13 Jul).
+  final void Function()? onDestinationReached;
 
   Journey? _journey;
 
@@ -376,6 +382,11 @@ class GeofenceChainService {
         '${announcement.text}',
       );
       unawaited(_speak(announcement.text));
+
+      if (announcement.kind == AnnouncementKind.arrival &&
+          announcement.stationId == _journey?.destinationStationId) {
+        onDestinationReached?.call();
+      }
     }
   }
 
