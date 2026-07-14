@@ -40,6 +40,12 @@ kotlin {
     }
 }
 
+dependencies {
+    // MediaSessionCompat, for the wake escalation's earphone-tap
+    // acknowledgment (see MainActivity).
+    implementation("androidx.media:media:1.7.0")
+}
+
 flutter {
     source = "../.."
 }

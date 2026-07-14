@@ -40,6 +40,9 @@ class GeofenceTaskHandler extends TaskHandler {
       onDestinationReached: () {
         FlutterForegroundTask.saveData(key: destinationReachedKey, value: true);
       },
+      onWakeLadderLive: (live) {
+        FlutterForegroundTask.sendDataToMain({'wakeLadderLive': live});
+      },
       onRawFix: (location) {
         FlutterForegroundTask.sendDataToMain({
           'fixLat': location.latitude,
@@ -65,8 +68,13 @@ class GeofenceTaskHandler extends TaskHandler {
 
   @override
   void onReceiveData(Object data) {
-    if (data == 'test_tts') {
-      _chain?.testAnnounce();
+    switch (data) {
+      case 'test_tts':
+        _chain?.testAnnounce();
+      case 'test_wake_alert':
+        _chain?.testWakeAlert();
+      case 'wake_ack':
+        _chain?.wakeAck();
     }
   }
 

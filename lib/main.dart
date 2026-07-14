@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:fl_location/fl_location.dart' as fl;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -109,9 +110,24 @@ class RideDebugScreen extends StatefulWidget {
 /// What the status chip currently knows about where the rider is.
 enum _GpsState { locating, located, unavailable }
 
+/// Carries the wake ladder's earphone-tap acknowledgment. Native side: a
+/// MediaSessionCompat in MainActivity (Android) and MPRemoteCommandCenter in
+/// the AppDelegate (iOS), activated only while a ladder is live so this app
+/// owns media buttons exactly when a tap means "I'm awake" and never longer.
+/// Lives in the UI isolate because that is the engine the native side is
+/// attached to; the ack is forwarded to the service isolate over the same
+/// seam the test buttons use. Best-effort by design: if the OS has killed the
+/// backgrounded activity the tap is lost, and the escalation plus the manual
+/// dismiss remain the guaranteed fallback.
+const _mediaAckChannel = MethodChannel('commute_guardian/media_ack');
+
 class _RideDebugScreenState extends State<RideDebugScreen> {
   final List<String> _logs = [];
   bool _isRunning = false;
+
+  /// Whether the service's wake ladder is currently asking to be
+  /// acknowledged. Drives the "I'm awake" button and the media session.
+  bool _wakeLadderLive = false;
 
   StationRepository? _repo;
   List<Station> _stations = const [];
@@ -151,9 +167,36 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   void initState() {
     super.initState();
     FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
+    _mediaAckChannel.setMethodCallHandler(_onMediaAck);
     _initService();
     _syncRunningState();
     _loadNetwork();
+  }
+
+  /// A media button arrived from the native session while a ladder was live:
+  /// the earphone tap. Forward it to the service isolate, where the ladder
+  /// runs.
+  Future<dynamic> _onMediaAck(MethodCall call) async {
+    if (call.method == 'ack') {
+      FlutterForegroundTask.sendDataToTask('wake_ack');
+      setState(() {
+        _logs.insert(0, 'Media button received, ack forwarded to service.');
+      });
+    }
+    return null;
+  }
+
+  /// Claims (or releases) media-button routing natively. Held only while a
+  /// ladder is live: outside that window the rider's earphone taps must keep
+  /// controlling their music, not us.
+  Future<void> _setMediaSession(bool active) async {
+    try {
+      await _mediaAckChannel.invokeMethod(active ? 'startSession' : 'stopSession');
+    } catch (error) {
+      setState(() {
+        _logs.insert(0, 'Media session ${active ? 'start' : 'stop'} failed: $error');
+      });
+    }
   }
 
   /// The chip's tap: ask for a fresh fix. A single 8s attempt at launch is a
@@ -335,6 +378,12 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
         });
       }
 
+      final ladderLive = data['wakeLadderLive'] as bool?;
+      if (ladderLive != null) {
+        setState(() => _wakeLadderLive = ladderLive);
+        _setMediaSession(ladderLive);
+      }
+
       final lat = (data['fixLat'] as num?)?.toDouble();
       final lng = (data['fixLng'] as num?)?.toDouble();
       final accuracyM = (data['fixAccuracyM'] as num?)?.toDouble();
@@ -406,6 +455,12 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   Future<void> _stop() async {
     await FlutterForegroundTask.stopService();
     setState(() => _isRunning = false);
+    // The dying service isolate also announces this, but a teardown race must
+    // not leave a phantom "I'm awake" button or a claimed media session.
+    if (_wakeLadderLive) {
+      setState(() => _wakeLadderLive = false);
+      await _setMediaSession(false);
+    }
     await _defaultOriginToRideEnd();
   }
 
@@ -455,6 +510,14 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
 
   void _testTts() {
     FlutterForegroundTask.sendDataToTask('test_tts');
+  }
+
+  void _testWakeAlert() {
+    FlutterForegroundTask.sendDataToTask('test_wake_alert');
+  }
+
+  void _wakeAck() {
+    FlutterForegroundTask.sendDataToTask('wake_ack');
   }
 
   String _name(String stationId) =>
@@ -529,23 +592,46 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
               const SizedBox(height: 12),
               Expanded(child: _DebugLog(logs: _logs)),
               const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: _isRunning ? _testTts : null,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Palette.creamDim(0.75),
-                  disabledForegroundColor: Palette.creamDim(0.25),
-                  side: BorderSide(
-                    color: _isRunning
-                        ? Palette.creamDim(0.3)
-                        : Palette.creamDim(0.12),
+              if (_wakeLadderLive)
+                // The manual dismiss, and the guaranteed ack fallback when
+                // the earphone tap does not route to us. Cream fill: loud
+                // enough to find half-asleep, and crimson stays reserved for
+                // starting or ending a journey.
+                ElevatedButton(
+                  key: const Key('im_awake'),
+                  onPressed: _wakeAck,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Palette.cream,
+                    foregroundColor: Palette.navy,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
                   ),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                  child: const Text(
+                    "I'm awake",
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: _TestButton(
+                        label: 'Test announcement',
+                        onPressed: _isRunning ? _testTts : null,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _TestButton(
+                        label: 'Test wake alert',
+                        onPressed: _isRunning ? _testWakeAlert : null,
+                      ),
+                    ),
+                  ],
                 ),
-                child: const Text('Test announcement'),
-              ),
               const SizedBox(height: 12),
               _JourneyCta(
                 isRunning: _isRunning,
@@ -558,6 +644,33 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A quiet debug-only action. Outlined, dim, never competes with the journey
+/// CTA; disabled when no ride (and so no service isolate) is running.
+class _TestButton extends StatelessWidget {
+  const _TestButton({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Palette.creamDim(0.75),
+        disabledForegroundColor: Palette.creamDim(0.25),
+        side: BorderSide(
+          color: enabled ? Palette.creamDim(0.3) : Palette.creamDim(0.12),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      child: Text(label),
     );
   }
 }

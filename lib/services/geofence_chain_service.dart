@@ -13,6 +13,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../data/station_repository.dart';
 import '../models/journey.dart';
 import 'ride_progress.dart';
+import 'wake_alert_spike.dart';
 
 /// Runs one ride, between any two stations on the network.
 ///
@@ -26,6 +27,7 @@ class GeofenceChainService {
     required this.onLog,
     this.onDestinationReached,
     this.onRawFix,
+    this.onWakeLadderLive,
   });
 
   /// Marks the outer approach fence for a two-stage station, keeping its
@@ -46,10 +48,17 @@ class GeofenceChainService {
   /// origin under a stale chip).
   final void Function(fl.Location location)? onRawFix;
 
+  /// Fires when the wake ladder starts or stands down. The UI listens so it
+  /// can show its manual "I'm awake" button and hold the native media session
+  /// (the thing that routes an earphone tap to us) only while a ladder is
+  /// actually asking to be acknowledged.
+  final void Function(bool live)? onWakeLadderLive;
+
   Journey? _journey;
 
   final FlutterTts _tts = FlutterTts();
   RideProgress? _rideProgress;
+  WakeAlertSpike? _wakeSpike;
   File? _logFile;
   StreamSubscription<fl.Location>? _rawLocationSub;
   StreamSubscription<AudioInterruptionEvent>? _interruptionSub;
@@ -94,6 +103,11 @@ class GeofenceChainService {
       destinationStationId: journey.destinationStationId,
       approachRadiusM: journey.approachRadiusM,
       arrivalAnnouncements: journey.arrivalAnnouncements,
+    );
+    _wakeSpike = WakeAlertSpike(
+      speak: _speak,
+      log: _log,
+      onLiveChanged: (live) => onWakeLadderLive?.call(live),
     );
 
     await _configureAudio();
@@ -171,6 +185,20 @@ class GeofenceChainService {
     } catch (error) {
       _log('Geofencing chain failed to start: $error');
     }
+
+    // Spoken the moment the ride is live: confirms through the earphones
+    // that Travel Mode (and the audio path every announcement depends on)
+    // actually started, and teaches the one gesture that ends it.
+    final destinationName = journey.chain
+        .firstWhere((s) => s.id == journey.destinationStationId)
+        .name;
+    final welcome =
+        'Welcome to Commute Guardian. Travel Mode is on, from '
+        '${journey.chain.first.name} to $destinationName. I will announce '
+        'each station along the way. To end the journey at any time, press '
+        'and hold the End journey button.';
+    _log('SPEAK welcome: $welcome');
+    unawaited(_speak(welcome));
   }
 
   /// Configures a ducking spoken-audio session, but deliberately does NOT
@@ -293,7 +321,36 @@ class GeofenceChainService {
     );
   }
 
+  /// Debug-only: runs the W1 spike ladder end to end, exactly as a missed
+  /// check-in would, so the tone, the ramp and the earphone-tap ack can be
+  /// benched on a locked phone without riding a train.
+  Future<void> testWakeAlert() async {
+    _log('WAKE test requested.');
+    await _wakeSpike?.start();
+  }
+
+  /// An acknowledgment from outside the service isolate: the earphone tap
+  /// (native media session, forwarded by the UI isolate) or the on-screen
+  /// "I'm awake" button.
+  void wakeAck() {
+    _wakeSpike?.acknowledge();
+  }
+
   Future<void> stop() async {
+    await _wakeSpike?.dispose();
+    _wakeSpike = null;
+
+    // The goodbye must speak BEFORE teardown (after _tts.stop() nothing
+    // can), and it is awaited so onDestroy keeps the isolate alive until it
+    // finishes. Bounded: a hung TTS engine must never wedge the service in
+    // its dying moments, so on timeout the teardown just proceeds and cuts
+    // the speech off.
+    const farewell = 'Thank you for using Commute Guardian.';
+    _log('SPEAK farewell: $farewell');
+    await _speak(
+      farewell,
+    ).timeout(const Duration(seconds: 8), onTimeout: () {});
+
     Geofencing.instance.removeGeofenceStatusChangedListener(_onStatusChanged);
     Geofencing.instance.removeGeofenceErrorCallbackListener(_onGeofenceError);
     await Geofencing.instance.stop();
