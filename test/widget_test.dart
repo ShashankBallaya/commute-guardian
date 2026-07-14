@@ -17,6 +17,9 @@ Future<void> _pumpScreen(WidgetTester tester) async {
   await tester.pumpWidget(
     CommuteGuardianDebugApp(
       loadRepository: () async => StationRepository.parse(raw),
+      // Fails like an indoor timeout does. The real plugin cannot answer in
+      // the fake-async zone; without this the chip hangs on "Locating...".
+      acquireFix: () async => throw StateError('no GPS under test'),
     ),
   );
   await tester.pumpAndSettle();
@@ -90,6 +93,41 @@ void main() {
 
     expect(
       find.textContaining('Change at Thane onto Trans Harbour (platform 9, 10, or 10 A)'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a failed locate offers a retry on the chip, with a tip banner', (
+    tester,
+  ) async {
+    await _pumpScreen(tester);
+
+    // No location plugin exists under test, so the launch-time locate fails
+    // the same way an indoor timeout does. The miss must not read as final:
+    // the chip says so, and the banner teaches the tap at the exact moment
+    // it matters.
+    expect(
+      find.textContaining('Tap to retry', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Tap the chip above'), findsOneWidget);
+
+    // Tapping retries (and fails again here): the app must survive that and
+    // keep offering the retry rather than crash or lie.
+    await tester.tap(find.byKey(const Key('status_chip')));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Tap to retry', findRichText: true),
+      findsOneWidget,
+    );
+
+    // "Got it" waves the banner away for the session; the chip keeps the
+    // retry affordance.
+    await tester.tap(find.text('Got it'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Tap the chip above'), findsNothing);
+    expect(
+      find.textContaining('Tap to retry', findRichText: true),
       findsOneWidget,
     );
   });

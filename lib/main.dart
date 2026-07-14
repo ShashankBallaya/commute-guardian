@@ -31,9 +31,14 @@ abstract final class Palette {
 }
 
 class CommuteGuardianDebugApp extends StatelessWidget {
-  const CommuteGuardianDebugApp({super.key, this.loadRepository});
+  const CommuteGuardianDebugApp({
+    super.key,
+    this.loadRepository,
+    this.acquireFix,
+  });
 
   final Future<StationRepository> Function()? loadRepository;
+  final Future<fl.Location> Function()? acquireFix;
 
   @override
   Widget build(BuildContext context) {
@@ -72,7 +77,10 @@ class CommuteGuardianDebugApp extends StatelessWidget {
           ),
         ),
       ),
-      home: RideDebugScreen(loadRepository: loadRepository),
+      home: RideDebugScreen(
+        loadRepository: loadRepository,
+        acquireFix: acquireFix,
+      ),
     );
   }
 }
@@ -82,12 +90,17 @@ class CommuteGuardianDebugApp extends StatelessWidget {
 /// journey CTA, actions in the thumb zone), but it is still the debug tool:
 /// the raw event log stays, which no product screen will have.
 class RideDebugScreen extends StatefulWidget {
-  const RideDebugScreen({super.key, this.loadRepository});
+  const RideDebugScreen({super.key, this.loadRepository, this.acquireFix});
 
   /// How to get the station network. Overridable so a test can hand in a
   /// repository read straight off disk: `rootBundle` does real I/O, which cannot
   /// complete inside the fake-async zone widget tests pump in.
   final Future<StationRepository> Function()? loadRepository;
+
+  /// How to get a one-shot fix. Overridable because the real plugin's channel
+  /// never answers in a widget test (it neither resolves nor throws), which
+  /// would pin the chip on "Locating..." forever there.
+  final Future<fl.Location> Function()? acquireFix;
 
   @override
   State<RideDebugScreen> createState() => _RideDebugScreenState();
@@ -110,6 +123,12 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// default the rider may override.
   _GpsState _gpsState = _GpsState.locating;
   String? _nearStationName;
+
+  /// Whether the rider waved the "tap the chip to retry" tip away this
+  /// session. The tip is contextual: it appears with the unavailable state,
+  /// which is exactly when a new user needs to learn the chip is tappable,
+  /// and leaves on its own the moment a fix lands.
+  bool _chipTipDismissed = false;
 
   /// The freshest fix streamed up from the running service. At ride end this
   /// is seconds old and free, so it names the rider's position instantly; a
@@ -135,6 +154,14 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     _initService();
     _syncRunningState();
     _loadNetwork();
+  }
+
+  /// The chip's tap: ask for a fresh fix. A single 8s attempt at launch is a
+  /// coin flip indoors on an old phone (14 Jul bench, twice), so the miss must
+  /// not be a final verdict. No-op mid-ride: the service stream owns the chip.
+  void _retryLocate() {
+    if (_isRunning || _gpsState == _GpsState.locating) return;
+    _defaultOriginToNearestStation();
   }
 
   @override
@@ -176,21 +203,24 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     _setGps(_GpsState.locating);
 
     try {
-      if (!await fl.FlLocation.isLocationServicesEnabled) {
-        _setGps(_GpsState.unavailable);
-        return;
-      }
-      // Bounded: without a limit an indoor acquisition can wait forever.
-      final location = await fl.FlLocation.getLocation(
-        accuracy: fl.LocationAccuracy.balanced,
-        timeLimit: const Duration(seconds: 8),
-      );
+      final location = await (widget.acquireFix ?? _acquireFixLive)();
       if (!mounted) return;
       _applyOriginFix(location.latitude, location.longitude, location.accuracy);
     } catch (_) {
-      // No fix in time. The dropdown is the fallback, so this is not an error.
+      // No fix in time. The picker is the fallback, so this is not an error.
       _setGps(_GpsState.unavailable);
     }
+  }
+
+  Future<fl.Location> _acquireFixLive() async {
+    if (!await fl.FlLocation.isLocationServicesEnabled) {
+      throw StateError('Location services are off.');
+    }
+    // Bounded: without a limit an indoor acquisition can wait forever.
+    return fl.FlLocation.getLocation(
+      accuracy: fl.LocationAccuracy.balanced,
+      timeLimit: const Duration(seconds: 8),
+    );
   }
 
   /// Names the nearest station from a fix: updates the chip, and fills the
@@ -250,8 +280,10 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     }
 
     try {
-      final journey =
-          repo.planner.plan(originId: originId, destinationId: destinationId);
+      final journey = repo.planner.plan(
+        originId: originId,
+        destinationId: destinationId,
+      );
       setState(() {
         _journey = journey;
         _planError = null;
@@ -307,8 +339,12 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
       final lng = (data['fixLng'] as num?)?.toDouble();
       final accuracyM = (data['fixAccuracyM'] as num?)?.toDouble();
       if (lat != null && lng != null && accuracyM != null) {
-        _lastServiceFix =
-            (lat: lat, lng: lng, accuracyM: accuracyM, at: DateTime.now());
+        _lastServiceFix = (
+          lat: lat,
+          lng: lng,
+          accuracyM: accuracyM,
+          at: DateTime.now(),
+        );
         // Keeps the chip live during the ride too; the origin cannot change
         // mid-ride because it is already set (see _applyOriginFix).
         _applyOriginFix(lat, lng, accuracyM);
@@ -356,7 +392,8 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     final result = await FlutterForegroundTask.startService(
       serviceId: 1,
       notificationTitle: 'Travel Mode active',
-      notificationText: '${_name(journey.originStationId)} to '
+      notificationText:
+          '${_name(journey.originStationId)} to '
           '${_name(journey.destinationStationId)}',
       callback: geofenceTaskStartCallback,
     );
@@ -385,15 +422,14 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// falls back to the GPS fill instead, and either way the status chip is
   /// re-asked from a real fix, never assumed from the ride.
   Future<void> _defaultOriginToRideEnd() async {
-    final reached = await FlutterForegroundTask.getData<bool>(
-          key: destinationReachedKey,
-        ) ??
+    final reached =
+        await FlutterForegroundTask.getData<bool>(key: destinationReachedKey) ??
         false;
-    final destinationId =
-        await FlutterForegroundTask.getData<String>(key: destinationIdKey);
+    final destinationId = await FlutterForegroundTask.getData<String>(
+      key: destinationIdKey,
+    );
     if (!mounted) return;
-    final destination =
-        reached ? _repo?.stationsById[destinationId] : null;
+    final destination = reached ? _repo?.stationsById[destinationId] : null;
 
     setState(() {
       _originId = destination?.id;
@@ -408,7 +444,8 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     // it; a cold acquisition indoors can time out, which left a blank origin
     // under a stale chip on the 13 Jul bench. Live GPS stays as the fallback.
     final fix = _lastServiceFix;
-    final fresh = fix != null &&
+    final fresh =
+        fix != null &&
         DateTime.now().difference(fix.at) < const Duration(minutes: 3);
     if (fresh && _applyOriginFix(fix.lat, fix.lng, fix.accuracyM)) {
       return;
@@ -420,12 +457,13 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     FlutterForegroundTask.sendDataToTask('test_tts');
   }
 
-  String _name(String stationId) => _repo?.stationsById[stationId]?.name ?? stationId;
+  String _name(String stationId) =>
+      _repo?.stationsById[stationId]?.name ?? stationId;
 
   void _holdToEndHint() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Hold to end the journey.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Hold to end the journey.')));
   }
 
   @override
@@ -437,7 +475,19 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _StatusChip(state: _gpsState, stationName: _nearStationName),
+              _StatusChip(
+                state: _gpsState,
+                stationName: _nearStationName,
+                onTap: _retryLocate,
+              ),
+              if (_gpsState == _GpsState.unavailable &&
+                  !_isRunning &&
+                  !_chipTipDismissed) ...[
+                const SizedBox(height: 12),
+                _ChipTipBanner(
+                  onDismiss: () => setState(() => _chipTipDismissed = true),
+                ),
+              ],
               const SizedBox(height: 20),
               Container(
                 decoration: BoxDecoration(
@@ -515,10 +565,18 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
 /// The quiet status chip: burgundy surface, never loud, the dot alone carries
 /// the GPS state (green = fixed, amber = acquiring, dim = unavailable).
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.state, required this.stationName});
+  const _StatusChip({
+    required this.state,
+    required this.stationName,
+    required this.onTap,
+  });
 
   final _GpsState state;
   final String? stationName;
+
+  /// A tap asks for a fresh fix; the copy says so when a fix is what's
+  /// missing. The owner of the callback decides when a tap is meaningful.
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -526,12 +584,20 @@ class _StatusChip extends StatelessWidget {
       _GpsState.locating => (Palette.dotAmber, 'Locating...', null),
       _GpsState.located => (Palette.dotGreen, "You're near: ", stationName),
       _GpsState.unavailable => (
-          Palette.creamDim(0.25),
-          'Location unavailable',
-          null,
-        ),
+        Palette.creamDim(0.25),
+        'Location unavailable. Tap to retry',
+        null,
+      ),
     };
 
+    return GestureDetector(
+      key: const Key('status_chip'),
+      onTap: onTap,
+      child: _chipBody(dotColor, label, station),
+    );
+  }
+
+  Widget _chipBody(Color dotColor, String label, String? station) {
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
@@ -581,6 +647,42 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
+/// Contextual tip that appears WITH the unavailable state: it teaches the
+/// chip's tap exactly when a new user needs it, and leaves on its own the
+/// moment a fix lands. Quiet like everything that is not the journey CTA.
+class _ChipTipBanner extends StatelessWidget {
+  const _ChipTipBanner({required this.onDismiss});
+
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Palette.burgundy,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              "Couldn't find your location. Tap the chip above to try again, "
+              'or pick your origin by hand.',
+              style: TextStyle(fontSize: 13, color: Palette.creamDim(0.8)),
+            ),
+          ),
+          TextButton(
+            onPressed: onDismiss,
+            style: TextButton.styleFrom(foregroundColor: Palette.cream),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// One station picker. 127 stations is too many for an anchored dropdown on a
 /// slow phone (13 Jul bench, 3T: the tap raised the keyboard but the menu
 /// never showed, and the keyboard overflowed the screen by 84px), so the tap
@@ -609,7 +711,8 @@ class _StationPicker extends StatelessWidget {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => _StationSearchSheet(label: label, stations: stations),
+      builder: (context) =>
+          _StationSearchSheet(label: label, stations: stations),
     );
     if (picked != null) {
       controller.text = picked.name;
@@ -760,24 +863,27 @@ class _JourneySummary extends StatelessWidget {
     // The overshoot pin is a safety net, not part of the trip, so it would only
     // confuse the summary. Counting off the filtered list also keeps the count
     // honest at a terminus, where there is no overshoot pin to exclude.
-    final stops =
-        ride.chain.where((s) => s.id != ride.overshootStationId).toList();
+    final stops = ride.chain
+        .where((s) => s.id != ride.overshootStationId)
+        .toList();
     final nameOf = {for (final s in ride.chain) s.id: s.name};
     final changes = ride.interchanges.isEmpty
         ? 'No change of train.'
-        : ride.interchanges.map((i) {
-            final at = nameOf[i.stationId] ?? i.stationId;
-            if (i.walkToStationName != null) {
-              return 'At $at walk across to ${i.walkToStationName}, then '
-                  '${i.toLineShortName} towards ${i.towardsStationName}.';
-            }
-            if (i.isSameNamedService) {
-              return 'Change at $at for the train towards '
-                  '${i.towardsStationName}.';
-            }
-            return 'Change at $at onto ${i.toLineShortName}'
-                '${i.platform == null ? '' : ' (platform ${i.platform})'}.';
-          }).join(' ');
+        : ride.interchanges
+              .map((i) {
+                final at = nameOf[i.stationId] ?? i.stationId;
+                if (i.walkToStationName != null) {
+                  return 'At $at walk across to ${i.walkToStationName}, then '
+                      '${i.toLineShortName} towards ${i.towardsStationName}.';
+                }
+                if (i.isSameNamedService) {
+                  return 'Change at $at for the train towards '
+                      '${i.towardsStationName}.';
+                }
+                return 'Change at $at onto ${i.toLineShortName}'
+                    '${i.platform == null ? '' : ' (platform ${i.platform})'}.';
+              })
+              .join(' ');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -815,44 +921,51 @@ class _DebugLog extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Debug log',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.6,
-              color: Palette.creamDim(0.4),
+      // When the rest of the screen (banner up, tall route summary) squeezes
+      // this box below the title's own height, the title goes before the box
+      // overflows: the stream is the point, the label is not.
+      child: LayoutBuilder(
+        builder: (context, constraints) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (constraints.maxHeight >= 48) ...[
+              Text(
+                'Debug log',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.6,
+                  color: Palette.creamDim(0.4),
+                ),
+              ),
+              const SizedBox(height: 4),
+            ],
+            Expanded(
+              child: logs.isEmpty
+                  ? Center(
+                      child: Text(
+                        'Events will stream here once a journey starts.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Palette.creamDim(0.35),
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: EdgeInsets.zero,
+                      itemCount: logs.length,
+                      itemBuilder: (context, index) => Text(
+                        logs[index],
+                        style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          color: Palette.creamDim(0.55),
+                        ),
+                      ),
+                    ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Expanded(
-            child: logs.isEmpty
-                ? Center(
-                    child: Text(
-                      'Events will stream here once a journey starts.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Palette.creamDim(0.35),
-                      ),
-                    ),
-                  )
-                : ListView.builder(
-                    padding: EdgeInsets.zero,
-                    itemCount: logs.length,
-                    itemBuilder: (context, index) => Text(
-                      logs[index],
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 11,
-                        color: Palette.creamDim(0.55),
-                      ),
-                    ),
-                  ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
