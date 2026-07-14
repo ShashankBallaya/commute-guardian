@@ -51,21 +51,17 @@ class CommuteGuardianDebugApp extends StatelessWidget {
           bodyColor: Palette.cream,
           displayColor: Palette.cream,
         ),
-        // The pickers: dark wells inside the burgundy card, no hard borders.
-        dropdownMenuTheme: DropdownMenuThemeData(
-          inputDecorationTheme: InputDecorationTheme(
-            filled: true,
-            fillColor: Colors.black.withValues(alpha: 0.25),
-            labelStyle: TextStyle(color: Palette.creamDim(0.6)),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide.none,
-            ),
+        // The pickers and the search sheet's field: dark wells inside the
+        // burgundy surfaces, no hard borders.
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.black.withValues(alpha: 0.25),
+          labelStyle: TextStyle(color: Palette.creamDim(0.6)),
+          hintStyle: TextStyle(color: Palette.creamDim(0.4)),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
           ),
-          menuStyle: const MenuStyle(
-            backgroundColor: WidgetStatePropertyAll(Palette.burgundy),
-          ),
-          textStyle: const TextStyle(color: Palette.cream),
         ),
         snackBarTheme: SnackBarThemeData(
           backgroundColor: Palette.burgundy,
@@ -585,8 +581,11 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
-/// One station dropdown. 127 stations is too many to scroll, so it filters as
-/// you type.
+/// One station picker. 127 stations is too many for an anchored dropdown on a
+/// slow phone (13 Jul bench, 3T: the tap raised the keyboard but the menu
+/// never showed, and the keyboard overflowed the screen by 84px), so the tap
+/// opens a bottom sheet instead: a search field over a lazy list, and the
+/// keyboard never appears on this screen at all.
 class _StationPicker extends StatelessWidget {
   const _StationPicker({
     required this.label,
@@ -602,31 +601,132 @@ class _StationPicker extends StatelessWidget {
   final bool enabled;
   final ValueChanged<String> onChanged;
 
+  Future<void> _openSheet(BuildContext context) async {
+    final picked = await showModalBottomSheet<Station>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Palette.burgundy,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) => _StationSearchSheet(label: label, stations: stations),
+    );
+    if (picked != null) {
+      controller.text = picked.name;
+      onChanged(picked.id);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return DropdownMenu<String>(
-      label: Text(label),
-      enabled: enabled && stations.isNotEmpty,
+    return TextField(
       controller: controller,
-      expandedInsets: EdgeInsets.zero,
-      enableFilter: true,
-      requestFocusOnTap: true,
-      menuHeight: 320,
-      dropdownMenuEntries: [
-        for (final station in stations)
-          DropdownMenuEntry(
-            value: station.id,
-            label: station.name,
-            style: MenuItemButton.styleFrom(foregroundColor: Palette.cream),
-            trailingIcon: Text(
-              station.code,
-              style: TextStyle(fontSize: 11, color: Palette.creamDim(0.5)),
+      enabled: enabled && stations.isNotEmpty,
+      readOnly: true,
+      showCursor: false,
+      style: const TextStyle(color: Palette.cream),
+      decoration: InputDecoration(
+        labelText: label,
+        suffixIcon: Icon(Icons.arrow_drop_down, color: Palette.creamDim(0.6)),
+      ),
+      onTap: () => _openSheet(context),
+    );
+  }
+}
+
+/// The picker's bottom sheet: search field on top, matching stations below.
+/// The list is built lazily, so only the visible rows exist; this is what
+/// makes 127 stations instant where the dropdown was not.
+class _StationSearchSheet extends StatefulWidget {
+  const _StationSearchSheet({required this.label, required this.stations});
+
+  final String label;
+  final List<Station> stations;
+
+  @override
+  State<_StationSearchSheet> createState() => _StationSearchSheetState();
+}
+
+class _StationSearchSheetState extends State<_StationSearchSheet> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _query.trim().toLowerCase();
+    final matches = query.isEmpty
+        ? widget.stations
+        : [
+            for (final station in widget.stations)
+              if (station.name.toLowerCase().contains(query) ||
+                  station.code.toLowerCase().contains(query))
+                station,
+          ];
+
+    // Tall enough to feel like a place to search, short enough that the sheet
+    // still reads as a sheet. The keyboard inset keeps the field above it.
+    final height = MediaQuery.sizeOf(context).height * 0.6;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SizedBox(
+        height: height,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 10),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Palette.creamDim(0.25),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             ),
-          ),
-      ],
-      onSelected: (id) {
-        if (id != null) onChanged(id);
-      },
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: TextField(
+                autofocus: true,
+                style: const TextStyle(color: Palette.cream),
+                decoration: InputDecoration(
+                  hintText: 'Search stations',
+                  prefixIcon: Icon(Icons.search, color: Palette.creamDim(0.5)),
+                ),
+                onChanged: (text) => setState(() => _query = text),
+              ),
+            ),
+            Expanded(
+              child: matches.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No stations match.',
+                        style: TextStyle(color: Palette.creamDim(0.5)),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: matches.length,
+                      itemBuilder: (context, index) {
+                        final station = matches[index];
+                        return ListTile(
+                          title: Text(
+                            station.name,
+                            style: const TextStyle(color: Palette.cream),
+                          ),
+                          trailing: Text(
+                            station.code,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Palette.creamDim(0.5),
+                            ),
+                          ),
+                          onTap: () => Navigator.of(context).pop(station),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

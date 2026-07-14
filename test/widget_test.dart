@@ -21,26 +21,27 @@ Future<void> _pumpScreen(WidgetTester tester) async {
   );
   await tester.pumpAndSettle();
 
-  final menu = tester.widget<DropdownMenu<String>>(
-    find.byType(DropdownMenu<String>).first,
+  final origin = tester.widget<TextField>(
+    find.widgetWithText(TextField, 'Origin'),
   );
   expect(
-    menu.dropdownMenuEntries,
-    isNotEmpty,
+    origin.enabled,
+    isTrue,
     reason: 'station data never loaded, so the pickers are disabled',
   );
 }
 
-/// Picks [station] in the [label] dropdown. 127 stations is more than anyone
-/// should scroll, so the menu filters as you type. That is also the only way to
-/// reach an entry here: the rest are never built.
+/// Picks [station] in the [label] picker: the field opens a search sheet, and
+/// searching is the only way to reach a row here, the rest are never built.
 Future<void> _pick(WidgetTester tester, String label, String station) async {
-  final field = find.widgetWithText(TextField, label);
-  await tester.tap(field);
+  await tester.tap(find.widgetWithText(TextField, label));
   await tester.pumpAndSettle();
-  await tester.enterText(field, station);
+  await tester.enterText(
+    find.widgetWithText(TextField, 'Search stations'),
+    station,
+  );
   await tester.pumpAndSettle();
-  await tester.tap(find.widgetWithText(MenuItemButton, station));
+  await tester.tap(find.widgetWithText(ListTile, station));
   await tester.pumpAndSettle();
 }
 
