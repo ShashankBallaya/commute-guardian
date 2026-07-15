@@ -69,6 +69,10 @@ class GeofenceChainService {
   Future<void> _speaking = Future<void>.value();
   int _pendingSpeaks = 0;
 
+  /// Mirrors the spike's live state so [_speak] knows not to release the
+  /// shared audio session while the alarm tone is looping.
+  bool _wakeLadderLive = false;
+
   Future<void> start({
     required String originId,
     required String destinationId,
@@ -107,7 +111,15 @@ class GeofenceChainService {
     _wakeSpike = WakeAlertSpike(
       speak: _speak,
       log: _log,
-      onLiveChanged: (live) => onWakeLadderLive?.call(live),
+      onLiveChanged: (live) {
+        _wakeLadderLive = live;
+        if (!live && _pendingSpeaks == 0) {
+          // The ladder held the session open (see _speak); nothing is
+          // talking, so hand focus back and let ducked music come back up.
+          unawaited(_session?.setActive(false) ?? Future<void>.value());
+        }
+        onWakeLadderLive?.call(live);
+      },
     );
 
     await _configureAudio();
@@ -302,7 +314,12 @@ class GeofenceChainService {
         _log('Announcement failed: $error');
       } finally {
         _pendingSpeaks--;
-        if (_pendingSpeaks == 0) {
+        // While a wake ladder is live the session must STAY active: on iOS
+        // the audio context is the app-wide shared AVAudioSession, and
+        // deactivating it here is what silenced the looping alarm tone the
+        // moment rung 1's speech finished (15 Jul iPhone bench). The ladder
+        // releases the session itself when it stands down.
+        if (_pendingSpeaks == 0 && !_wakeLadderLive) {
           await _session?.setActive(false);
         }
       }
@@ -345,6 +362,14 @@ class GeofenceChainService {
     // finishes. Bounded: a hung TTS engine must never wedge the service in
     // its dying moments, so on timeout the teardown just proceeds and cuts
     // the speech off.
+    if (Platform.isAndroid) {
+      // The Android plugin honors awaitSpeakCompletion ONLY in QUEUE_FLUSH
+      // mode; under the ride's QUEUE_ADD it returns at once, so the await
+      // below was a no-op and _tts.stop() cut the farewell 100ms in on
+      // every 15 Jul bench run. The ride is over and nothing is worth
+      // queueing behind, so switch back to flush for this last utterance.
+      await _tts.setQueueMode(0);
+    }
     const farewell = 'Thank you for using Commute Guardian.';
     _log('SPEAK farewell: $farewell');
     await _speak(

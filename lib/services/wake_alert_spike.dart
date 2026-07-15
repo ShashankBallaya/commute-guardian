@@ -124,7 +124,7 @@ class WakeAlertSpike {
       unawaited(_startTone(volume));
       unawaited(speak('Wake up. Your stop is next.'));
     } else {
-      unawaited(_setToneVolume(volume));
+      unawaited(_ensureToneAt(volume));
       unawaited(_vibrate());
     }
     _rungTimer = Timer(rungInterval, _nextRung);
@@ -149,6 +149,20 @@ class WakeAlertSpike {
       // escalate, and the log shows exactly what the bench needs fixed.
       log('WAKE tone failed to start: $error');
     }
+  }
+
+  /// Later rungs normally just turn the loop up, but the loop can be killed
+  /// under us: on iOS anything that deactivates the app's shared audio
+  /// session (an interruption, a sibling releasing it) stops every player in
+  /// the app. Raising the volume of a stopped player is silence, so restart
+  /// the tone instead.
+  Future<void> _ensureToneAt(double volume) async {
+    if (_player.state == PlayerState.playing) {
+      await _setToneVolume(volume);
+      return;
+    }
+    log('WAKE tone was not playing at rung $_rung, restarting it.');
+    await _startTone(volume);
   }
 
   Future<void> _setToneVolume(double volume) async {
