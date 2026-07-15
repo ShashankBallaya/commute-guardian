@@ -55,9 +55,16 @@ class WakeAlertSpike {
       usageType: AndroidUsageType.alarm,
       audioFocus: AndroidAudioFocus.none,
     ),
+    // No mixWithOthers on iOS, twice deliberate (15 Jul iPhone bench): a
+    // mixing session never becomes the Now Playing owner, so earphone taps
+    // kept routing to the rider's music app instead of acking; and setting
+    // it here REPLACED the announcement session's duckOthers, which is what
+    // unducked the music mid-ladder. While a ladder is live the app owns
+    // audio exclusively (the rider's music pauses and resumes on stand-down,
+    // locked decision 4 anticipates exactly this).
     iOS: AudioContextIOS(
       category: AVAudioSessionCategory.playback,
-      options: const {AVAudioSessionOptions.mixWithOthers},
+      options: const {},
     ),
   );
 

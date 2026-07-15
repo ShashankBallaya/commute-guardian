@@ -113,10 +113,8 @@ class GeofenceChainService {
       log: _log,
       onLiveChanged: (live) {
         _wakeLadderLive = live;
-        if (!live && _pendingSpeaks == 0) {
-          // The ladder held the session open (see _speak); nothing is
-          // talking, so hand focus back and let ducked music come back up.
-          unawaited(_session?.setActive(false) ?? Future<void>.value());
+        if (!live) {
+          unawaited(_releaseLadderAudio());
         }
         onWakeLadderLive?.call(live);
       },
@@ -213,6 +211,51 @@ class GeofenceChainService {
     unawaited(_speak(welcome));
   }
 
+  /// The announcement session: duck the rider's music while speaking, get out
+  /// of the way after.
+  ///
+  /// `speech()` on its own is EXCLUSIVE on iOS (category playback, no
+  /// options): activating it over a podcast interrupts the podcast rather
+  /// than ducking it, and its spokenAudio mode means "PAUSE other audio on
+  /// activation" (it exists for podcast apps); that is what STOPPED the
+  /// rider's music outright in the 13 Jul bench test. Duck + mix under the
+  /// voicePrompt (navigation prompt) mode is the wanted shape: duck, talk,
+  /// get out of the way. notifyOthersOnDeactivation is what actually tells
+  /// the other app to come back to full volume when we deactivate. On
+  /// Android, `speech()` asks for AUDIOFOCUS_GAIN (permanent), which tells a
+  /// music app to stop and never hands focus back; transient may-duck is what
+  /// a navigation prompt takes, and we must not duck ourselves.
+  static final AudioSessionConfiguration _duckProfile =
+      const AudioSessionConfiguration.speech().copyWith(
+    avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.duckOthers |
+        AVAudioSessionCategoryOptions.mixWithOthers,
+    avAudioSessionMode: AVAudioSessionMode.voicePrompt,
+    avAudioSessionSetActiveOptions:
+        AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation,
+    androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransientMayDuck,
+    androidAudioAttributes: const AndroidAudioAttributes(
+      contentType: AndroidAudioContentType.speech,
+      usage: AndroidAudioUsage.assistanceNavigationGuidance,
+    ),
+    androidWillPauseWhenDucked: false,
+  );
+
+  /// The ladder seized the session exclusively (tone context has no
+  /// mixWithOthers on iOS, and the UI-side native seizure owns Now Playing).
+  /// On stand-down, put the duck profile back so the next ordinary
+  /// announcement ducks the rider's music instead of interrupting it, then
+  /// release the session so the music comes back at all.
+  Future<void> _releaseLadderAudio() async {
+    try {
+      await _session?.configure(_duckProfile);
+      if (_pendingSpeaks == 0) {
+        await _session?.setActive(false);
+      }
+    } catch (error) {
+      _log('Could not restore the announcement audio profile: $error');
+    }
+  }
+
   /// Configures a ducking spoken-audio session, but deliberately does NOT
   /// activate it: [_speak] activates only for as long as it is actually
   /// speaking. Holding the session active for the whole ride is what caused the
@@ -221,37 +264,7 @@ class GeofenceChainService {
   Future<void> _configureAudio() async {
     final session = await AudioSession.instance;
     _session = session;
-    await session.configure(
-      const AudioSessionConfiguration.speech().copyWith(
-        // `speech()` on its own is EXCLUSIVE on iOS (category playback with no
-        // options): activating it over a podcast interrupts the podcast rather
-        // than ducking it. Duck + mix makes announcements ride over other audio.
-        avAudioSessionCategoryOptions:
-            AVAudioSessionCategoryOptions.duckOthers |
-                AVAudioSessionCategoryOptions.mixWithOthers,
-        // `speech()` also carries mode spokenAudio, which iOS defines as "PAUSE
-        // other audio on activation" (it exists for podcast apps). That is what
-        // STOPPED the rider's music outright in the 13 Jul bench test instead
-        // of ducking it. voicePrompt is the navigation-prompt mode: duck, talk,
-        // get out of the way.
-        avAudioSessionMode: AVAudioSessionMode.voicePrompt,
-        // What actually tells the other app to come back to full volume when we
-        // deactivate at the end of an announcement.
-        avAudioSessionSetActiveOptions:
-            AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation,
-        // `speech()` asks Android for AUDIOFOCUS_GAIN (permanent), which tells a
-        // music app to stop outright and never hands focus back. Transient
-        // may-duck is what a navigation prompt takes.
-        androidAudioFocusGainType:
-            AndroidAudioFocusGainType.gainTransientMayDuck,
-        androidAudioAttributes: const AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.speech,
-          usage: AndroidAudioUsage.assistanceNavigationGuidance,
-        ),
-        // We are the one doing the ducking, so we must not duck ourselves.
-        androidWillPauseWhenDucked: false,
-      ),
-    );
+    await session.configure(_duckProfile);
 
     // Diagnostics only. Reclaiming the session after a call is no longer needed
     // now that every announcement activates it for itself.
