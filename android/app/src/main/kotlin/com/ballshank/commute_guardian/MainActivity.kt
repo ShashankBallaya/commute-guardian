@@ -1,6 +1,10 @@
 package com.ballshank.commute_guardian
 
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioTrack
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.view.KeyEvent
@@ -25,6 +29,19 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private var channel: MethodChannel? = null
     private var session: MediaSessionCompat? = null
+    private var nowPlayingClaim: AudioTrack? = null
+
+    private companion object {
+        val MEDIA_KEY_CODES = setOf(
+            KeyEvent.KEYCODE_HEADSETHOOK,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_STOP,
+            KeyEvent.KEYCODE_MEDIA_NEXT,
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS,
+        )
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -78,6 +95,7 @@ class MainActivity : FlutterActivity() {
         )
         s.isActive = true
         session = s
+        startNowPlayingClaim()
     }
 
     private fun stopSession() {
@@ -86,6 +104,63 @@ class MainActivity : FlutterActivity() {
             it.release()
         }
         session = null
+        nowPlayingClaim?.let {
+            it.stop()
+            it.release()
+        }
+        nowPlayingClaim = null
+    }
+
+    /**
+     * Android 9 routes media keys to the session of the uid it believes is
+     * actively playing audio, and it never believes us: the ladder tone plays
+     * through a player that does not register with AudioService (observed on
+     * the 3T, 15 Jul bench), and the check-in window is deliberately silent.
+     * A looping, muted, media-usage AudioTrack keeps the uid "playing" for the
+     * whole life of the session, which is what makes the session's
+     * STATE_PLAYING claim real to the button router. No audio focus is taken;
+     * the rider's music is untouched.
+     */
+    private fun startNowPlayingClaim() {
+        if (nowPlayingClaim != null) return
+        val sampleRate = 8000
+        val silence = ByteArray(sampleRate * 2) // one second, 16-bit mono
+        val track = AudioTrack(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build(),
+            AudioFormat.Builder()
+                .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                .setSampleRate(sampleRate)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                .build(),
+            silence.size,
+            AudioTrack.MODE_STATIC,
+            AudioManager.AUDIO_SESSION_ID_GENERATE,
+        )
+        track.write(silence, 0, silence.size)
+        track.setLoopPoints(0, sampleRate, -1)
+        track.setVolume(0f)
+        track.play()
+        nowPlayingClaim = track
+    }
+
+    /**
+     * While the activity itself is focused (bench runs, rider looking at the
+     * screen), a media key is delivered to this window before the media
+     * session service ever sees it, so catch it here too. Locked-screen and
+     * backgrounded delivery still comes through the session callback.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (session != null &&
+            event.action == KeyEvent.ACTION_DOWN &&
+            event.keyCode in MEDIA_KEY_CODES
+        ) {
+            channel?.invokeMethod("ack", event.keyCode)
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onDestroy() {
