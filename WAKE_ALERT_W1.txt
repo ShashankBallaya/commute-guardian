@@ -1,5 +1,9 @@
 COMMUTE GUARDIAN, WAKE ALERT (W1 SPIKE)
-Written 15 Jul 2026. Covers the code currently on the branch, uncommitted.
+Written 15 Jul 2026, updated 16 Jul 2026. W1 is CLOSED on both
+platforms: bench-proven on the OnePlus 3T (Android 9), Samsung M31
+(Android 12), Moto Edge 50 Neo (Android 16), and iPhone (IPA #17).
+Earphone taps acknowledge on all of them, wired and TWS, screen
+locked included. Next slice is W2, the real station-aware engine.
 
 =====================================================================
 1. WHAT THE FEATURE IS
@@ -43,9 +47,14 @@ The pieces in the code:
     tool/build_alarm_tone.py, never hand-edit it, rerun the script.
   - lib/services/wake_alert_spike.dart: the throwaway test ladder.
   - MainActivity.kt: the Android media session that catches your
-    earphone tap while the ladder is live.
-  - ios/Runner/AppDelegate.swift: the iOS equivalent. NOT yet
-    compiled or tested (needs the next IPA cycle).
+    earphone tap while the ladder is live. Android only elects our
+    session to receive the buttons if it can see us playing audio,
+    so a muted one-second audio loop runs alongside to keep us
+    elected. Proven on Android 9, 12, and 16.
+  - ios/Runner/AppDelegate.swift: the iOS equivalent. While a
+    ladder is live the app takes over as the Now Playing owner (a
+    card appears on the lock screen) so your tap routes to us
+    instead of your music app. Proven on the iPhone with TWS.
 
 =====================================================================
 2. HOW THE TEST LADDER RUNS (TIMINGS)
@@ -77,8 +86,8 @@ Ways to acknowledge:
 3. HOW TO TEST IT ON THE 3T
 =====================================================================
 
-Note: the 3T currently has the RELEASE build installed. This work is
-newer than that build, so first install a fresh debug build:
+Note: the 3T has the debug build with all W1 fixes installed as of
+15 Jul night. If you ever need to reinstall:
 
   flutter install
       (phone plugged in, or: flutter build apk --debug, then
@@ -114,9 +123,13 @@ What to check while it runs, in rough order of importance:
   - Everything appears in the debug log as WAKE lines, and in the
     pulled log file for the session.
 
-iPhone: do NOT expect this to work yet. The Swift side has never
-been compiled (no Mac in the loop). It rides the next IPA per the
-rationing policy; test the silent switch and AirPods tap then.
+iPhone (IPA #17, proven 15 Jul): TWS tap acks, rungs all audible,
+music stays ducked through the ladder and recovers after, lock
+screen shows the wake card only while a ladder is live. Platform
+differences to know: no vibration (iOS forbids background haptics),
+and the tone plays through EARPHONES ONLY on iOS, it does not also
+sound from the speaker the way Android's alarm stream does. Still
+pending, low risk: re-test the silent switch on IPA #17.
 
 =====================================================================
 4. ENABLE / DISABLE
@@ -152,4 +165,16 @@ constants in tool/build_alarm_tone.py and rerun:
     escalation itself is the safety net either way.
   - The 3-rung ladder is hardcoded test logic. Real timings and the
     station-aware trigger arrive with the W2 engine.
-  - iOS is written but unverified until the next IPA.
+  - Volume buttons do NOT acknowledge, by design (they would lower
+    the alert's own volume, and background volume capture is
+    fragile on iOS). Media buttons only.
+  - Android with wired earphones: the alarm tone also sounds from
+    the phone speaker. That is Android routing the alarm stream to
+    both, the same as a morning alarm; the spoken lines stay
+    earphone-only (confirmed on the M31).
+  - iOS: the tone sometimes cuts out for about 13 seconds between
+    rungs 1 and 2, then recovers on its own. Known, logged, and a
+    watchdog in slice W3 is the planned fix.
+  - An iPhone sleeper whose earbuds fell out hears nothing (no
+    speaker fallback on iOS). A real mitigation is a design
+    question for later slices, not a spike fix.
