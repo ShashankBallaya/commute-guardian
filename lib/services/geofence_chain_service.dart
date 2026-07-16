@@ -12,8 +12,10 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../data/station_repository.dart';
 import '../models/journey.dart';
+import '../models/station.dart';
 import 'ride_progress.dart';
-import 'wake_alert_spike.dart';
+import 'wake_alert_output.dart';
+import 'wake_escalation.dart';
 import 'wind_down.dart';
 
 /// Runs one ride, between any two stations on the network.
@@ -71,9 +73,23 @@ class GeofenceChainService {
 
   final FlutterTts _tts = FlutterTts();
   RideProgress? _rideProgress;
-  WakeAlertSpike? _wakeSpike;
+  WakeEscalation? _wakeEscalation;
+  WakeAlertOutput? _wakeOutput;
   WindDown? _windDown;
   bool _windDownLive = false;
+
+  /// The volume of the last engine Tone action, while a ladder is live.
+  /// The tick watchdog re-asserts the tone at this volume every 5 seconds,
+  /// which caps the 15 Jul iOS tone gap (TTS killing the loop between
+  /// rungs) at one tick instead of a whole rung interval.
+  double? _wakeToneVolume;
+
+  /// Bench safety for the debug wake test only: with no train, the ceiling
+  /// station never arrives, so after this deadline the test synthesizes it
+  /// through the REAL engine path. Real ladders have the real ceiling.
+  DateTime? _wakeTestCeilingAt;
+  Station? _wakeTestCeiling;
+  static const _wakeTestTimeout = Duration(minutes: 2, seconds: 30);
   File? _logFile;
   StreamSubscription<fl.Location>? _rawLocationSub;
   StreamSubscription<AudioInterruptionEvent>? _interruptionSub;
@@ -127,17 +143,17 @@ class GeofenceChainService {
       destination: journey.chain
           .firstWhere((s) => s.id == journey.destinationStationId),
     );
-    _wakeSpike = WakeAlertSpike(
-      speak: _speak,
-      log: _log,
-      onLiveChanged: (live) {
-        _wakeLadderLive = live;
-        if (!live) {
-          unawaited(_releaseLadderAudio());
-        }
-        onWakeLadderLive?.call(live);
-      },
+    // The wake engine watches the same critical stations the journey
+    // defines: the interchanges THIS route requires, then the destination
+    // (locked decision 6), all in chain order as the planner emits them.
+    _wakeEscalation = WakeEscalation(
+      chain: journey.chain,
+      interchangeStationIds: [
+        for (final interchange in journey.interchanges) interchange.stationId,
+      ],
+      destinationStationId: journey.destinationStationId,
     );
+    _wakeOutput = WakeAlertOutput(log: _log);
 
     await _configureAudio();
 
@@ -285,13 +301,22 @@ class GeofenceChainService {
     _session = session;
     await session.configure(_duckProfile);
 
-    // Diagnostics only. Reclaiming the session after a call is no longer needed
-    // now that every announcement activates it for itself.
+    // The wake engine's call signal (locked decision 8: on a call means
+    // awake). An interruption suspends a live ladder; its end delivers the
+    // catch-up. The log lines are load-bearing: replay_ride.dart parses
+    // them to reproduce call handling from a real ride's log.
     _interruptionSub = session.interruptionEventStream.listen((event) {
       _log(
         event.begin
             ? 'Audio session interrupted (call or other audio).'
             : 'Audio session interruption ended.',
+      );
+      _handleWakeActions(
+        _wakeEscalation?.onCallStateChanged(
+              inCall: event.begin,
+              now: DateTime.now(),
+            ) ??
+            const [],
       );
     });
 
@@ -370,19 +395,95 @@ class GeofenceChainService {
     );
   }
 
-  /// Debug-only: runs the W1 spike ladder end to end, exactly as a missed
-  /// check-in would, so the tone, the ramp and the earphone-tap ack can be
-  /// benched on a locked phone without riding a train.
+  /// Debug-only: benches the REAL wake engine with no train, by feeding it
+  /// the arrival at the first critical station's trigger (one stop before
+  /// it), exactly what RideProgress would emit there. Everything downstream
+  /// is live: check-in, rungs, tone, vibration, media-session ack. Because
+  /// no ceiling station will ever arrive at the bench, a synthesized
+  /// ceiling arrival ends an unacknowledged test through the same real
+  /// path after [_wakeTestTimeout].
   Future<void> testWakeAlert() async {
-    _log('WAKE test requested.');
-    await _wakeSpike?.start();
+    final engine = _wakeEscalation;
+    final journey = _journey;
+    if (engine == null || journey == null) {
+      _log('WAKE test ignored: no ride is running.');
+      return;
+    }
+    if (engine.isLadderLive) {
+      _log('WAKE test ignored: a ladder is already live.');
+      return;
+    }
+    final chain = journey.chain;
+    final firstTargetId = journey.interchanges.isNotEmpty
+        ? journey.interchanges.first.stationId
+        : journey.destinationStationId;
+    final targetIndex = chain.indexWhere((s) => s.id == firstTargetId);
+    if (targetIndex <= 0) {
+      _log('WAKE test ignored: no trigger station before $firstTargetId.');
+      return;
+    }
+    final trigger = chain[targetIndex - 1];
+    _wakeTestCeiling =
+        targetIndex + 1 < chain.length ? chain[targetIndex + 1] : null;
+    _wakeTestCeilingAt = DateTime.now().add(_wakeTestTimeout);
+    _log('WAKE test: synthesizing arrival at ${trigger.name}.');
+    _handleWakeActions(
+      engine.onStationEvent(
+        Announcement(
+          stationId: trigger.id,
+          kind: AnnouncementKind.arrival,
+          text: 'Wake test arrival.',
+        ),
+        DateTime.now(),
+      ),
+    );
   }
 
   /// An acknowledgment from outside the service isolate: the earphone tap
   /// (native media session, forwarded by the UI isolate) or the on-screen
   /// "I'm awake" button.
   void wakeAck() {
-    _wakeSpike?.acknowledge();
+    _handleWakeActions(
+      _wakeEscalation?.acknowledge(DateTime.now()) ?? const [],
+    );
+  }
+
+  /// Maps the wake engine's decisions onto the proven hardware paths, and
+  /// mirrors the ladder's live state out to the UI (media session,
+  /// "I'm awake" button) and the iOS audio-session hold.
+  void _handleWakeActions(List<WakeAction> actions) {
+    for (final action in actions) {
+      switch (action) {
+        case Speak(:final text):
+          _log('WAKE speak: $text');
+          unawaited(_speak(text));
+        case Tone(:final volume):
+          _log('WAKE tone ${volume.toStringAsFixed(1)}.');
+          _wakeToneVolume = volume;
+          unawaited(_wakeOutput?.ensureToneAt(volume));
+        case StopTone():
+          _wakeToneVolume = null;
+          unawaited(_wakeOutput?.stopTone());
+        case Vibrate():
+          unawaited(_wakeOutput?.vibrate());
+        case HardStop():
+          _log('WAKE hard stop: ceiling reached, ladder given up.');
+          _wakeToneVolume = null;
+          unawaited(_wakeOutput?.stopTone());
+      }
+    }
+
+    final live = _wakeEscalation?.isLadderLive ?? false;
+    if (live != _wakeLadderLive) {
+      _wakeLadderLive = live;
+      _log('WAKE ladder ${live ? 'live' : 'stood down'}.');
+      if (!live) {
+        _wakeTestCeilingAt = null;
+        _wakeTestCeiling = null;
+        unawaited(_releaseLadderAudio());
+      }
+      onWakeLadderLive?.call(live);
+    }
   }
 
   /// Debug-only: drives the REAL wind-down path end to end at the bench,
@@ -412,7 +513,19 @@ class GeofenceChainService {
         now,
       ),
     );
-    // ~200 m beyond the fence edge, due north; only the distance matters.
+    // The alight dwell first: the train standing at the platform (inside
+    // the fence, walking speed). Exit fixes count for nothing without it.
+    _handleWindDownActions(
+      windDown.onFix(
+        lat: destination.lat,
+        lng: destination.lng,
+        accuracyM: 10,
+        speedMps: 0.3,
+        now: now,
+      ),
+    );
+    // Then ~200 m beyond the fence edge (inside the on-foot exit band),
+    // due north; only the distance matters.
     final lat = destination.lat + (destination.radiusM + 200) / 111000.0;
     for (var i = 0; i < WindDown.exitFixesRequired; i++) {
       _handleWindDownActions(
@@ -421,15 +534,26 @@ class GeofenceChainService {
           lng: destination.lng,
           accuracyM: 10,
           speedMps: 1.0,
-          now: now.add(Duration(seconds: i)),
+          now: now.add(Duration(seconds: i + 1)),
         ),
       );
     }
   }
 
   Future<void> stop() async {
-    await _wakeSpike?.dispose();
-    _wakeSpike = null;
+    // The engine dies first so nothing re-starts the tone mid-teardown; a
+    // ride ended mid-ladder must also release the UI's media session.
+    _wakeEscalation = null;
+    _wakeTestCeilingAt = null;
+    _wakeTestCeiling = null;
+    _wakeToneVolume = null;
+    await _wakeOutput?.stopTone();
+    await _wakeOutput?.dispose();
+    _wakeOutput = null;
+    if (_wakeLadderLive) {
+      _wakeLadderLive = false;
+      onWakeLadderLive?.call(false);
+    }
 
     // A manual End mid-countdown must not leave phantom wind-down buttons.
     _windDown = null;
@@ -566,6 +690,9 @@ class GeofenceChainService {
       _handleWindDownActions(
         _windDown?.onStationEvent(announcement, now) ?? const [],
       );
+      _handleWakeActions(
+        _wakeEscalation?.onStationEvent(announcement, now) ?? const [],
+      );
     }
 
     _handleWindDownActions(
@@ -578,13 +705,60 @@ class GeofenceChainService {
           ) ??
           const [],
     );
+    _handleWakeActions(
+      _wakeEscalation?.onFix(
+            lat: location.latitude,
+            lng: location.longitude,
+            accuracyM: location.accuracy,
+            speedMps: location.speed,
+            now: now,
+          ) ??
+          const [],
+    );
   }
 
   /// The service's fixed 5 second repeat tick, forwarded by the task
-  /// handler. Drives the wind-down countdown (and, come W3, the wake
-  /// ladder's clock).
+  /// handler. Drives the wind-down countdown and the wake ladder's clock.
   void onTick(DateTime now) {
     _handleWindDownActions(_windDown?.onTick(now) ?? const []);
+
+    // Bench-test safety net: synthesize the ceiling arrival the missing
+    // train would have produced, through the same real engine path.
+    final testCeilingAt = _wakeTestCeilingAt;
+    if (testCeilingAt != null && !now.isBefore(testCeilingAt)) {
+      _wakeTestCeilingAt = null;
+      final ceiling = _wakeTestCeiling;
+      _wakeTestCeiling = null;
+      if (ceiling != null && (_wakeEscalation?.isLadderLive ?? false)) {
+        _log('WAKE test: timeout, synthesizing ceiling at ${ceiling.name}.');
+        _handleWakeActions(
+          _wakeEscalation!.onStationEvent(
+            Announcement(
+              stationId: ceiling.id,
+              kind: AnnouncementKind.arrival,
+              text: 'Wake test ceiling.',
+            ),
+            now,
+          ),
+        );
+      } else if (_wakeEscalation?.isLadderLive ?? false) {
+        // No station past the target (terminus destination): stand the
+        // bench ladder down as if acknowledged rather than blast forever.
+        _log('WAKE test: timeout with no ceiling station, standing down.');
+        _handleWakeActions(_wakeEscalation!.acknowledge(now));
+      }
+    }
+
+    _handleWakeActions(_wakeEscalation?.onTick(now) ?? const []);
+
+    // The tone watchdog (15 Jul iOS bench: TTS finishing could kill the
+    // shared session and the looping tone with it, leaving ~13 silent
+    // seconds until the next rung restarted it). Re-asserting the tone at
+    // the current rung volume every tick caps any gap at ~5 seconds.
+    final toneVolume = _wakeToneVolume;
+    if (_wakeLadderLive && toneVolume != null) {
+      unawaited(_wakeOutput?.ensureToneAt(toneVolume));
+    }
   }
 
   /// [End now], from the notification button or the debug screen.

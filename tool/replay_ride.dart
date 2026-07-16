@@ -1,13 +1,24 @@
-// Replays a ride log's FIX lines through RideProgress and prints the
-// announcements it would make, so a real ride can be re-judged offline after a
-// logic change instead of having to re-ride the line.
+// Replays a ride log through the three pure engines and prints what each
+// would do, so a real ride can be re-judged offline after a logic change
+// instead of having to re-ride the line.
 //
 //   dart run tool/replay_ride.dart <geofence_log.txt> [origin] [destination]
 //
-// Origin and destination default to the ride the app currently runs. Reads only
-// `FIX lat ..., lng ..., accuracy ...m` lines, so it works on logs from either
-// platform. Announcements it prints are what the CURRENT code would say; compare
-// against the `SPEAK` lines already in the log to see what changed.
+// Origin and destination default to the ride the app currently runs. Feeds:
+//   - `FIX ...` lines into RideProgress (announcements), WakeEscalation and
+//     WindDown, with speed when the log carries it (older logs may not).
+//   - `Audio session interrupted/ended` lines into WakeEscalation's call
+//     handling (locked decision 8), reproducing a real mid-ride call.
+//   - A synthesized 5 second tick between log lines, standing in for the
+//     service's onRepeatEvent, so ladder rungs and countdowns fire at the
+//     times they would have fired on the ride.
+//
+// Nothing acknowledges the wake ladder in a replay, so an armed ladder
+// climbs to its ceiling exactly as it would for a sleeping rider.
+//
+// Output prefixes: SPEAK (RideProgress), WAKE (WakeEscalation), WIND_DOWN
+// (WindDown). Compare against the log's own SPEAK/WAKE lines to see what
+// the code change altered.
 
 import 'dart:convert';
 import 'dart:io';
@@ -16,10 +27,18 @@ import 'package:commute_guardian/models/line.dart';
 import 'package:commute_guardian/models/station.dart';
 import 'package:commute_guardian/services/journey_planner.dart';
 import 'package:commute_guardian/services/ride_progress.dart';
+import 'package:commute_guardian/services/wake_escalation.dart';
+import 'package:commute_guardian/services/wind_down.dart';
 
 final _fixPattern = RegExp(
-  r'^(\S+) FIX lat (-?[\d.]+), lng (-?[\d.]+), accuracy (\d+)m',
+  r'^(\S+) FIX lat (-?[\d.]+), lng (-?[\d.]+), accuracy (\d+)m'
+  r'(?:, speed (-?[\d.]+)m/s)?',
 );
+final _interruptionPattern = RegExp(
+  r'^(\S+) Audio session (interrupted|interruption ended)',
+);
+
+const _tick = Duration(seconds: 5);
 
 void main(List<String> args) {
   if (args.isEmpty || args.length > 3) {
@@ -62,26 +81,120 @@ void main(List<String> args) {
     approachRadiusM: journey.approachRadiusM,
     arrivalAnnouncements: journey.arrivalAnnouncements,
   );
+  final wake = WakeEscalation(
+    chain: journey.chain,
+    interchangeStationIds: [
+      for (final interchange in journey.interchanges) interchange.stationId,
+    ],
+    destinationStationId: journey.destinationStationId,
+  );
+  final windDown = WindDown(
+    destination: journey.chain
+        .firstWhere((s) => s.id == journey.destinationStationId),
+  );
 
   var fixes = 0;
   var spoken = 0;
-  for (final line in File(args.first).readAsLinesSync()) {
-    final m = _fixPattern.firstMatch(line);
-    if (m == null) continue;
-    fixes++;
+  var wakeActions = 0;
+  DateTime? clock;
 
-    final announcements = ride.onFix(
-      lat: double.parse(m.group(2)!),
-      lng: double.parse(m.group(3)!),
-      accuracyM: double.parse(m.group(4)!),
-    );
-    for (final a in announcements) {
-      spoken++;
-      final time = m.group(1)!.split('T').last.split('.').first;
-      stdout.writeln('$time  ${a.kind.name.toUpperCase().padRight(9)} '
-          '${a.stationId.padRight(9)} ${a.text}');
+  String stamp(DateTime t) =>
+      t.toIso8601String().split('T').last.split('.').first;
+
+  void printWake(List<WakeAction> actions, DateTime at) {
+    for (final action in actions) {
+      wakeActions++;
+      final line = switch (action) {
+        Speak(:final text) => 'speak     $text',
+        Tone(:final volume) => 'tone      ${volume.toStringAsFixed(1)}',
+        StopTone() => 'stop-tone',
+        Vibrate() => 'vibrate',
+        HardStop() => 'HARD STOP (ceiling)',
+      };
+      stdout.writeln('${stamp(at)}  WAKE      $line');
     }
   }
 
-  stdout.writeln('\n$fixes fixes replayed, $spoken announcements.');
+  void printWindDown(List<WindDownAction> actions, DateTime at) {
+    for (final action in actions) {
+      final line = switch (action) {
+        WindDownSpeak(:final text) => 'speak     $text',
+        WindDownEnd() => 'END TRAVEL MODE',
+      };
+      stdout.writeln('${stamp(at)}  WIND_DOWN $line');
+    }
+  }
+
+  // Stands in for the service's 5 second onRepeatEvent between log lines.
+  void tickUpTo(DateTime target) {
+    if (clock == null) {
+      clock = target;
+      return;
+    }
+    while (target.difference(clock!) >= _tick) {
+      clock = clock!.add(_tick);
+      printWake(wake.onTick(clock!), clock!);
+      printWindDown(windDown.onTick(clock!), clock!);
+    }
+  }
+
+  for (final line in File(args.first).readAsLinesSync()) {
+    final interruption = _interruptionPattern.firstMatch(line);
+    if (interruption != null) {
+      final at = DateTime.parse(interruption.group(1)!);
+      tickUpTo(at);
+      final began = interruption.group(2) == 'interrupted';
+      stdout.writeln(
+        '${stamp(at)}  CALL      ${began ? 'started' : 'ended'}',
+      );
+      printWake(wake.onCallStateChanged(inCall: began, now: at), at);
+      continue;
+    }
+
+    final m = _fixPattern.firstMatch(line);
+    if (m == null) continue;
+    fixes++;
+    final at = DateTime.parse(m.group(1)!);
+    tickUpTo(at);
+
+    final lat = double.parse(m.group(2)!);
+    final lng = double.parse(m.group(3)!);
+    final accuracyM = double.parse(m.group(4)!);
+    final speedMps = double.tryParse(m.group(5) ?? '') ?? 0;
+
+    final announcements = ride.onFix(lat: lat, lng: lng, accuracyM: accuracyM);
+    for (final a in announcements) {
+      spoken++;
+      stdout.writeln('${stamp(at)}  ${a.kind.name.toUpperCase().padRight(9)} '
+          '${a.stationId.padRight(9)} ${a.text}');
+      printWake(wake.onStationEvent(a, at), at);
+      printWindDown(windDown.onStationEvent(a, at), at);
+    }
+
+    printWake(
+      wake.onFix(
+        lat: lat,
+        lng: lng,
+        accuracyM: accuracyM,
+        speedMps: speedMps,
+        now: at,
+      ),
+      at,
+    );
+    printWindDown(
+      windDown.onFix(
+        lat: lat,
+        lng: lng,
+        accuracyM: accuracyM,
+        speedMps: speedMps,
+        now: at,
+      ),
+      at,
+    );
+  }
+
+  stdout.writeln(
+    '\n$fixes fixes replayed, $spoken announcements, '
+    '$wakeActions wake actions.',
+  );
 }

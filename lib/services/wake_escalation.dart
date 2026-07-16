@@ -115,6 +115,13 @@ class WakeEscalation {
   /// hang-up catch-up ("the train passed X and Y").
   final List<String> _passedDuringCall = [];
 
+  /// Whether a ladder is currently asking to be acknowledged. The shell
+  /// mirrors this into the native media session (earphone taps route to us
+  /// only while true), the UI's "I'm awake" button, and the audio-session
+  /// hold that keeps the tone alive on iOS. False while a call suspends
+  /// the ladder: mid-call the rider needs none of those.
+  bool get isLadderLive => _ladderLive;
+
   bool get _hasTarget => _cursor < _targets.length;
   int get _targetIndex =>
       chain.indexWhere((s) => s.id == _targets[_cursor]);

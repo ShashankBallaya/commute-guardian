@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:fl_location/fl_location.dart' as fl;
@@ -225,7 +226,45 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
       _repo = repo;
       _stations = stations;
     });
+    // Best-effort and deliberately NOT awaited: the foreground-task channel
+    // never resolves under the widget-test binding (same trap as
+    // fl_location, see acquireFix), and the GPS fill must not hang behind
+    // it. When it does resolve mid-ride, its explicit setState wins over
+    // whatever the GPS fill guessed, because the fill never overwrites and
+    // the restore always writes.
+    unawaited(_restoreRunningRide());
     await _defaultOriginToNearestStation();
+  }
+
+  /// Rebuilds the pickers and route summary from the service store when the
+  /// UI comes up with a ride already live. Android recreated the activity
+  /// mid-ride on 15 Jul and the rebuilt screen showed a blank destination
+  /// and no route while End journey was correctly offered; the service
+  /// store has owned the truth about the running ride all along (it is what
+  /// the service itself read at start), the UI just never asked it.
+  Future<void> _restoreRunningRide() async {
+    try {
+      if (!await FlutterForegroundTask.isRunningService) return;
+      final originId =
+          await FlutterForegroundTask.getData<String>(key: originIdKey);
+      final destinationId =
+          await FlutterForegroundTask.getData<String>(key: destinationIdKey);
+      final origin = _repo?.stationsById[originId];
+      final destination = _repo?.stationsById[destinationId];
+      if (origin == null || destination == null || !mounted) return;
+      setState(() {
+        _isRunning = true;
+        _originId = origin.id;
+        _originField.text = origin.name;
+        _destinationId = destination.id;
+        _destinationField.text = destination.name;
+        _logs.insert(0, 'Restored the running ride from the service store.');
+      });
+      _replan();
+    } catch (_) {
+      // No service plumbing (widget tests) or a store race: the normal
+      // GPS origin fill owns the screen, exactly as before.
+    }
   }
 
   /// Worst fix we will name a station from. A fix vaguer than this says nothing

@@ -112,6 +112,7 @@ void main() {
       final ack = wake.acknowledge(_t0.add(const Duration(seconds: 10)));
       expect(ack, hasLength(1));
       expect((ack.single as Speak).text, 'Good, you are awake.');
+      expect(wake.isLadderLive, isFalse);
 
       // The ladder is dead: the rung that was due at +25s never fires.
       final later = wake.onTick(_t0.add(const Duration(seconds: 30)));
@@ -598,6 +599,7 @@ void main() {
         destinationStationId: 'digha',
       );
 
+      expect(wake.isLadderLive, isFalse);
       final actions = wake.onStationEvent(_arrival('thane'), _t0);
 
       expect(actions, hasLength(1));
@@ -608,6 +610,7 @@ void main() {
         'Your stop, Digha Gaon, is next. Tap your earphones, or press the '
         'I am awake button, to show you are awake.',
       );
+      expect(wake.isLadderLive, isTrue);
     });
   });
 }

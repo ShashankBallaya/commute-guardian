@@ -50,6 +50,14 @@ class WindDown {
   /// must not read as a platform exit.
   static const walkingSpeedMaxMps = 2.5;
 
+  /// How far past the fence edge a fix can be and still count as leaving
+  /// the station ON FOOT. The 13 Jul replay found the fatal case this
+  /// guards: the fast local crawled into the NEXT station's approach at
+  /// 1.5 m/s, 2 km past the destination, and two of those fixes read as a
+  /// platform exit, ending Travel Mode minutes before the overshoot
+  /// warning. A walker is near the station; a carried sleeper is not.
+  static const exitBandM = 300;
+
   /// Same gate as the other engines: blackout-quality fixes prove nothing.
   static const maxAccuracyM = 150.0;
 
@@ -57,6 +65,13 @@ class WindDown {
   int _qualifyingFixes = 0;
   bool _countingDown = false;
   DateTime? _endAt;
+
+  /// Whether the train provably STOPPED at the destination platform (a fix
+  /// inside the fence at walking speed) after the arrival. A rider can only
+  /// have alighted from a stopped train; the 13 Jul fast local crossed the
+  /// Thakurli fence at 22 m/s and nobody got off it there. Exit fixes count
+  /// for nothing until this is seen.
+  bool _alightSeen = false;
 
   /// Whether the auto-off countdown is running. The shell mirrors this into
   /// the notification buttons and the debug screen.
@@ -96,10 +111,19 @@ class WindDown {
     if (!_armed || _countingDown) return const [];
     if (accuracyM > maxAccuracyM) return const [];
 
-    final outsideFence =
-        _distanceM(lat, lng, destination.lat, destination.lng) >
-            destination.radiusM;
-    if (outsideFence && speedMps <= walkingSpeedMaxMps) {
+    final distanceM =
+        _distanceM(lat, lng, destination.lat, destination.lng);
+    final onFoot = speedMps <= walkingSpeedMaxMps;
+
+    if (distanceM <= destination.radiusM && onFoot) {
+      _alightSeen = true;
+    }
+
+    final exitingOnFoot = _alightSeen &&
+        onFoot &&
+        distanceM > destination.radiusM &&
+        distanceM <= destination.radiusM + exitBandM;
+    if (exitingOnFoot) {
       _qualifyingFixes++;
     } else {
       _qualifyingFixes = 0;

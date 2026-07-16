@@ -26,6 +26,18 @@ Announcement _dighaArrival() => const Announcement(
       text: 'You have arrived at your destination, Digha Gaon.',
     );
 
+/// The alight dwell: one fix inside the fence at walking speed, the train
+/// standing at the platform. Exit fixes only count after one of these.
+void _alight(WindDown windDown, DateTime at) {
+  windDown.onFix(
+    lat: _digha.lat,
+    lng: _digha.lng,
+    accuracyM: 20,
+    speedMps: 0.3,
+    now: at,
+  );
+}
+
 /// ~450 m north of the Digha station node: outside the 350 m fence, where
 /// someone walking out of the station ends up a couple of minutes after
 /// alighting.
@@ -33,8 +45,8 @@ const _outsideLat = 19.1848;
 const _outsideLng = 72.9944301;
 
 void main() {
-  test('two walking-speed fixes outside the fence after arrival start the '
-      'countdown with one spoken line', () {
+  test('an alight dwell then two walking-speed fixes just outside the fence '
+      'start the countdown with one spoken line', () {
     final windDown = _newWindDown();
 
     // Before arrival, fixes outside the fence mean nothing: the rider is
@@ -50,8 +62,18 @@ void main() {
 
     windDown.onStationEvent(_dighaArrival(), _t0.add(const Duration(minutes: 1)));
 
-    // First qualifying fix: suspicion, not proof. One noisy fix must not
-    // end a ride.
+    // The alight dwell: the train stopped at the platform (inside the
+    // fence, walking speed). Without this, exit fixes never count.
+    windDown.onFix(
+      lat: _digha.lat,
+      lng: _digha.lng,
+      accuracyM: 20,
+      speedMps: 0.3,
+      now: _t0.add(const Duration(minutes: 1, seconds: 30)),
+    );
+
+    // First qualifying exit fix: suspicion, not proof. One noisy fix must
+    // not end a ride.
     final first = windDown.onFix(
       lat: _outsideLat,
       lng: _outsideLng,
@@ -78,10 +100,64 @@ void main() {
     expect(windDown.isCountingDown, isTrue);
   });
 
+  test('a train that blew through the destination and later crawled far '
+      'away never triggers (the real 13 Jul Thakurli replay bug)', () {
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+
+    // The fast local crossed the fence at 22 m/s: no alight dwell exists.
+    windDown.onFix(
+      lat: _digha.lat,
+      lng: _digha.lng,
+      accuracyM: 13,
+      speedMps: 22,
+      now: _t0.add(const Duration(seconds: 5)),
+    );
+
+    // Minutes later the train crawls into the next station's approach at
+    // walking speed, ~2 km from the destination (the real 18:26:33 fixes
+    // were 1.4-1.6 m/s at that distance). Without the alight dwell and the
+    // proximity band this ended Travel Mode 2.5 minutes before the
+    // overshoot warning in the replay.
+    for (var i = 0; i < 4; i++) {
+      final crawl = windDown.onFix(
+        lat: _digha.lat + 0.018,
+        lng: _digha.lng,
+        accuracyM: 13,
+        speedMps: 1.5,
+        now: _t0.add(Duration(minutes: 3, seconds: i * 5)),
+      );
+      expect(crawl, isEmpty,
+          reason: 'a crawling train 2 km out is not a platform exit');
+    }
+    expect(windDown.isCountingDown, isFalse);
+  });
+
+  test('walking-speed fixes just outside the fence do not trigger without '
+      'the alight dwell', () {
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+
+    // In the proximity band, at walking speed, but the train never stopped
+    // inside the fence: a slow through-crawl, not an alighted rider.
+    for (var i = 0; i < 3; i++) {
+      final result = windDown.onFix(
+        lat: _outsideLat,
+        lng: _outsideLng,
+        accuracyM: 20,
+        speedMps: 1.4,
+        now: _t0.add(Duration(minutes: 1, seconds: i * 5)),
+      );
+      expect(result, isEmpty);
+    }
+    expect(windDown.isCountingDown, isFalse);
+  });
+
   test('the countdown expires 60 seconds after detection into an end action',
       () {
     final windDown = _newWindDown();
     windDown.onStationEvent(_dighaArrival(), _t0);
+    _alight(windDown, _t0.add(const Duration(minutes: 1)));
     windDown.onFix(
       lat: _outsideLat,
       lng: _outsideLng,
@@ -122,6 +198,7 @@ void main() {
     expect(windDown.endNow(_t0), isEmpty);
 
     windDown.onStationEvent(_dighaArrival(), _t0);
+    _alight(windDown, _t0.add(const Duration(minutes: 1)));
     windDown.onFix(
       lat: _outsideLat,
       lng: _outsideLng,
@@ -156,6 +233,7 @@ void main() {
     expect(windDown.extend(_t0), isEmpty);
 
     windDown.onStationEvent(_dighaArrival(), _t0);
+    _alight(windDown, _t0.add(const Duration(minutes: 1)));
     windDown.onFix(
       lat: _outsideLat,
       lng: _outsideLng,
@@ -193,6 +271,7 @@ void main() {
       'resets it', () {
     final windDown = _newWindDown();
     windDown.onStationEvent(_dighaArrival(), _t0);
+    _alight(windDown, _t0.add(const Duration(minutes: 1)));
 
     windDown.onFix(
       lat: _outsideLat,
@@ -228,6 +307,7 @@ void main() {
       'train-speed fix resets the walking streak', () {
     final windDown = _newWindDown();
     windDown.onStationEvent(_dighaArrival(), _t0);
+    _alight(windDown, _t0.add(const Duration(seconds: 30)));
 
     // A sleeping rider carried past Digha exits the fence at train speed.
     for (var i = 0; i < 5; i++) {
