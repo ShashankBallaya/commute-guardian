@@ -128,6 +128,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// Whether the service's wake ladder is currently asking to be
   /// acknowledged. Drives the "I'm awake" button and the media session.
   bool _wakeLadderLive = false;
+  bool _windDownLive = false;
 
   StationRepository? _repo;
   List<Station> _stations = const [];
@@ -384,6 +385,15 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
         _setMediaSession(ladderLive);
       }
 
+      final windDownLive = data['windDownLive'] as bool?;
+      if (windDownLive != null) {
+        setState(() => _windDownLive = windDownLive);
+      }
+
+      if (data['rideEnded'] == true) {
+        _onRideEndedByService();
+      }
+
       final lat = (data['fixLat'] as num?)?.toDouble();
       final lng = (data['fixLng'] as num?)?.toDouble();
       final accuracyM = (data['fixAccuracyM'] as num?)?.toDouble();
@@ -454,7 +464,10 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
 
   Future<void> _stop() async {
     await FlutterForegroundTask.stopService();
-    setState(() => _isRunning = false);
+    setState(() {
+      _isRunning = false;
+      _windDownLive = false;
+    });
     // The dying service isolate also announces this, but a teardown race must
     // not leave a phantom "I'm awake" button or a claimed media session.
     if (_wakeLadderLive) {
@@ -516,8 +529,35 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     FlutterForegroundTask.sendDataToTask('test_wake_alert');
   }
 
+  void _testWindDown() {
+    FlutterForegroundTask.sendDataToTask('test_wind_down');
+  }
+
   void _wakeAck() {
     FlutterForegroundTask.sendDataToTask('wake_ack');
+  }
+
+  void _windDownEndNow() {
+    FlutterForegroundTask.sendDataToTask(windDownEndNowId);
+  }
+
+  void _windDownExtend() {
+    FlutterForegroundTask.sendDataToTask(windDownExtendId);
+  }
+
+  /// The service ended the ride itself (wind-down auto-off or its End now
+  /// button). Same after-ride path as a manual stop, minus stopping the
+  /// service, which is already going down.
+  Future<void> _onRideEndedByService() async {
+    setState(() {
+      _isRunning = false;
+      _windDownLive = false;
+    });
+    if (_wakeLadderLive) {
+      setState(() => _wakeLadderLive = false);
+      await _setMediaSession(false);
+    }
+    await _defaultOriginToRideEnd();
   }
 
   String _name(String stationId) =>
@@ -614,20 +654,68 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
                     style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
                 )
+              else if (_windDownLive)
+                // Mirrors the notification's wind-down actions for when the
+                // phone is already in hand. Cream like the ack button;
+                // crimson stays reserved for starting or ending a journey.
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        key: const Key('wind_down_end_now'),
+                        onPressed: _windDownEndNow,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Palette.cream,
+                          foregroundColor: Palette.navy,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          'End now',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _TestButton(
+                        label: 'Extend 10 min',
+                        onPressed: _windDownExtend,
+                        buttonKey: const Key('wind_down_extend'),
+                      ),
+                    ),
+                  ],
+                )
               else
+                // The three debug triggers, one per feature. "Test" dropped
+                // from the labels to fit three abreast without growing the
+                // column (the tall debug log lives in the Expanded above).
                 Row(
                   children: [
                     Expanded(
                       child: _TestButton(
-                        label: 'Test announcement',
+                        label: 'Announce',
                         onPressed: _isRunning ? _testTts : null,
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: _TestButton(
-                        label: 'Test wake alert',
+                        label: 'Wake alert',
                         onPressed: _isRunning ? _testWakeAlert : null,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _TestButton(
+                        label: 'Wind-down',
+                        onPressed: _isRunning ? _testWindDown : null,
                       ),
                     ),
                   ],
@@ -651,15 +739,17 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
 /// A quiet debug-only action. Outlined, dim, never competes with the journey
 /// CTA; disabled when no ride (and so no service isolate) is running.
 class _TestButton extends StatelessWidget {
-  const _TestButton({required this.label, required this.onPressed});
+  const _TestButton({required this.label, required this.onPressed, this.buttonKey});
 
   final String label;
   final VoidCallback? onPressed;
+  final Key? buttonKey;
 
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
     return OutlinedButton(
+      key: buttonKey,
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         foregroundColor: Palette.creamDim(0.75),

@@ -21,6 +21,11 @@ const destinationIdKey = 'destination_station_id';
 /// Stop to decide if the turnaround origin default can be trusted.
 const destinationReachedKey = 'destination_reached';
 
+/// Wind-down action ids, shared by the notification buttons and the debug
+/// screen's sendDataToTask messages.
+const windDownEndNowId = 'wind_down_end_now';
+const windDownExtendId = 'wind_down_extend';
+
 /// Runs the ride inside the Android foreground service isolate so it survives
 /// screen lock and app backgrounding.
 class GeofenceTaskHandler extends TaskHandler {
@@ -50,14 +55,56 @@ class GeofenceTaskHandler extends TaskHandler {
           'fixAccuracyM': location.accuracy,
         });
       },
+      onWindDownLive: (live) {
+        FlutterForegroundTask.sendDataToMain({'windDownLive': live});
+        // The buttons appear on the ongoing Travel Mode notification only
+        // while the countdown runs, so a pocketed phone can answer without
+        // being unlocked. Android only in practice; the iOS notification is
+        // disabled and its real surface is the Phase 2 Arrival screen.
+        FlutterForegroundTask.updateService(
+          notificationButtons: live
+              ? const [
+                  NotificationButton(id: windDownEndNowId, text: 'End now'),
+                  NotificationButton(
+                    id: windDownExtendId,
+                    text: 'Extend 10 min',
+                  ),
+                ]
+              : const [],
+        );
+      },
+      onAutoOff: () => _autoOff(),
     );
     await _chain!.start(originId: originId, destinationId: destinationId);
   }
 
+  /// The wind-down countdown expired or [End now] was pressed: run the
+  /// normal ride teardown (farewell included), tell a live UI to flip back
+  /// to idle, then stop the whole foreground service. The chain is nulled
+  /// first so onDestroy cannot run stop() a second time and speak a second
+  /// farewell.
+  Future<void> _autoOff() async {
+    final chain = _chain;
+    if (chain == null) return;
+    _chain = null;
+    FlutterForegroundTask.sendDataToMain({'rideEnded': true});
+    await chain.stop();
+    await FlutterForegroundTask.stopService();
+  }
+
   @override
   void onRepeatEvent(DateTime timestamp) {
-    // Geofence status is event-driven (see GeofenceChainService), nothing
-    // to do on the fixed repeat tick.
+    _chain?.onTick(timestamp);
+  }
+
+  @override
+  void onNotificationButtonPressed(String id) {
+    switch (id) {
+      case windDownEndNowId:
+        _chain?.windDownEndNow();
+      case windDownExtendId:
+        _chain?.windDownExtend();
+    }
   }
 
   @override
@@ -73,8 +120,14 @@ class GeofenceTaskHandler extends TaskHandler {
         _chain?.testAnnounce();
       case 'test_wake_alert':
         _chain?.testWakeAlert();
+      case 'test_wind_down':
+        _chain?.testWindDown();
       case 'wake_ack':
         _chain?.wakeAck();
+      case windDownEndNowId:
+        _chain?.windDownEndNow();
+      case windDownExtendId:
+        _chain?.windDownExtend();
     }
   }
 

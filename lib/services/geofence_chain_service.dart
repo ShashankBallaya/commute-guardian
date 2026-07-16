@@ -14,6 +14,7 @@ import '../data/station_repository.dart';
 import '../models/journey.dart';
 import 'ride_progress.dart';
 import 'wake_alert_spike.dart';
+import 'wind_down.dart';
 
 /// Runs one ride, between any two stations on the network.
 ///
@@ -28,6 +29,8 @@ class GeofenceChainService {
     this.onDestinationReached,
     this.onRawFix,
     this.onWakeLadderLive,
+    this.onWindDownLive,
+    this.onAutoOff,
   });
 
   /// Marks the outer approach fence for a two-stage station, keeping its
@@ -54,11 +57,23 @@ class GeofenceChainService {
   /// actually asking to be acknowledged.
   final void Function(bool live)? onWakeLadderLive;
 
+  /// Fires when the post-arrival auto-off countdown starts or stops. The
+  /// handler mirrors it into the notification's [End now] and [Extend 10
+  /// min] buttons and the debug screen's equivalents.
+  final void Function(bool live)? onWindDownLive;
+
+  /// The auto-off countdown expired (or [End now] was pressed): the ride is
+  /// over and the whole service should tear itself down. Owned by the
+  /// handler because only it may stop the foreground service.
+  final void Function()? onAutoOff;
+
   Journey? _journey;
 
   final FlutterTts _tts = FlutterTts();
   RideProgress? _rideProgress;
   WakeAlertSpike? _wakeSpike;
+  WindDown? _windDown;
+  bool _windDownLive = false;
   File? _logFile;
   StreamSubscription<fl.Location>? _rawLocationSub;
   StreamSubscription<AudioInterruptionEvent>? _interruptionSub;
@@ -107,6 +122,10 @@ class GeofenceChainService {
       destinationStationId: journey.destinationStationId,
       approachRadiusM: journey.approachRadiusM,
       arrivalAnnouncements: journey.arrivalAnnouncements,
+    );
+    _windDown = WindDown(
+      destination: journey.chain
+          .firstWhere((s) => s.id == journey.destinationStationId),
     );
     _wakeSpike = WakeAlertSpike(
       speak: _speak,
@@ -366,9 +385,58 @@ class GeofenceChainService {
     _wakeSpike?.acknowledge();
   }
 
+  /// Debug-only: drives the REAL wind-down path end to end at the bench,
+  /// with no train. Feeds the engine the destination arrival, then two
+  /// synthetic walking-speed fixes just outside the fence, exactly what a
+  /// real platform exit produces. Everything downstream is live: countdown
+  /// line, notification buttons, Extend, and the auto-off teardown 60
+  /// seconds later.
+  Future<void> testWindDown() async {
+    final windDown = _windDown;
+    final journey = _journey;
+    if (windDown == null || journey == null) {
+      _log('WIND_DOWN test ignored: no ride is running.');
+      return;
+    }
+    _log('WIND_DOWN test requested.');
+    final destination = journey.chain
+        .firstWhere((s) => s.id == journey.destinationStationId);
+    final now = DateTime.now();
+    _handleWindDownActions(
+      windDown.onStationEvent(
+        Announcement(
+          stationId: destination.id,
+          kind: AnnouncementKind.arrival,
+          text: 'Wind-down test arrival.',
+        ),
+        now,
+      ),
+    );
+    // ~200 m beyond the fence edge, due north; only the distance matters.
+    final lat = destination.lat + (destination.radiusM + 200) / 111000.0;
+    for (var i = 0; i < WindDown.exitFixesRequired; i++) {
+      _handleWindDownActions(
+        windDown.onFix(
+          lat: lat,
+          lng: destination.lng,
+          accuracyM: 10,
+          speedMps: 1.0,
+          now: now.add(Duration(seconds: i)),
+        ),
+      );
+    }
+  }
+
   Future<void> stop() async {
     await _wakeSpike?.dispose();
     _wakeSpike = null;
+
+    // A manual End mid-countdown must not leave phantom wind-down buttons.
+    _windDown = null;
+    if (_windDownLive) {
+      _windDownLive = false;
+      onWindDownLive?.call(false);
+    }
 
     // The goodbye must speak BEFORE teardown (after _tts.stop() nothing
     // can), and it is awaited so onDestroy keeps the isolate alive until it
@@ -482,6 +550,7 @@ class GeofenceChainService {
           accuracyM: location.accuracy,
         ) ??
         const <Announcement>[];
+    final now = DateTime.now();
     for (final announcement in announcements) {
       _log(
         'SPEAK ${announcement.kind.name} ${announcement.stationId}: '
@@ -493,6 +562,61 @@ class GeofenceChainService {
           announcement.stationId == _journey?.destinationStationId) {
         onDestinationReached?.call();
       }
+
+      _handleWindDownActions(
+        _windDown?.onStationEvent(announcement, now) ?? const [],
+      );
+    }
+
+    _handleWindDownActions(
+      _windDown?.onFix(
+            lat: location.latitude,
+            lng: location.longitude,
+            accuracyM: location.accuracy,
+            speedMps: location.speed,
+            now: now,
+          ) ??
+          const [],
+    );
+  }
+
+  /// The service's fixed 5 second repeat tick, forwarded by the task
+  /// handler. Drives the wind-down countdown (and, come W3, the wake
+  /// ladder's clock).
+  void onTick(DateTime now) {
+    _handleWindDownActions(_windDown?.onTick(now) ?? const []);
+  }
+
+  /// [End now], from the notification button or the debug screen.
+  void windDownEndNow() {
+    _log('WIND_DOWN End now pressed.');
+    _handleWindDownActions(_windDown?.endNow(DateTime.now()) ?? const []);
+  }
+
+  /// [Extend 10 min], from the notification button or the debug screen.
+  void windDownExtend() {
+    _log('WIND_DOWN Extend pressed.');
+    _handleWindDownActions(_windDown?.extend(DateTime.now()) ?? const []);
+  }
+
+  void _handleWindDownActions(List<WindDownAction> actions) {
+    for (final action in actions) {
+      switch (action) {
+        case WindDownSpeak(:final text):
+          _log('SPEAK wind-down: $text');
+          unawaited(_speak(text));
+        case WindDownEnd():
+          _log('WIND_DOWN ending Travel Mode.');
+          onAutoOff?.call();
+      }
+    }
+    // Mirrors the countdown state out to the notification buttons and the
+    // debug screen, only on change.
+    final live = _windDown?.isCountingDown ?? false;
+    if (live != _windDownLive) {
+      _windDownLive = live;
+      _log('WIND_DOWN countdown ${live ? 'started' : 'stopped'}.');
+      onWindDownLive?.call(live);
     }
   }
 
