@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'data/journey_history.dart';
 import 'data/station_repository.dart';
 import 'foreground/geofence_task_handler.dart';
 import 'models/journey.dart';
@@ -75,10 +76,12 @@ class CommuteGuardianDebugApp extends StatelessWidget {
     super.key,
     this.loadRepository,
     this.acquireFix,
+    this.historyDatabase,
   });
 
   final Future<StationRepository> Function()? loadRepository;
   final Future<fl.Location> Function()? acquireFix;
+  final JourneyHistoryDatabase? historyDatabase;
 
   @override
   Widget build(BuildContext context) {
@@ -122,6 +125,7 @@ class CommuteGuardianDebugApp extends StatelessWidget {
       home: RideDebugScreen(
         loadRepository: loadRepository,
         acquireFix: acquireFix,
+        historyDatabase: historyDatabase,
       ),
     );
   }
@@ -132,7 +136,12 @@ class CommuteGuardianDebugApp extends StatelessWidget {
 /// journey CTA, actions in the thumb zone), but it is still the debug tool:
 /// the raw event log stays, which no product screen will have.
 class RideDebugScreen extends StatefulWidget {
-  const RideDebugScreen({super.key, this.loadRepository, this.acquireFix});
+  const RideDebugScreen({
+    super.key,
+    this.loadRepository,
+    this.acquireFix,
+    this.historyDatabase,
+  });
 
   /// How to get the station network. Overridable so a test can hand in a
   /// repository read straight off disk: `rootBundle` does real I/O, which cannot
@@ -143,6 +152,11 @@ class RideDebugScreen extends StatefulWidget {
   /// never answers in a widget test (it neither resolves nor throws), which
   /// would pin the chip on "Locating..." forever there.
   final Future<fl.Location> Function()? acquireFix;
+
+  /// Where journey history lives. Overridable so tests hand in an in-memory
+  /// database; the real app opens the on-device file lazily, so tests that
+  /// never touch history never hit the path_provider channel either.
+  final JourneyHistoryDatabase? historyDatabase;
 
   @override
   State<RideDebugScreen> createState() => _RideDebugScreenState();
@@ -169,6 +183,16 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// Debug bench flag: Sarvam clip greets at Start (Android only). Handed to
   /// the service through the store at Start; default off keeps Start stock.
   bool _sarvamGreeting = false;
+
+  /// Journey history store; the injected test database or the on-device file.
+  late final JourneyHistoryDatabase _history =
+      widget.historyDatabase ?? JourneyHistoryDatabase.open();
+
+  /// The ride currently being ridden, kept for the history record. [_journey]
+  /// cannot serve: the picker can replan it mid-ride while the service keeps
+  /// riding the chain it was handed at Start.
+  Journey? _activeRide;
+  DateTime? _rideStartedAt;
 
   /// Whether the service's wake ladder is currently asking to be
   /// acknowledged. Drives the "I'm awake" button and the media session.
@@ -258,6 +282,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
     _originField.dispose();
     _destinationField.dispose();
+    unawaited(_history.close());
     super.dispose();
   }
 
@@ -545,7 +570,42 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     );
 
     if (result is ServiceRequestSuccess) {
+      _activeRide = journey;
+      _rideStartedAt = DateTime.now();
       setState(() => _isRunning = true);
+    }
+  }
+
+  /// Writes the finished ride into history, manual End and service auto-off
+  /// both. Best-effort: a ride the OS killed mid-way leaves no record, and a
+  /// storage failure must never break the teardown path it rides on.
+  Future<void> _recordRide() async {
+    final journey = _activeRide;
+    final startedAt = _rideStartedAt;
+    _activeRide = null;
+    _rideStartedAt = null;
+    if (journey == null || startedAt == null) return;
+    final reached =
+        await FlutterForegroundTask.getData<bool>(key: destinationReachedKey) ??
+        false;
+    // The overshoot pin is a safety net past the destination, not a station
+    // the rider planned to ride through.
+    final stationCount = journey.chain
+        .takeWhile((s) => s.id != journey.overshootStationId)
+        .length;
+    try {
+      await _history.record(
+        originId: journey.originStationId,
+        destinationId: journey.destinationStationId,
+        originName: _name(journey.originStationId),
+        destinationName: _name(journey.destinationStationId),
+        startedAt: startedAt,
+        endedAt: DateTime.now(),
+        reachedDestination: reached,
+        stationCount: stationCount,
+      );
+    } catch (error) {
+      setState(() => _logs.insert(0, 'History record failed: $error'));
     }
   }
 
@@ -561,6 +621,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
       setState(() => _wakeLadderLive = false);
       await _setMediaSession(false);
     }
+    await _recordRide();
     await _defaultOriginToRideEnd();
   }
 
@@ -635,6 +696,62 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// The service ended the ride itself (wind-down auto-off or its End now
   /// button). Same after-ride path as a manual stop, minus stopping the
   /// service, which is already going down.
+  /// The recent-journeys sheet. Same modal-sheet pattern as the station
+  /// picker; opaque surface per the design rule for content that floats over
+  /// live UI. Reads fresh from the database on every open.
+  Future<void> _showHistory() async {
+    final rides = await _history.recent();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Palette.surfaceSolid,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: rides.isEmpty
+            ? Padding(
+                padding: const EdgeInsets.all(32),
+                child: Text(
+                  'No journeys yet. Ride one and it will appear here.',
+                  style: TextStyle(color: Palette.textDim(0.6)),
+                ),
+              )
+            : ListView.builder(
+                shrinkWrap: true,
+                itemCount: rides.length,
+                itemBuilder: (context, index) {
+                  final ride = rides[index];
+                  return ListTile(
+                    dense: true,
+                    title: Text(
+                      '${ride.originName} → ${ride.destinationName}',
+                      style: const TextStyle(color: Palette.text),
+                    ),
+                    subtitle: Text(
+                      '${_historyTimestamp(ride.endedAt)} • '
+                      '${ride.stationCount} stations • '
+                      '${ride.reachedDestination ? 'reached' : 'ended early'}',
+                      style: TextStyle(color: Palette.textDim(0.5)),
+                    ),
+                  );
+                },
+              ),
+      ),
+    );
+  }
+
+  /// "17 Jul 21:52" without pulling in intl for a debug row.
+  static String _historyTimestamp(DateTime t) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final hh = t.hour.toString().padLeft(2, '0');
+    final mm = t.minute.toString().padLeft(2, '0');
+    return '${t.day} ${months[t.month - 1]} $hh:$mm';
+  }
+
   Future<void> _onRideEndedByService() async {
     setState(() {
       _isRunning = false;
@@ -644,6 +761,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
       setState(() => _wakeLadderLive = false);
       await _setMediaSession(false);
     }
+    await _recordRide();
     await _defaultOriginToRideEnd();
   }
 
@@ -805,32 +923,53 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
                   ],
                 ),
               if (!_isRunning)
-                // Debug bench flag (Android only): Sarvam clip greets at
-                // Start, TTS still speaks the route line. Applied at the
-                // next Start; off keeps the Start path stock. Scaled down
-                // because a stock Switch carries a 48px tap target that
-                // does not fit this column.
                 SizedBox(
                   height: 22,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerRight,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'Sarvam greeting',
-                          style: TextStyle(color: Palette.textDim(0.6)),
+                  child: Row(
+                    children: [
+                      // History icon per the design system: the plain
+                      // clock-with-counterclockwise-arrow, never a stopwatch.
+                      SizedBox(
+                        width: 22,
+                        child: IconButton(
+                          key: const Key('history_button'),
+                          padding: EdgeInsets.zero,
+                          iconSize: 18,
+                          tooltip: 'Journey history',
+                          icon: Icon(
+                            Icons.history,
+                            color: Palette.textDim(0.6),
+                          ),
+                          onPressed: _showHistory,
                         ),
-                        Switch(
-                          key: const Key('sarvam_greeting_switch'),
-                          value: _sarvamGreeting,
-                          activeThumbColor: Palette.dotGreen,
-                          onChanged: (value) =>
-                              setState(() => _sarvamGreeting = value),
+                      ),
+                      const Spacer(),
+                      // Debug bench flag (Android only): Sarvam clip greets
+                      // at Start, TTS still speaks the route line. Applied at
+                      // the next Start; off keeps the Start path stock.
+                      // Scaled down because a stock Switch carries a 48px tap
+                      // target that does not fit this column.
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Sarvam greeting',
+                              style: TextStyle(color: Palette.textDim(0.6)),
+                            ),
+                            Switch(
+                              key: const Key('sarvam_greeting_switch'),
+                              value: _sarvamGreeting,
+                              activeThumbColor: Palette.dotGreen,
+                              onChanged: (value) =>
+                                  setState(() => _sarvamGreeting = value),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               const SizedBox(height: 12),

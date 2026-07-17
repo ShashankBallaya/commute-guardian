@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:commute_guardian/data/journey_history.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/main.dart';
 
@@ -12,7 +13,10 @@ import 'package:commute_guardian/main.dart';
 /// because the asset bundle does real I/O and real I/O cannot make progress
 /// inside the fake-async zone that `pump` runs in: the pickers would come up
 /// empty and disabled, and the whole screen would be untestable.
-Future<void> _pumpScreen(WidgetTester tester) async {
+Future<void> _pumpScreen(
+  WidgetTester tester, {
+  JourneyHistoryDatabase? history,
+}) async {
   final raw = File(StationRepository.assetPath).readAsStringSync();
   await tester.pumpWidget(
     CommuteGuardianDebugApp(
@@ -20,6 +24,7 @@ Future<void> _pumpScreen(WidgetTester tester) async {
       // Fails like an indoor timeout does. The real plugin cannot answer in
       // the fake-async zone; without this the chip hangs on "Locating...".
       acquireFix: () async => throw StateError('no GPS under test'),
+      historyDatabase: history,
     ),
   );
   await tester.pumpAndSettle();
@@ -62,6 +67,46 @@ void main() {
       find.widgetWithText(ElevatedButton, 'Start journey'),
     );
     expect(start.onPressed, isNull);
+  });
+
+  testWidgets('the history sheet lists a recorded ride, newest first', (
+    tester,
+  ) async {
+    final history = JourneyHistoryDatabase.inMemory();
+    addTearDown(history.close);
+    await history.record(
+      originId: 'shahad',
+      destinationId: 'kalyan',
+      originName: 'Shahad',
+      destinationName: 'Kalyan',
+      startedAt: DateTime(2026, 7, 17, 21, 10),
+      endedAt: DateTime(2026, 7, 17, 21, 52),
+      reachedDestination: true,
+      stationCount: 2,
+    );
+
+    await _pumpScreen(tester, history: history);
+    await tester.tap(find.byKey(const Key('history_button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Shahad → Kalyan'), findsOneWidget);
+    expect(find.text('17 Jul 21:52 • 2 stations • reached'), findsOneWidget);
+  });
+
+  testWidgets('the history sheet has an empty state, not a blank sheet', (
+    tester,
+  ) async {
+    final history = JourneyHistoryDatabase.inMemory();
+    addTearDown(history.close);
+
+    await _pumpScreen(tester, history: history);
+    await tester.tap(find.byKey(const Key('history_button')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('No journeys yet. Ride one and it will appear here.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('the Sarvam greeting bench flag exists and defaults OFF', (
