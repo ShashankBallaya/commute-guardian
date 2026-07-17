@@ -59,3 +59,6 @@ tool/.osm_cache.json
 
 # Personal Dart/Flutter learning workspace (/teach), not part of the app
 teaching/
+
+# Sarvam API key for tool/build_sarvam_clips.py, never commit
+tool/.sarvam_key
