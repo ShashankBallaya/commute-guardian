@@ -201,6 +201,19 @@ STATIONS = {
     "kalamboli": ("Kalamboli", "KLMC", 400),
 }
 
+# Corrections that WIN over OSM's name:hi / name:mr tags, for stations where the
+# OSM transliteration is wrong. Each side is independent; None leaves OSM's value
+# alone. Found by listening: the Sarvam quality spike (17 Jul 2026) pronounced
+# these faithfully wrong, which is how the input bug surfaced.
+DEVANAGARI_OVERRIDE = {
+    # id: (hindi or None, marathi or None)
+    # OSM's Hindi is the common noun for honey (shahad); the place is Shahād.
+    "shahad": ("शहाड", None),
+    # OSM's Hindi uses an explicit conjunct that steers TTS to "Dom-bi-vli";
+    # the anusvara form matches the Marathi tag and the spoken name.
+    "dombivli": ("डोंबिवली", None),
+}
+
 # Fallbacks for stations OSM has not tagged with name:hi / name:mr. Each side is
 # used independently: OSM wins where it has the tag, this table fills the hole.
 DEVANAGARI_FALLBACK = {
@@ -514,6 +527,10 @@ def resolve() -> tuple[dict, list[str]]:
             hi = fb[0] if fb else None
         if not mr:
             mr = fb[1] if fb else None
+        ov = DEVANAGARI_OVERRIDE.get(sid)
+        if ov:
+            hi = ov[0] or hi
+            mr = ov[1] or mr
         if not hi or not mr:
             problems.append(f"NO DEVANAGARI for {sid} ({name}): hi={hi!r} mr={mr!r}")
 
