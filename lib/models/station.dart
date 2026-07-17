@@ -25,6 +25,21 @@ class Station {
   final double lng;
   final int radiusM;
 
+  /// Whether this station answers to [query], matched against every name it is
+  /// known by and its code, so a commuter can type "Kalyan", "कल्याण" or "KYN".
+  /// An empty query matches everything, which is the unfiltered list.
+  ///
+  /// Devanagari is caseless, so lowercasing it is a no-op and costs nothing.
+  /// Matching is substring, not fuzzy: a typo finds nothing.
+  bool matches(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return name.toLowerCase().contains(q) ||
+        nameHi.toLowerCase().contains(q) ||
+        nameMr.toLowerCase().contains(q) ||
+        code.toLowerCase().contains(q);
+  }
+
   factory Station.fromJson(Map<String, dynamic> json) => Station(
         id: json['id'] as String,
         code: json['code'] as String,

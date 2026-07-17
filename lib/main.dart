@@ -17,19 +17,57 @@ void main() {
   runApp(const CommuteGuardianDebugApp());
 }
 
-/// The locked design system (Figma reviews, 05-09 Jul 2026): dark navy ground,
-/// burgundy card surfaces, cream text. Crimson fill is reserved for the one
-/// action that starts or ends a journey; nothing else may use it. The green
-/// dot means live/tracking, amber means acquiring.
+/// The locked design system (Figma reviews, 05-09 Jul 2026, palette revised
+/// 16 Jul 2026): dark navy ground, translucent navy glass surfaces, white text.
+/// The burgundy surfaces and cream text of the earlier reviews are retired.
+/// Crimson fill is reserved for the one action that starts or ends a journey;
+/// nothing else may use it. The green dot means live/tracking, amber means
+/// acquiring.
 abstract final class Palette {
-  static const navy = Color(0xFF1B2537);
-  static const burgundy = Color(0xFF3A2528);
-  static const cream = Color(0xFFF2E7D5);
-  static const crimson = Color(0xFFA8202B);
-  static const dotGreen = Color(0xFF3DBC77);
+  /// The scaffold ground.
+  static const ground = Color(0xFF0F1722);
+
+  /// A deeper ground, for wells recessed into [ground].
+  static const groundDeep = Color(0xFF0D141D);
+
+  /// The glass surface fill (172335 at 20%). Nearly invisible alone: over
+  /// [ground] it composites to within a few points of the ground itself, so it
+  /// only reads as a card alongside [hairline] and [shadow]. Prefer
+  /// [glassCard] over reaching for this directly.
+  static const surface = Color(0x33172335);
+
+  /// [surface] pre-composited over [ground], for surfaces that must stay opaque
+  /// because they float over arbitrary content (sheets, snackbars).
+  static const surfaceSolid = Color(0xFF111926);
+
+  static const hairline = Color(0x14FEFEFE);
+  static const shadow = Color(0x33000000);
+
+  static const text = Color(0xFFFEFEFE);
+  static const dotGreen = Color(0xFF3AB16C);
   static const dotAmber = Color(0xFFD9A03D);
 
-  static Color creamDim(double opacity) => cream.withValues(alpha: opacity);
+  /// dotGreen at 20%, the soft green wash: the selected segment of the Screen 4
+  /// wake toggle. Not the live-dot glow, which is locked at 40%.
+  static const greenSoft = Color(0x333AB16C);
+
+  /// Figma gives the CTA as 83111A at 60% over [ground]. This is that composite,
+  /// kept opaque so the fill cannot shift when content scrolls beneath it.
+  static const crimson = Color(0xFF55131D);
+
+  static Color textDim(double opacity) => text.withValues(alpha: opacity);
+
+  /// Fill, hairline border and shadow together: a glass card that is right by
+  /// construction. No blur, it has nothing to bite on a flat ground (see the
+  /// glassmorphism note in the design system).
+  static BoxDecoration glassCard({double radius = 20}) => BoxDecoration(
+    color: surface,
+    borderRadius: BorderRadius.circular(radius),
+    border: Border.all(color: hairline),
+    boxShadow: const [
+      BoxShadow(color: shadow, blurRadius: 24, offset: Offset(0, 8)),
+    ],
+  );
 }
 
 class CommuteGuardianDebugApp extends StatelessWidget {
@@ -48,31 +86,33 @@ class CommuteGuardianDebugApp extends StatelessWidget {
     return MaterialApp(
       title: 'Commute Guardian (Phase 0 debug)',
       theme: base.copyWith(
-        scaffoldBackgroundColor: Palette.navy,
+        scaffoldBackgroundColor: Palette.ground,
         colorScheme: base.colorScheme.copyWith(
-          surface: Palette.navy,
-          primary: Palette.cream,
-          onSurface: Palette.cream,
+          surface: Palette.ground,
+          primary: Palette.text,
+          onSurface: Palette.text,
         ),
         textTheme: base.textTheme.apply(
-          bodyColor: Palette.cream,
-          displayColor: Palette.cream,
+          bodyColor: Palette.text,
+          displayColor: Palette.text,
         ),
-        // The pickers and the search sheet's field: dark wells inside the
-        // burgundy surfaces, no hard borders.
+        // The pickers and the search sheet's field: dark wells recessed into
+        // the glass surfaces, no hard borders.
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: Colors.black.withValues(alpha: 0.25),
-          labelStyle: TextStyle(color: Palette.creamDim(0.6)),
-          hintStyle: TextStyle(color: Palette.creamDim(0.4)),
+          fillColor: Palette.groundDeep,
+          labelStyle: TextStyle(color: Palette.textDim(0.6)),
+          hintStyle: TextStyle(color: Palette.textDim(0.4)),
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
             borderSide: BorderSide.none,
           ),
         ),
         snackBarTheme: SnackBarThemeData(
-          backgroundColor: Palette.burgundy,
-          contentTextStyle: const TextStyle(color: Palette.cream),
+          // Opaque: a snackbar floats over whatever is on screen, and a
+          // translucent fill would pick up the content behind it.
+          backgroundColor: Palette.surfaceSolid,
+          contentTextStyle: const TextStyle(color: Palette.text),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
@@ -88,7 +128,7 @@ class CommuteGuardianDebugApp extends StatelessWidget {
 }
 
 /// Debug screen: pick a ride, start it, and watch events stream in. Wears the
-/// approved Phase 2 design system (quiet status chip, burgundy cards, crimson
+/// approved Phase 2 design system (quiet status chip, glass cards, crimson
 /// journey CTA, actions in the thumb zone), but it is still the debug tool:
 /// the raw event log stays, which no product screen will have.
 class RideDebugScreen extends StatefulWidget {
@@ -632,10 +672,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
               ],
               const SizedBox(height: 20),
               Container(
-                decoration: BoxDecoration(
-                  color: Palette.burgundy,
-                  borderRadius: BorderRadius.circular(24),
-                ),
+                decoration: Palette.glassCard(radius: 24),
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -673,15 +710,15 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
               const SizedBox(height: 12),
               if (_wakeLadderLive)
                 // The manual dismiss, and the guaranteed ack fallback when
-                // the earphone tap does not route to us. Cream fill: loud
+                // the earphone tap does not route to us. White fill: loud
                 // enough to find half-asleep, and crimson stays reserved for
                 // starting or ending a journey.
                 ElevatedButton(
                   key: const Key('im_awake'),
                   onPressed: _wakeAck,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Palette.cream,
-                    foregroundColor: Palette.navy,
+                    backgroundColor: Palette.text,
+                    foregroundColor: Palette.ground,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(16),
@@ -695,7 +732,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
                 )
               else if (_windDownLive)
                 // Mirrors the notification's wind-down actions for when the
-                // phone is already in hand. Cream like the ack button;
+                // phone is already in hand. White like the ack button;
                 // crimson stays reserved for starting or ending a journey.
                 Row(
                   children: [
@@ -704,8 +741,8 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
                         key: const Key('wind_down_end_now'),
                         onPressed: _windDownEndNow,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: Palette.cream,
-                          foregroundColor: Palette.navy,
+                          backgroundColor: Palette.text,
+                          foregroundColor: Palette.ground,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
@@ -791,10 +828,10 @@ class _TestButton extends StatelessWidget {
       key: buttonKey,
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
-        foregroundColor: Palette.creamDim(0.75),
-        disabledForegroundColor: Palette.creamDim(0.25),
+        foregroundColor: Palette.textDim(0.75),
+        disabledForegroundColor: Palette.textDim(0.25),
         side: BorderSide(
-          color: enabled ? Palette.creamDim(0.3) : Palette.creamDim(0.12),
+          color: enabled ? Palette.textDim(0.3) : Palette.textDim(0.12),
         ),
         padding: const EdgeInsets.symmetric(vertical: 14),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -804,7 +841,7 @@ class _TestButton extends StatelessWidget {
   }
 }
 
-/// The quiet status chip: burgundy surface, never loud, the dot alone carries
+/// The quiet status chip: glass surface, never loud, the dot alone carries
 /// the GPS state (green = fixed, amber = acquiring, dim = unavailable).
 class _StatusChip extends StatelessWidget {
   const _StatusChip({
@@ -826,7 +863,7 @@ class _StatusChip extends StatelessWidget {
       _GpsState.locating => (Palette.dotAmber, 'Locating...', null),
       _GpsState.located => (Palette.dotGreen, "You're near: ", stationName),
       _GpsState.unavailable => (
-        Palette.creamDim(0.25),
+        Palette.textDim(0.25),
         'Location unavailable. Tap to retry',
         null,
       ),
@@ -843,10 +880,7 @@ class _StatusChip extends StatelessWidget {
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
-        decoration: BoxDecoration(
-          color: Palette.burgundy,
-          borderRadius: BorderRadius.circular(28),
-        ),
+        decoration: Palette.glassCard(radius: 28),
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -880,7 +914,7 @@ class _StatusChip extends StatelessWidget {
                     ),
                 ],
               ),
-              style: TextStyle(fontSize: 15, color: Palette.creamDim(0.9)),
+              style: TextStyle(fontSize: 15, color: Palette.textDim(0.9)),
             ),
           ],
         ),
@@ -900,10 +934,7 @@ class _ChipTipBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        color: Palette.burgundy,
-        borderRadius: BorderRadius.circular(16),
-      ),
+      decoration: Palette.glassCard(radius: 16),
       padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
       child: Row(
         children: [
@@ -911,12 +942,12 @@ class _ChipTipBanner extends StatelessWidget {
             child: Text(
               "Couldn't find your location. Tap the chip above to try again, "
               'or pick your origin by hand.',
-              style: TextStyle(fontSize: 13, color: Palette.creamDim(0.8)),
+              style: TextStyle(fontSize: 13, color: Palette.textDim(0.8)),
             ),
           ),
           TextButton(
             onPressed: onDismiss,
-            style: TextButton.styleFrom(foregroundColor: Palette.cream),
+            style: TextButton.styleFrom(foregroundColor: Palette.text),
             child: const Text('Got it'),
           ),
         ],
@@ -949,7 +980,8 @@ class _StationPicker extends StatelessWidget {
     final picked = await showModalBottomSheet<Station>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Palette.burgundy,
+      // Opaque: the sheet is drawn over the screen behind it.
+      backgroundColor: Palette.surfaceSolid,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -969,10 +1001,10 @@ class _StationPicker extends StatelessWidget {
       enabled: enabled && stations.isNotEmpty,
       readOnly: true,
       showCursor: false,
-      style: const TextStyle(color: Palette.cream),
+      style: const TextStyle(color: Palette.text),
       decoration: InputDecoration(
         labelText: label,
-        suffixIcon: Icon(Icons.arrow_drop_down, color: Palette.creamDim(0.6)),
+        suffixIcon: Icon(Icons.arrow_drop_down, color: Palette.textDim(0.6)),
       ),
       onTap: () => _openSheet(context),
     );
@@ -997,15 +1029,10 @@ class _StationSearchSheetState extends State<_StationSearchSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final query = _query.trim().toLowerCase();
-    final matches = query.isEmpty
-        ? widget.stations
-        : [
-            for (final station in widget.stations)
-              if (station.name.toLowerCase().contains(query) ||
-                  station.code.toLowerCase().contains(query))
-                station,
-          ];
+    final matches = [
+      for (final station in widget.stations)
+        if (station.matches(_query)) station,
+    ];
 
     // Tall enough to feel like a place to search, short enough that the sheet
     // still reads as a sheet. The keyboard inset keeps the field above it.
@@ -1023,21 +1050,43 @@ class _StationSearchSheetState extends State<_StationSearchSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Palette.creamDim(0.25),
+                  color: Palette.textDim(0.25),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-              child: TextField(
-                autofocus: true,
-                style: const TextStyle(color: Palette.cream),
-                decoration: InputDecoration(
-                  hintText: 'Search stations',
-                  prefixIcon: Icon(Icons.search, color: Palette.creamDim(0.5)),
-                ),
-                onChanged: (text) => setState(() => _query = text),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Which end of the journey this sheet is setting. The field
+                  // behind it says so too, but the sheet covers it, and the
+                  // hint text vanishes the moment you type. So it lives here,
+                  // where it survives both.
+                  Text(
+                    widget.label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.6,
+                      color: Palette.textDim(0.4),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  TextField(
+                    autofocus: true,
+                    style: const TextStyle(color: Palette.text),
+                    decoration: InputDecoration(
+                      hintText: 'Search stations',
+                      prefixIcon: Icon(
+                        Icons.search,
+                        color: Palette.textDim(0.5),
+                      ),
+                    ),
+                    onChanged: (text) => setState(() => _query = text),
+                  ),
+                ],
               ),
             ),
             Expanded(
@@ -1045,7 +1094,7 @@ class _StationSearchSheetState extends State<_StationSearchSheet> {
                   ? Center(
                       child: Text(
                         'No stations match.',
-                        style: TextStyle(color: Palette.creamDim(0.5)),
+                        style: TextStyle(color: Palette.textDim(0.5)),
                       ),
                     )
                   : ListView.builder(
@@ -1055,13 +1104,13 @@ class _StationSearchSheetState extends State<_StationSearchSheet> {
                         return ListTile(
                           title: Text(
                             station.name,
-                            style: const TextStyle(color: Palette.cream),
+                            style: const TextStyle(color: Palette.text),
                           ),
                           trailing: Text(
                             station.code,
                             style: TextStyle(
                               fontSize: 11,
-                              color: Palette.creamDim(0.5),
+                              color: Palette.textDim(0.5),
                             ),
                           ),
                           onTap: () => Navigator.of(context).pop(station),
@@ -1097,7 +1146,7 @@ class _JourneySummary extends StatelessWidget {
     if (journey == null) {
       return Text(
         'Pick an origin and a destination.',
-        style: TextStyle(fontSize: 13, color: Palette.creamDim(0.5)),
+        style: TextStyle(fontSize: 13, color: Palette.textDim(0.5)),
       );
     }
 
@@ -1135,13 +1184,13 @@ class _JourneySummary extends StatelessWidget {
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: Palette.creamDim(0.85),
+            color: Palette.textDim(0.85),
           ),
         ),
         const SizedBox(height: 4),
         Text(
           stops.map((s) => s.name).join(' → '),
-          style: TextStyle(fontSize: 12, color: Palette.creamDim(0.5)),
+          style: TextStyle(fontSize: 12, color: Palette.textDim(0.5)),
         ),
       ],
     );
@@ -1159,7 +1208,7 @@ class _DebugLog extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        border: Border.all(color: Palette.creamDim(0.1)),
+        border: Border.all(color: Palette.textDim(0.1)),
         borderRadius: BorderRadius.circular(16),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1177,7 +1226,7 @@ class _DebugLog extends StatelessWidget {
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.6,
-                  color: Palette.creamDim(0.4),
+                  color: Palette.textDim(0.4),
                 ),
               ),
               const SizedBox(height: 4),
@@ -1189,7 +1238,7 @@ class _DebugLog extends StatelessWidget {
                         'Events will stream here once a journey starts.',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Palette.creamDim(0.35),
+                          color: Palette.textDim(0.35),
                         ),
                       ),
                     )
@@ -1201,7 +1250,7 @@ class _DebugLog extends StatelessWidget {
                         style: TextStyle(
                           fontFamily: 'monospace',
                           fontSize: 11,
-                          color: Palette.creamDim(0.55),
+                          color: Palette.textDim(0.55),
                         ),
                       ),
                     ),
@@ -1243,9 +1292,9 @@ class _JourneyCta extends StatelessWidget {
         onPressed: canStart ? onStart : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: Palette.crimson,
-          foregroundColor: Palette.cream,
-          disabledBackgroundColor: Palette.burgundy,
-          disabledForegroundColor: Palette.creamDim(0.35),
+          foregroundColor: Palette.text,
+          disabledBackgroundColor: Palette.surfaceSolid,
+          disabledForegroundColor: Palette.textDim(0.35),
           padding: const EdgeInsets.symmetric(vertical: 20),
           shape: shape,
           elevation: 0,
@@ -1262,7 +1311,7 @@ class _JourneyCta extends StatelessWidget {
       onLongPress: onEnd,
       style: ElevatedButton.styleFrom(
         backgroundColor: Palette.crimson,
-        foregroundColor: Palette.cream,
+        foregroundColor: Palette.text,
         padding: const EdgeInsets.symmetric(vertical: 14),
         shape: shape,
         elevation: 0,
@@ -1276,7 +1325,7 @@ class _JourneyCta extends StatelessWidget {
           ),
           Text(
             'hold to confirm',
-            style: TextStyle(fontSize: 12, color: Palette.creamDim(0.7)),
+            style: TextStyle(fontSize: 12, color: Palette.textDim(0.7)),
           ),
         ],
       ),

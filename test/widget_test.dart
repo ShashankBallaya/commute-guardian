@@ -83,6 +83,55 @@ void main() {
     expect(start.onPressed, isNotNull);
   });
 
+  testWidgets('the open search sheet says which end it is setting', (
+    tester,
+  ) async {
+    await _pumpScreen(tester);
+
+    // The sheet covers the field it came from, so without this the only thing
+    // telling you whether you are setting where you are or where you are going
+    // is hidden behind the sheet.
+    await tester.tap(find.widgetWithText(TextField, 'Destination'));
+    await tester.pumpAndSettle();
+
+    // Scoped to the sheet: the field underneath carries the same word, and
+    // that one is exactly the label the sheet is covering up.
+    final labelInSheet = find.descendant(
+      of: find.byType(BottomSheet),
+      matching: find.text('Destination'),
+    );
+    expect(labelInSheet, findsOneWidget);
+
+    // And it keeps saying so once the hint text has gone.
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Search stations'),
+      'Kal',
+    );
+    await tester.pumpAndSettle();
+    expect(labelInSheet, findsOneWidget);
+  });
+
+  testWidgets('a station is reachable by its Devanagari name', (tester) async {
+    await _pumpScreen(tester);
+
+    await tester.tap(find.widgetWithText(TextField, 'Destination'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Search stations'),
+      'कल्याण',
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(ListTile, 'Kalyan'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.widgetWithText(TextField, 'Kalyan'),
+      findsOneWidget,
+      reason: 'typing the Hindi name did not pick the station',
+    );
+  });
+
   testWidgets('a ride that needs a train change says so before you start', (
     tester,
   ) async {
