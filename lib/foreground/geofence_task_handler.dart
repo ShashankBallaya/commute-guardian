@@ -119,6 +119,10 @@ class GeofenceTaskHandler extends TaskHandler {
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
     await _chain?.stop();
     _chain = null;
+    // The greeting flag is a per-Start choice, but saveData persists across
+    // app restarts. Cleared here so a service start that bypasses the UI
+    // (OS recreation, reboot restart) cannot replay a stale opt-in.
+    await FlutterForegroundTask.saveData(key: sarvamGreetingKey, value: false);
   }
 
   @override

@@ -24,10 +24,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 import sys
 import time
 
-sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from build_sarvam_clips import (  # noqa: E402
     LANGS,
     OUT_DIR as SPIKE_DIR,

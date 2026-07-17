@@ -257,11 +257,16 @@ class GeofenceChainService {
       // confirmation and the TTS-path self-test both survive the clip.
       unawaited(_greetThenSpeak(welcomeBody));
     } else {
-      final welcome = 'Welcome to Commute Guardian. $welcomeBody';
+      final welcome = _fullWelcome(welcomeBody);
       _log('SPEAK welcome: $welcome');
       unawaited(_speak(welcome));
     }
   }
+
+  /// The one place the spoken greeting sentence joins the route line, so the
+  /// clipless path and the clip-failure path cannot drift apart.
+  static String _fullWelcome(String welcomeBody) =>
+      'Welcome to Commute Guardian. $welcomeBody';
 
   /// Plays the bundled greeting clip, then hands over to the normal TTS
   /// welcome. Every failure path falls through to TTS: the clip is an
@@ -284,13 +289,15 @@ class GeofenceChainService {
           ),
         ),
       );
-      final completed = player.onPlayerComplete.first;
+      // ignore() marks the future safe if play() throws before the await
+      // reaches it; otherwise its error would surface unhandled later.
+      final completed = player.onPlayerComplete.first..ignore();
       await player.play(ap.AssetSource('audio/welcome_greeting.wav'));
       // The clip is ~3s; a wedged player must not hold the welcome hostage.
       await completed.timeout(const Duration(seconds: 6));
     } catch (error) {
-      _log('GREETING clip failed, falling back to TTS: $error');
-      await _speak('Welcome to Commute Guardian. $welcomeBody');
+      _log('GREETING clip failed, using device TTS: $error');
+      await _speak(_fullWelcome(welcomeBody));
       return;
     } finally {
       unawaited(player.release());
