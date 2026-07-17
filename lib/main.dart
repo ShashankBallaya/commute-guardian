@@ -166,6 +166,10 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   final List<String> _logs = [];
   bool _isRunning = false;
 
+  /// Debug bench flag: Sarvam clip greets at Start (Android only). Handed to
+  /// the service through the store at Start; default off keeps Start stock.
+  bool _sarvamGreeting = false;
+
   /// Whether the service's wake ladder is currently asking to be
   /// acknowledged. Drives the "I'm awake" button and the media session.
   bool _wakeLadderLive = false;
@@ -526,6 +530,10 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
       key: destinationReachedKey,
       value: false,
     );
+    await FlutterForegroundTask.saveData(
+      key: sarvamGreetingKey,
+      value: _sarvamGreeting,
+    );
 
     final result = await FlutterForegroundTask.startService(
       serviceId: 1,
@@ -795,6 +803,35 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
                       ),
                     ),
                   ],
+                ),
+              if (!_isRunning)
+                // Debug bench flag (Android only): Sarvam clip greets at
+                // Start, TTS still speaks the route line. Applied at the
+                // next Start; off keeps the Start path stock. Scaled down
+                // because a stock Switch carries a 48px tap target that
+                // does not fit this column.
+                SizedBox(
+                  height: 22,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Sarvam greeting',
+                          style: TextStyle(color: Palette.textDim(0.6)),
+                        ),
+                        Switch(
+                          key: const Key('sarvam_greeting_switch'),
+                          value: _sarvamGreeting,
+                          activeThumbColor: Palette.dotGreen,
+                          onChanged: (value) =>
+                              setState(() => _sarvamGreeting = value),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               const SizedBox(height: 12),
               _JourneyCta(

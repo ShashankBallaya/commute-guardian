@@ -3,6 +3,7 @@ import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
+import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:fl_location/fl_location.dart' as fl;
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -33,7 +34,16 @@ class GeofenceChainService {
     this.onWakeLadderLive,
     this.onWindDownLive,
     this.onAutoOff,
+    this.sarvamGreeting = false,
   });
+
+  /// Debug-only bench flag (17 Jul 2026): play the bundled Sarvam greeting
+  /// clip at Start instead of TTS speaking "Welcome to Commute Guardian",
+  /// the first taste of the clip pack feature. Android only; iOS keeps the
+  /// full TTS welcome untouched (its shared-session rules get their own
+  /// slice). Off by default so the Start path stays byte-identical to the
+  /// benched behavior unless the debug toggle turns it on.
+  final bool sarvamGreeting;
 
   /// Marks the outer approach fence for a two-stage station, keeping its
   /// region id distinct from the inner station fence.
@@ -237,13 +247,56 @@ class GeofenceChainService {
     final destinationName = journey.chain
         .firstWhere((s) => s.id == journey.destinationStationId)
         .name;
-    final welcome =
-        'Welcome to Commute Guardian. Travel Mode is on, from '
+    final welcomeBody =
+        'Travel Mode is on, from '
         '${journey.chain.first.name} to $destinationName. I will announce '
         'each station along the way. To end the journey at any time, press '
         'and hold the End journey button.';
-    _log('SPEAK welcome: $welcome');
-    unawaited(_speak(welcome));
+    if (sarvamGreeting && Platform.isAndroid) {
+      // Clip greets, TTS still speaks the dynamic route line: the route
+      // confirmation and the TTS-path self-test both survive the clip.
+      unawaited(_greetThenSpeak(welcomeBody));
+    } else {
+      final welcome = 'Welcome to Commute Guardian. $welcomeBody';
+      _log('SPEAK welcome: $welcome');
+      unawaited(_speak(welcome));
+    }
+  }
+
+  /// Plays the bundled greeting clip, then hands over to the normal TTS
+  /// welcome. Every failure path falls through to TTS: the clip is an
+  /// enhancement and must never cost the rider the route confirmation.
+  Future<void> _greetThenSpeak(String welcomeBody) async {
+    final player = ap.AudioPlayer();
+    try {
+      _log('GREETING clip: welcome_greeting.wav');
+      await player.setAudioContext(
+        ap.AudioContext(
+          android: const ap.AudioContextAndroid(
+            isSpeakerphoneOn: false,
+            audioMode: ap.AndroidAudioMode.normal,
+            stayAwake: false,
+            contentType: ap.AndroidContentType.speech,
+            usageType: ap.AndroidUsageType.assistanceNavigationGuidance,
+            // Same shape as an announcement: duck the rider's music while
+            // the clip plays, hand volume back after.
+            audioFocus: ap.AndroidAudioFocus.gainTransientMayDuck,
+          ),
+        ),
+      );
+      final completed = player.onPlayerComplete.first;
+      await player.play(ap.AssetSource('audio/welcome_greeting.wav'));
+      // The clip is ~3s; a wedged player must not hold the welcome hostage.
+      await completed.timeout(const Duration(seconds: 6));
+    } catch (error) {
+      _log('GREETING clip failed, falling back to TTS: $error');
+      await _speak('Welcome to Commute Guardian. $welcomeBody');
+      return;
+    } finally {
+      unawaited(player.release());
+    }
+    _log('SPEAK welcome: $welcomeBody');
+    await _speak(welcomeBody);
   }
 
   /// The announcement session: duck the rider's music while speaking, get out

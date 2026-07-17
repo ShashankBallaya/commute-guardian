@@ -16,6 +16,10 @@ void geofenceTaskStartCallback() {
 const originIdKey = 'origin_station_id';
 const destinationIdKey = 'destination_station_id';
 
+/// Debug bench flag: play the bundled Sarvam greeting clip at Start (Android
+/// only). Written by the debug screen's toggle, read once at service start.
+const sarvamGreetingKey = 'sarvam_greeting';
+
 /// Whether the CURRENT ride announced arrival at its destination. Written false
 /// by the UI at Start, true by the service on arrival, read back by the UI at
 /// Stop to decide if the turnaround origin default can be trusted.
@@ -39,9 +43,13 @@ class GeofenceTaskHandler extends TaskHandler {
     if (originId == null || destinationId == null) {
       return;
     }
+    final sarvamGreeting =
+        await FlutterForegroundTask.getData<bool>(key: sarvamGreetingKey) ??
+            false;
 
     _chain = GeofenceChainService(
       onLog: _sendLog,
+      sarvamGreeting: sarvamGreeting,
       onDestinationReached: () {
         FlutterForegroundTask.saveData(key: destinationReachedKey, value: true);
       },

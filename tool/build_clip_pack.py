@@ -118,9 +118,11 @@ PACE = {
 }
 
 
-def clip_jobs(stations: list[dict]):
+def clip_jobs(stations: list[dict], langs: list[str] | None = None):
     """Yield (relative_path, text, lang, pace) for every clip in scope."""
     for lang, templates in TEMPLATES.items():
+        if langs and lang not in langs:
+            continue
         for station in stations:
             n = station[NAME_FIELD[lang]]
             for kind, template in templates.items():
@@ -157,6 +159,13 @@ def write_audition_page(jobs: list[tuple[str, str, str, float | None]]) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--station", help="single station id: audition mode")
+    ap.add_argument(
+        "--lang",
+        action="append",
+        help="limit to a language code (repeatable), e.g. --lang hi-IN. "
+        "Added when credits ran short mid-batch: finish one language "
+        "without starting the next.",
+    )
     args = ap.parse_args()
 
     key = load_key()
@@ -167,7 +176,7 @@ def main() -> None:
         if not stations:
             sys.exit(f"unknown station id {args.station!r}")
 
-    jobs = list(clip_jobs(stations))
+    jobs = list(clip_jobs(stations, args.lang))
     fetched = skipped = 0
     for rel, text, lang, pace in jobs:
         out = PACK_DIR / rel

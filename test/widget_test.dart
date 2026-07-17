@@ -64,6 +64,19 @@ void main() {
     expect(start.onPressed, isNull);
   });
 
+  testWidgets('the Sarvam greeting bench flag exists and defaults OFF', (
+    tester,
+  ) async {
+    await _pumpScreen(tester);
+
+    // Off by default is the safety contract: with the switch untouched the
+    // Start path is byte-identical to the proven TTS welcome.
+    final greetingSwitch = tester.widget<Switch>(
+      find.byKey(const Key('sarvam_greeting_switch')),
+    );
+    expect(greetingSwitch.value, isFalse);
+  });
+
   testWidgets('picking an origin and destination plans and offers the ride', (
     tester,
   ) async {
