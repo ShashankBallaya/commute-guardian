@@ -26,6 +26,14 @@ import 'wind_down.dart';
 /// station on that chain (plus a second, larger outer approach fence for each
 /// interchange and the destination), speaks an announcement as the ride passes
 /// each one, and logs every event so accuracy can be judged from a real ride.
+///
+/// Registration is with geofence_service's DART engine: the plugin subscribes
+/// to the fl_location stream and does per-fix distance math, it never creates
+/// an OS-level region (verified in plugin source 6.0.0, 19 Jul 2026). Two
+/// facts follow. There is no iOS 20-region cap, so long chains need no fence
+/// windowing; and the "(native)" tag these logs put on ENTER events only
+/// distinguishes the plugin's fence-crossing engine from the RideProgress
+/// chain backstop, both of which starve together when the fix stream dies.
 class GeofenceChainService {
   GeofenceChainService({
     required this.onLog,
