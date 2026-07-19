@@ -25,11 +25,18 @@ class WindDownEnd extends WindDownAction {
 /// Pure, platform-free decision engine for the post-arrival auto-off.
 ///
 /// Sibling of RideProgress and WakeEscalation: time and fixes are passed
-/// in, outputs are data. It waits for proof the rider actually alighted,
-/// walking-speed fixes OUTSIDE the destination fence after the arrival, and
-/// only then starts the 60 second auto-off countdown. A rider carried past
-/// their stop asleep leaves the fence at TRAIN speed, so the countdown
-/// never starts and the overshoot net stays alive.
+/// in, outputs are data. It waits for proof the rider actually alighted
+/// and then WALKED AWAY from the point where the train stopped, and only
+/// then starts the 60 second auto-off countdown. A rider carried past
+/// their stop asleep moves away at TRAIN speed, so the countdown never
+/// starts and the overshoot net stays alive.
+///
+/// The walk is measured from the alight anchor (where the train stopped),
+/// NOT from the destination's fence edge: on the 18 Jul ride the owner
+/// walked out of Kalyan for ten minutes without ever leaving its 500 m
+/// fence, and the fence-exit rule never fired. Big stations make the fence
+/// unreachable on foot in any reasonable time; the anchor is reachable by
+/// definition.
 class WindDown {
   WindDown({required this.destination});
 
@@ -50,13 +57,26 @@ class WindDown {
   /// must not read as a platform exit.
   static const walkingSpeedMaxMps = 2.5;
 
-  /// How far past the fence edge a fix can be and still count as leaving
-  /// the station ON FOOT. The 13 Jul replay found the fatal case this
-  /// guards: the fast local crawled into the NEXT station's approach at
-  /// 1.5 m/s, 2 km past the destination, and two of those fixes read as a
-  /// platform exit, ending Travel Mode minutes before the overshoot
-  /// warning. A walker is near the station; a carried sleeper is not.
-  static const exitBandM = 300;
+  /// At or below this the train (or the rider) is standing still. The
+  /// alight anchor is the first in-fence fix this slow: a train dropping
+  /// through 1.0 m/s is within a carriage length of its stop point.
+  static const alightSpeedMaxMps = 1.0;
+
+  /// How far from the alight anchor the rider must walk before the exit
+  /// counts. 150 m clears a platform-length wander but is crossed within
+  /// minutes by anyone actually leaving; on the 18 Jul Kalyan log the
+  /// owner's walk crossed it about 6 minutes after the doors opened,
+  /// pauses at stairs included.
+  static const exitWalkM = 150.0;
+
+  /// Above this the rider is provably in a vehicle again, so the "exit"
+  /// reading is wrong (a crawling train that picked back up, or a rickshaw
+  /// straight from the gate). Auto-off stands down permanently and any
+  /// live countdown is cancelled: ending Travel Mode from inside a moving
+  /// vehicle is exactly the mistake the overshoot net exists to survive.
+  /// The old fence-band rule guarded the same 13 Jul crawl case; the speed
+  /// cancel replaces it without needing the fence.
+  static const vehicleSpeedMps = 4.0;
 
   /// Same gate as the other engines: blackout-quality fixes prove nothing.
   static const maxAccuracyM = 150.0;
@@ -66,12 +86,20 @@ class WindDown {
   bool _countingDown = false;
   DateTime? _endAt;
 
-  /// Whether the train provably STOPPED at the destination platform (a fix
-  /// inside the fence at walking speed) after the arrival. A rider can only
-  /// have alighted from a stopped train; the 13 Jul fast local crossed the
-  /// Thakurli fence at 22 m/s and nobody got off it there. Exit fixes count
-  /// for nothing until this is seen.
+  /// Whether the train provably STOPPED at the destination platform (a
+  /// near-stationary fix inside the fence) after the arrival. A rider can
+  /// only have alighted from a stopped train; the 13 Jul fast local
+  /// crossed the Thakurli fence at 22 m/s and nobody got off it there.
+  /// Exit fixes count for nothing until this is seen.
   bool _alightSeen = false;
+
+  /// Where the train stopped: the first near-stationary in-fence fix.
+  /// Frozen once set, deliberately. Walking through a crowded station
+  /// includes near-stationary dips (the real Kalyan walk read 0.2 to 0.6
+  /// m/s at stairs), and re-anchoring on each dip would chase the walker
+  /// so the exit distance never accumulates.
+  double? _anchorLat;
+  double? _anchorLng;
 
   /// Whether the auto-off countdown is running. The shell mirrors this into
   /// the notification buttons and the debug screen.
@@ -99,8 +127,8 @@ class WindDown {
     return const [];
   }
 
-  /// One raw GPS fix. After arrival, consecutive walking-speed fixes
-  /// outside the destination fence are the platform-exit proof.
+  /// One raw GPS fix. After arrival, consecutive walking-speed fixes far
+  /// enough from the alight anchor are the platform-exit proof.
   List<WindDownAction> onFix({
     required double lat,
     required double lng,
@@ -108,21 +136,44 @@ class WindDown {
     required double speedMps,
     required DateTime now,
   }) {
-    if (!_armed || _countingDown) return const [];
+    if (!_armed && !_countingDown) return const [];
     if (accuracyM > maxAccuracyM) return const [];
+
+    // Vehicle speed after the alight kills auto-off for the ride, live
+    // countdown included. Cancelling is silent: if this was a crawling
+    // train picking back up the rider is asleep, and if it was a rickshaw
+    // the notification still offers End now.
+    if (_alightSeen && speedMps > vehicleSpeedMps) {
+      _armed = false;
+      _disarmed = true;
+      _countingDown = false;
+      _endAt = null;
+      _qualifyingFixes = 0;
+      return const [];
+    }
+    if (_countingDown) return const [];
 
     final distanceM =
         _distanceM(lat, lng, destination.lat, destination.lng);
-    final onFoot = speedMps <= walkingSpeedMaxMps;
 
-    if (distanceM <= destination.radiusM && onFoot) {
+    if (!_alightSeen &&
+        distanceM <= destination.radiusM &&
+        speedMps <= alightSpeedMaxMps) {
       _alightSeen = true;
+      _anchorLat = lat;
+      _anchorLng = lng;
+      return const [];
     }
 
-    final exitingOnFoot = _alightSeen &&
-        onFoot &&
-        distanceM > destination.radiusM &&
-        distanceM <= destination.radiusM + exitBandM;
+    final anchorLat = _anchorLat;
+    final anchorLng = _anchorLng;
+    if (!_alightSeen || anchorLat == null || anchorLng == null) {
+      return const [];
+    }
+
+    final walkedM = _distanceM(lat, lng, anchorLat, anchorLng);
+    final exitingOnFoot =
+        speedMps <= walkingSpeedMaxMps && walkedM > exitWalkM;
     if (exitingOnFoot) {
       _qualifyingFixes++;
     } else {

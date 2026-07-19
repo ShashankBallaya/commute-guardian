@@ -584,8 +584,8 @@ class GeofenceChainService {
         now: now,
       ),
     );
-    // Then ~200 m beyond the fence edge (inside the on-foot exit band),
-    // due north; only the distance matters.
+    // Then walking-speed fixes due north, well past the exit walk
+    // distance from the alight anchor; only the distance matters.
     final lat = destination.lat + (destination.radiusM + 200) / 111000.0;
     for (var i = 0; i < WindDown.exitFixesRequired; i++) {
       _handleWindDownActions(
