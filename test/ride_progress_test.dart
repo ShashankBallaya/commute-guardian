@@ -32,6 +32,34 @@ final _chain = <Station>[
   _s('airoli', 'Airoli', 19.1585231, 72.9994023, 400),
 ];
 
+/// The 18 Jul evening ride, Ghansoli toward Kalyan: the direction in which the
+/// chain doubles back around the Thane creek V (in from Digha in the east, out
+/// to Kalwa in the east again). The false-positive regression tests replay the
+/// real fixes from that ride's logs.
+final _returnChain = <Station>[
+  _s('ghansoli', 'Ghansoli', 19.1163113, 73.0070197, 400),
+  _s('rabale', 'Rabale', 19.1366355, 73.0027822, 400),
+  _s('airoli', 'Airoli', 19.1585231, 72.9994023, 400),
+  _s('digha', 'Digha Gaon', 19.1807762, 72.9944301, 350),
+  _s('thane', 'Thane', 19.1864830, 72.9757664, 500),
+  _s('kalwa', 'Kalwa', 19.1952243, 72.9963331, 400),
+  _s('mumbra', 'Mumbra', 19.1899425, 73.0230752, 400),
+  _s('diva', 'Diva Junction', 19.1887564, 73.0414169, 400),
+  _s('kopar', 'Kopar', 19.2124230, 73.0788650, 400),
+  _s('dombivli', 'Dombivli', 19.2180493, 73.0861355, 450),
+  _s('thakurli', 'Thakurli', 19.2262813, 73.0980174, 400),
+  _s('kalyan', 'Kalyan', 19.2358216, 73.1308101, 500),
+];
+
+RideProgress _returnRide() => RideProgress(
+      chain: _returnChain,
+      destinationStationId: 'kalyan',
+      arrivalAnnouncements: const {
+        'thane': 'You have reached Thane. Change here to the Central line.',
+        'kalyan': 'You have arrived at your destination, Kalyan.',
+      },
+    );
+
 RideProgress _newRide() => RideProgress(
       chain: _chain,
       destinationStationId: 'digha',
@@ -187,6 +215,106 @@ void main() {
     // Progress is intact: the next real fix at Kalwa still announces it.
     final good = ride.onFix(lat: 19.1952243, lng: 72.9963331, accuracyM: 20);
     expect(good.map((a) => a.stationId), contains('kalwa'));
+  });
+
+  test('a single eliminative fix cannot mark a station passed '
+      '(18 Jul false positive)', () {
+    final ride = _returnRide();
+
+    // Established at Digha by the real native-fence fix (iPhone, 21:14:58).
+    final atDigha = ride.onFix(lat: 19.17772, lng: 72.99391, accuracyM: 14);
+    expect(atDigha.map((a) => a.stationId), contains('digha'));
+
+    // The real false-positive fix (iPhone, 21:18:51): 143 m claimed accuracy,
+    // actually ~460 m off any track, nearest to Kalwa but not beyond it. The
+    // old n - 1 fallback inferred "past Thane" from it and spoke a passed
+    // announcement for an interchange the train had not reached, which then
+    // deduped the real arrival into silence. Elimination alone must not pass
+    // a station on one fix.
+    final falseFix = ride.onFix(lat: 19.19028, lng: 72.99541, accuracyM: 143);
+    expect(falseFix, isEmpty,
+        reason: 'one eliminative fix must wait for corroboration');
+
+    // The real next fix (21:18:59, 28 m) is back inside the Digha fence: it
+    // contradicts the pending claim, which must be discarded, not spoken.
+    final contradiction =
+        ride.onFix(lat: 19.18021, lng: 72.99507, accuracyM: 28);
+    expect(contradiction, isEmpty);
+
+    // The train then really reaches Thane (the real ENTER fix, 21:21:26).
+    // This is the announcement the false positive silenced on the ride: the
+    // interchange script must survive.
+    final arrival = ride.onFix(lat: 19.18742, lng: 72.98037, accuracyM: 29);
+    expect(arrival, hasLength(1));
+    expect(arrival.single.stationId, 'thane');
+    expect(arrival.single.kind, AnnouncementKind.arrival);
+    expect(arrival.single.text,
+        'You have reached Thane. Change here to the Central line.');
+  });
+
+  test('agreeing on-track fixes on the Digha to Thane curve still cannot '
+      'pass Thane (18 Jul systematic case)', () {
+    final ride = _returnRide();
+
+    // Established at Digha.
+    ride.onFix(lat: 19.17772, lng: 72.99391, accuracyM: 14);
+
+    // The real 21:19:00 to 21:19:01 iPhone fixes: the train genuinely on the
+    // Digha to Thane track, moving at 5.5 m/s, where the rail curve swings
+    // closer to Kalwa across the creek than to either Digha or Thane. Two
+    // honest consecutive fixes agree on "nearest Kalwa, approaching", so
+    // corroboration alone cannot reject the inference; only the per-station
+    // check can: neither fix is beyond Thane along Thane's own inbound leg,
+    // so Thane must not be declared passed.
+    final first = ride.onFix(lat: 19.19025, lng: 72.99497, accuracyM: 61);
+    final second = ride.onFix(lat: 19.19028, lng: 72.99495, accuracyM: 39);
+    expect(first, isEmpty);
+    expect(second, isEmpty,
+        reason: 'the fix is not beyond Thane, so Thane is not passed');
+
+    // The real arrival then speaks the interchange script.
+    final arrival = ride.onFix(lat: 19.18742, lng: 72.98037, accuracyM: 29);
+    expect(arrival, hasLength(1));
+    expect(arrival.single.stationId, 'thane');
+    expect(arrival.single.kind, AnnouncementKind.arrival);
+  });
+
+  test('two agreeing eliminative fixes emit the catch-up '
+      '(Rabale, 18 Jul)', () {
+    final ride = _returnRide();
+
+    // Established at Ghansoli (the real ride start fix).
+    ride.onFix(lat: 19.11671, lng: 73.00683, accuracyM: 20);
+
+    // A 5 min blackout jumped the Rabale fence. The first usable fix (the
+    // real 3T fix, 21:10:56) is between Rabale and Airoli, nearest Airoli but
+    // not beyond it, so "past Rabale" rests on elimination: held one fix.
+    final first = ride.onFix(lat: 19.15122, lng: 73.00109, accuracyM: 110);
+    expect(first, isEmpty);
+
+    // The next fix (the real 21:11:09 one) agrees the train has moved on:
+    // the catch-up speaks now, 13 s later than the old single-fix behavior.
+    final second = ride.onFix(lat: 19.15258, lng: 72.99959, accuracyM: 104);
+    expect(second.map((a) => a.stationId), contains('rabale'));
+    final rabale = second.firstWhere((a) => a.stationId == 'rabale');
+    expect(rabale.kind, AnnouncementKind.passed);
+  });
+
+  test('a catch-up with direct evidence still fires on a single fix '
+      '(Thakurli wake trigger, 18 Jul)', () {
+    final ride = _returnRide();
+
+    // Established at Dombivli by the real native-fence fix.
+    ride.onFix(lat: 19.21825, lng: 73.08693, accuracyM: 56);
+
+    // The real 3T catch-up fix (21:56:40): past Thakurli along its inbound
+    // leg. Direct geometric evidence, so it must NOT wait for corroboration:
+    // this very announcement armed the destination wake ladder on the ride,
+    // and delaying it delays the ladder.
+    final result = ride.onFix(lat: 19.22682, lng: 73.10193, accuracyM: 56);
+    expect(result.map((a) => a.stationId), contains('thakurli'));
+    final thakurli = result.firstWhere((a) => a.stationId == 'thakurli');
+    expect(thakurli.kind, AnnouncementKind.passed);
   });
 
   test('reaching a station past the destination is an overshoot warning', () {

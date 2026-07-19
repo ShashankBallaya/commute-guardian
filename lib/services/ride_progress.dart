@@ -48,6 +48,11 @@ class RideProgress {
   /// usable fix localizes it.
   int _reachedIndex = -1;
 
+  /// A passed-station claim from the previous usable fix that rested on
+  /// elimination alone, held until the next usable fix agrees, or -1 when
+  /// nothing is pending. See the corroboration rule in [onFix].
+  int _pendingEliminativeIndex = -1;
+
   /// Announcements newly triggered by this fix, in chain order. Each station's
   /// approach/arrival/overshoot fires at most once for the whole ride.
   List<Announcement> onFix({
@@ -69,21 +74,62 @@ class RideProgress {
     final nearestDist = _distanceM(lat, lng, nearest.lat, nearest.lng);
 
     // How far along the chain has the train provably got? Inside the nearest
-    // fence, or geometrically beyond it toward the next station, means it is at
-    // or past that station; otherwise it is still approaching it (so the
-    // previous station is the furthest reached).
-    final int passedIndex;
-    if (nearestDist <= nearest.radiusM || _isPast(lat, lng, n)) {
-      passedIndex = n;
-    } else {
-      passedIndex = n - 1;
-    }
+    // fence, or geometrically beyond it toward the next station, is DIRECT
+    // evidence of being at or past that station. Otherwise the fix only says
+    // "still approaching station n", and "so n - 1 must be behind us" is an
+    // ELIMINATIVE inference: true on a straight chain, false wherever the
+    // chain doubles back. On the 18 Jul ride a single 143 m fix in the Thane
+    // creek V read nearest-to-Kalwa and the inference spoke "You have passed
+    // Thane" 2.5 minutes before the train got there, which then deduped the
+    // real interchange arrival into silence.
+    final inside = nearestDist <= nearest.radiusM;
+    final direct = inside || _isPast(lat, lng, n);
+    final int passedIndex = direct ? n : n - 1;
 
     if (_reachedIndex < 0) {
       // First fix only localizes: boarding mid-chain must not replay every
       // station already behind the rider.
       _reachedIndex = passedIndex;
     } else {
+      var claimIndex = passedIndex;
+
+      // An eliminative claim may only pass stations the fix is provably
+      // beyond along each station's OWN inbound leg. Nearest-station
+      // assignment cannot be trusted for this: the real Digha to Thane track
+      // curves so close to Kalwa that honest on-track fixes read "nearest
+      // Kalwa", and by chain order that would pass Thane while the train is
+      // still approaching it. The per-station check is immune to a wrong
+      // nearest choice because it asks about the station being passed, not
+      // the one the fix happens to sit closest to. (The direct case needs no
+      // such walk: a train provably at station n has, by the chain's order,
+      // passed every station before n.)
+      if (!direct) {
+        var confirmed = _reachedIndex;
+        for (var i = _reachedIndex + 1; i <= claimIndex; i++) {
+          if (!_isPast(lat, lng, i)) break;
+          confirmed = i;
+        }
+        claimIndex = confirmed;
+      }
+
+      // Corroboration rule: a direct claim advances immediately (catch-up
+      // latency arms the wake ladder, so it must not wait), but an
+      // eliminative claim is held until the next usable fix also says the
+      // train has moved on. A contradicting fix discards the held claim
+      // instead of speaking it. Cost measured on the 18 Jul logs: the one
+      // legitimate eliminative catch-up (Rabale) moved 13 s later; the false
+      // Thane announcement disappeared.
+      if (claimIndex > _reachedIndex && !direct) {
+        if (_pendingEliminativeIndex < 0) {
+          _pendingEliminativeIndex = claimIndex;
+          claimIndex = _reachedIndex;
+        } else {
+          _pendingEliminativeIndex = -1;
+        }
+      } else {
+        _pendingEliminativeIndex = -1;
+      }
+
       // Backstop: any un-announced station the train has moved past since the
       // last fix (a fence the native engine jumped) is announced now, late,
       // and in the past tense: by the time this fires the train is provably
@@ -91,14 +137,14 @@ class RideProgress {
       // spoken three kilometres past Kalwa read as a live claim and misled.
       // The station the fix is actually inside is left to the fence arrival
       // below, which speaks the normal text.
-      for (var i = _reachedIndex + 1; i <= passedIndex; i++) {
-        if (i == n && nearestDist <= nearest.radiusM) continue;
+      for (var i = _reachedIndex + 1; i <= claimIndex; i++) {
+        if (i == n && inside) continue;
         if (_announcedArrivals.add(chain[i].id)) {
           result.add(_passed(chain[i]));
         }
       }
-      if (passedIndex > _reachedIndex) {
-        _reachedIndex = passedIndex;
+      if (claimIndex > _reachedIndex) {
+        _reachedIndex = claimIndex;
       }
     }
 
