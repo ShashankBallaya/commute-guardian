@@ -498,6 +498,21 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
         setState(() => _windDownLive = windDownLive);
       }
 
+      // iOS ladder tone, played natively in AppDelegate (audioplayers'
+      // loop dies under the seized session). Sent only on iOS builds.
+      final toneCommand = data['toneCommand'] as String?;
+      if (toneCommand != null) {
+        final toneVolume = (data['toneVolume'] as num?)?.toDouble() ?? 1.0;
+        _mediaAckChannel.invokeMethod(toneCommand, toneVolume).catchError(
+          (Object error) {
+            setState(() {
+              _logs.insert(0, 'Native tone $toneCommand failed: $error');
+            });
+            return null;
+          },
+        );
+      }
+
       if (data['rideEnded'] == true) {
         _onRideEndedByService();
       }

@@ -34,6 +34,7 @@ class GeofenceChainService {
     this.onWakeLadderLive,
     this.onWindDownLive,
     this.onAutoOff,
+    this.onIosToneCommand,
     this.sarvamGreeting = false,
   });
 
@@ -78,6 +79,12 @@ class GeofenceChainService {
   /// over and the whole service should tear itself down. Owned by the
   /// handler because only it may stop the foreground service.
   final void Function()? onAutoOff;
+
+  /// iOS only: carries a ladder tone command ('startTone'/'stopTone') toward
+  /// the native AVAudioPlayer in AppDelegate, over the same
+  /// service -> main -> media_ack hop the session seizure uses. See
+  /// WakeAlertOutput.onIosToneCommand for why the tone left audioplayers.
+  final void Function(String command, double volume)? onIosToneCommand;
 
   Journey? _journey;
 
@@ -163,7 +170,8 @@ class GeofenceChainService {
       ],
       destinationStationId: journey.destinationStationId,
     );
-    _wakeOutput = WakeAlertOutput(log: _log);
+    _wakeOutput =
+        WakeAlertOutput(log: _log, onIosToneCommand: onIosToneCommand);
 
     await _configureAudio();
 

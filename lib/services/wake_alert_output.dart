@@ -10,9 +10,24 @@ import 'package:vibration/vibration.dart';
 /// spike's throwaway ladder logic. It decides nothing; the engine says what
 /// to do and this does it.
 class WakeAlertOutput {
-  WakeAlertOutput({required this.log});
+  WakeAlertOutput({required this.log, this.onIosToneCommand});
 
   final void Function(String message) log;
+
+  /// iOS only: forwards a tone command toward the native player in
+  /// AppDelegate ('startTone' with a volume, or 'stopTone'). audioplayers'
+  /// ReleaseMode.loop never actually looped under the seized iOS session
+  /// (IPA #18: the 5 s wav died each cycle, the watchdog restarted it with
+  /// an audible gap, and the silent moments are the lead suspect for the
+  /// 18 Jul lost earphone ack), so on iOS the tone is played natively by
+  /// AVAudioPlayer inside the session AppDelegate already owns. The
+  /// command travels service isolate -> sendDataToMain -> main.dart ->
+  /// media_ack channel, the same proven hop the session seizure rides.
+  final void Function(String command, double volume)? onIosToneCommand;
+
+  /// The last volume sent natively, so the every-tick self-heal resend
+  /// does not spam the ride log.
+  double? _sentIosVolume;
 
   /// The tone rides the ALARM stream on Android (its own volume, separate
   /// from media) and the playback category on iOS (immune to the silent
@@ -50,6 +65,19 @@ class WakeAlertOutput {
   /// playing; called on every engine Tone action AND on every service tick
   /// while a ladder is live (the watchdog for the 15 Jul iOS tone gap).
   Future<void> ensureToneAt(double volume) async {
+    final iosTone = onIosToneCommand;
+    if (Platform.isIOS && iosTone != null) {
+      // Sent on every call on purpose: the native side treats a repeat as
+      // a volume set when playing and a restart when an interruption
+      // killed the player, which is the whole watchdog collapsed into one
+      // idempotent message.
+      iosTone('startTone', volume);
+      if (_sentIosVolume != volume) {
+        _sentIosVolume = volume;
+        log('WAKE tone (native) at ${volume.toStringAsFixed(1)}.');
+      }
+      return;
+    }
     if (_player.state == PlayerState.playing) {
       try {
         await _player.setVolume(volume);
@@ -72,6 +100,12 @@ class WakeAlertOutput {
   }
 
   Future<void> stopTone() async {
+    final iosTone = onIosToneCommand;
+    if (Platform.isIOS && iosTone != null) {
+      _sentIosVolume = null;
+      iosTone('stopTone', 0);
+      return;
+    }
     try {
       await _player.stop();
     } catch (error) {

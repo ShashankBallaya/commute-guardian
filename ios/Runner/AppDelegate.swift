@@ -24,6 +24,15 @@ import flutter_foreground_task
   private var ackTargets: [(MPRemoteCommand, Any)] = []
   private var keepAliveEngine: AVAudioEngine?
 
+  /// The ladder tone, played natively. audioplayers' ReleaseMode.loop never
+  /// actually looped under the seized session (IPA #18, all four runs: the
+  /// 5 s wav died each cycle and the Dart watchdog restarted it with an
+  /// audible gap, and the silent moments are the lead suspect for the 18 Jul
+  /// lost earphone ack). AVAudioPlayer with numberOfLoops = -1 loops in the
+  /// session this class already owns.
+  private var tonePlayer: AVAudioPlayer?
+  private var toneAssetPath: String?
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -46,6 +55,9 @@ import flutter_foreground_task
       name: "commute_guardian/media_ack",
       binaryMessenger: registrar.messenger()
     )
+    let toneKey = registrar.lookupKey(forAsset: "assets/audio/wake_alarm.wav")
+    toneAssetPath = Bundle.main.path(forResource: toneKey, ofType: nil)
+
     channel.setMethodCallHandler { [weak self] call, result in
       switch call.method {
       case "startSession":
@@ -54,11 +66,47 @@ import flutter_foreground_task
       case "stopSession":
         self?.stopAckSession()
         result(nil)
+      case "startTone":
+        let volume = (call.arguments as? NSNumber)?.floatValue ?? 1.0
+        self?.startTone(volume: volume)
+        result(nil)
+      case "stopTone":
+        self?.stopTone()
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
     }
     mediaAckChannel = channel
+  }
+
+  /// Starts the looping tone, or just moves its volume when it is already
+  /// playing. Also the self-heal: Dart re-sends startTone on every service
+  /// tick while a ladder is live, so a player an interruption killed comes
+  /// back within a tick.
+  private func startTone(volume: Float) {
+    if let player = tonePlayer, player.isPlaying {
+      player.volume = volume
+      return
+    }
+    guard let path = toneAssetPath else {
+      NSLog("WakeTone: wake_alarm.wav not found in the bundle")
+      return
+    }
+    do {
+      let player = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
+      player.numberOfLoops = -1
+      player.volume = volume
+      player.play()
+      tonePlayer = player
+    } catch {
+      NSLog("WakeTone: could not start the tone: \(error)")
+    }
+  }
+
+  private func stopTone() {
+    tonePlayer?.stop()
+    tonePlayer = nil
   }
 
   private func startAckSession() {
@@ -102,6 +150,10 @@ import flutter_foreground_task
   }
 
   private func stopAckSession() {
+    // Defensive: the ladder's stand-down sends stopTone first, but the
+    // session must never be released with the tone still attached to it.
+    stopTone()
+
     for (command, target) in ackTargets {
       command.removeTarget(target)
       command.isEnabled = false

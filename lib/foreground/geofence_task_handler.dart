@@ -56,6 +56,12 @@ class GeofenceTaskHandler extends TaskHandler {
       onWakeLadderLive: (live) {
         FlutterForegroundTask.sendDataToMain({'wakeLadderLive': live});
       },
+      onIosToneCommand: (command, volume) {
+        FlutterForegroundTask.sendDataToMain({
+          'toneCommand': command,
+          'toneVolume': volume,
+        });
+      },
       onRawFix: (location) {
         FlutterForegroundTask.sendDataToMain({
           'fixLat': location.latitude,
