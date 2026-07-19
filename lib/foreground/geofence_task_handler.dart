@@ -20,6 +20,10 @@ const destinationIdKey = 'destination_station_id';
 /// only). Written by the debug screen's toggle, read once at service start.
 const sarvamGreetingKey = 'sarvam_greeting';
 
+/// Debug bench flag, clip slice 2: station announcements play as full-phrase
+/// Sarvam clips from the pushed pack (Android only), device TTS otherwise.
+const sarvamClipsKey = 'sarvam_clips';
+
 /// Whether the CURRENT ride announced arrival at its destination. Written false
 /// by the UI at Start, true by the service on arrival, read back by the UI at
 /// Stop to decide if the turnaround origin default can be trusted.
@@ -46,10 +50,14 @@ class GeofenceTaskHandler extends TaskHandler {
     final sarvamGreeting =
         await FlutterForegroundTask.getData<bool>(key: sarvamGreetingKey) ??
             false;
+    final sarvamClips =
+        await FlutterForegroundTask.getData<bool>(key: sarvamClipsKey) ??
+            false;
 
     _chain = GeofenceChainService(
       onLog: _sendLog,
       sarvamGreeting: sarvamGreeting,
+      sarvamClips: sarvamClips,
       onDestinationReached: () {
         FlutterForegroundTask.saveData(key: destinationReachedKey, value: true);
       },
@@ -125,10 +133,11 @@ class GeofenceTaskHandler extends TaskHandler {
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
     await _chain?.stop();
     _chain = null;
-    // The greeting flag is a per-Start choice, but saveData persists across
+    // The clip flags are per-Start choices, but saveData persists across
     // app restarts. Cleared here so a service start that bypasses the UI
     // (OS recreation, reboot restart) cannot replay a stale opt-in.
     await FlutterForegroundTask.saveData(key: sarvamGreetingKey, value: false);
+    await FlutterForegroundTask.saveData(key: sarvamClipsKey, value: false);
   }
 
   @override

@@ -63,7 +63,7 @@ void main() {
       expect(rung1[1], isA<Speak>());
       expect(
         (rung1[1] as Speak).text,
-        'Wake up. Your stop, Digha Gaon, is next.',
+        'Wake up! Wake up. Your stop, Digha Gaon, is next.',
       );
     });
 
@@ -181,7 +181,7 @@ void main() {
       final rung1 = wake.onTick(_t0.add(const Duration(seconds: 25)));
       expect(
         (rung1[1] as Speak).text,
-        'Wake up. Your train change at Thane is next.',
+        'Wake up! Wake up. Your train change at Thane is next.',
       );
       final ack = wake.acknowledge(_t0.add(const Duration(seconds: 30)));
       expect(ack[0], isA<StopTone>());
@@ -206,7 +206,7 @@ void main() {
       expect((destRung1[0] as Tone).volume, 0.3);
       expect(
         (destRung1[1] as Speak).text,
-        'Wake up. Your stop, Digha Gaon, is next.',
+        'Wake up! Wake up. Your stop, Digha Gaon, is next.',
       );
     });
 

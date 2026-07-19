@@ -14,6 +14,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../data/station_repository.dart';
 import '../models/journey.dart';
 import '../models/station.dart';
+import 'clip_library.dart';
 import 'ride_progress.dart';
 import 'wake_alert_output.dart';
 import 'wake_escalation.dart';
@@ -44,7 +45,14 @@ class GeofenceChainService {
     this.onAutoOff,
     this.onIosToneCommand,
     this.sarvamGreeting = false,
+    this.sarvamClips = false,
   });
+
+  /// Debug-only flag (owner decision 17 Jul, slice 2 of the clip feature):
+  /// station announcements play as full-phrase Sarvam clips when the pushed
+  /// pack has the file, device TTS otherwise. Android only, like the
+  /// greeting slice; see ClipLibrary for the delivery and matching rules.
+  final bool sarvamClips;
 
   /// Debug-only bench flag (17 Jul 2026): play the bundled Sarvam greeting
   /// clip at Start instead of TTS speaking "Welcome to Commute Guardian",
@@ -125,6 +133,18 @@ class GeofenceChainService {
   Future<void> _speaking = Future<void>.value();
   int _pendingSpeaks = 0;
 
+  /// The pushed Sarvam clip pack, or null when clips are off or absent.
+  ClipLibrary? _clips;
+
+  /// Serializes clip playback the way [_speaking] serializes TTS: a burst of
+  /// catch-up announcements (passed + arrival on one gap-end fix) must play
+  /// one clip after another, not on top of each other. A TTS line landing in
+  /// the middle of a burst is chained here too, so it starts only after the
+  /// clips before it finished; the reverse race (a clip starting while an
+  /// earlier TTS line still speaks) is accepted for this slice because
+  /// Android TTS gives no completion to await mid-ride (QUEUE_ADD).
+  Future<void> _clipChain = Future<void>.value();
+
   /// Mirrors the spike's live state so [_speak] knows not to release the
   /// shared audio session while the alarm tone is looping.
   bool _wakeLadderLive = false;
@@ -180,6 +200,18 @@ class GeofenceChainService {
     );
     _wakeOutput =
         WakeAlertOutput(log: _log, onIosToneCommand: onIosToneCommand);
+
+    if (sarvamClips && Platform.isAndroid) {
+      final dir = await getExternalStorageDirectory();
+      final root =
+          dir == null ? null : Directory('${dir.path}/clips/en-IN');
+      if (root != null && await root.exists()) {
+        _clips = ClipLibrary(root);
+        _log('CLIPS enabled from ${root.path}');
+      } else {
+        _log('CLIPS requested but no pack found, using device TTS.');
+      }
+    }
 
     await _configureAudio();
 
@@ -284,6 +316,68 @@ class GeofenceChainService {
   static String _fullWelcome(String welcomeBody) =>
       'Welcome to Commute Guardian. $welcomeBody';
 
+  /// The Sarvam clip that can replace this announcement, or null for TTS.
+  /// Null whenever clips are off, the pack lacks the file, or the sentence
+  /// is not byte-identical to the clip's template (interchange scripts and
+  /// other dynamic lines always miss on purpose; see clip_library.dart).
+  File? _clipForAnnouncement(Announcement announcement) {
+    final clips = _clips;
+    final chain = _journey?.chain;
+    if (clips == null || chain == null) return null;
+    final index = chain.indexWhere((s) => s.id == announcement.stationId);
+    if (index == -1) return null;
+    final kind = announcementClipKind(
+      announcement: announcement,
+      stationName: chain[index].name,
+    );
+    if (kind == null) return null;
+    return clips.clipFor(announcement.stationId, kind);
+  }
+
+  /// Queues a clip behind any clips already playing. A failed clip falls
+  /// back to TTS with the exact same sentence, so the rider loses the nicer
+  /// voice, never the information.
+  void _enqueueClip(File clip, {required String fallbackText}) {
+    _clipChain = _clipChain.then((_) async {
+      try {
+        _log('CLIP ${clip.uri.pathSegments.last}');
+        await _playClipFile(clip);
+      } catch (error) {
+        _log('CLIP failed, using device TTS: $error');
+        await _speak(fallbackText);
+      }
+    });
+  }
+
+  /// Plays one clip file through the announcement duck: music dips while
+  /// the clip speaks, comes back after, same shape as the greeting slice.
+  Future<void> _playClipFile(File clip) async {
+    final player = ap.AudioPlayer();
+    try {
+      await player.setAudioContext(_clipDuckContext);
+      final completed = player.onPlayerComplete.first..ignore();
+      await player.play(ap.DeviceFileSource(clip.path));
+      // The longest templates run ~8 s; a wedged player must not dam the
+      // clip chain for the rest of the ride.
+      await completed.timeout(const Duration(seconds: 12));
+    } finally {
+      unawaited(player.release());
+    }
+  }
+
+  /// Android transient duck, the same shape [_speak]'s session takes: the
+  /// clip is a navigation prompt, not a media track.
+  static final ap.AudioContext _clipDuckContext = ap.AudioContext(
+    android: const ap.AudioContextAndroid(
+      isSpeakerphoneOn: false,
+      audioMode: ap.AndroidAudioMode.normal,
+      stayAwake: false,
+      contentType: ap.AndroidContentType.speech,
+      usageType: ap.AndroidUsageType.assistanceNavigationGuidance,
+      audioFocus: ap.AndroidAudioFocus.gainTransientMayDuck,
+    ),
+  );
+
   /// Plays the bundled greeting clip, then hands over to the normal TTS
   /// welcome. Every failure path falls through to TTS: the clip is an
   /// enhancement and must never cost the rider the route confirmation.
@@ -291,20 +385,7 @@ class GeofenceChainService {
     final player = ap.AudioPlayer();
     try {
       _log('GREETING clip: welcome_greeting.wav');
-      await player.setAudioContext(
-        ap.AudioContext(
-          android: const ap.AudioContextAndroid(
-            isSpeakerphoneOn: false,
-            audioMode: ap.AndroidAudioMode.normal,
-            stayAwake: false,
-            contentType: ap.AndroidContentType.speech,
-            usageType: ap.AndroidUsageType.assistanceNavigationGuidance,
-            // Same shape as an announcement: duck the rider's music while
-            // the clip plays, hand volume back after.
-            audioFocus: ap.AndroidAudioFocus.gainTransientMayDuck,
-          ),
-        ),
-      );
+      await player.setAudioContext(_clipDuckContext);
       // ignore() marks the future safe if play() throws before the await
       // reaches it; otherwise its error would surface unhandled later.
       final completed = player.onPlayerComplete.first..ignore();
@@ -465,6 +546,26 @@ class GeofenceChainService {
   /// mocked GPS fix to trigger a geofence ENTER.
   Future<void> testAnnounce() async {
     _log('Test announcement requested.');
+    // With clips on, the test exercises the REAL clip path end to end
+    // (selection, queue, duck, file playback) with the origin's approach
+    // clip; a bench in a living room never enters a fence, so this is the
+    // only way to hear the path before a ride does. Clips off, or the file
+    // missing, keeps the stock TTS self-test.
+    final chain = _journey?.chain;
+    if (_clips != null && chain != null && chain.isNotEmpty) {
+      final origin = chain.first;
+      final clip = _clipForAnnouncement(
+        Announcement(
+          stationId: origin.id,
+          kind: AnnouncementKind.approach,
+          text: 'Now approaching ${origin.name}.',
+        ),
+      );
+      if (clip != null) {
+        _enqueueClip(clip, fallbackText: 'Now approaching ${origin.name}.');
+        return;
+      }
+    }
     await _speak(
       'This is a test announcement from Commute Guardian. '
       'If you can hear this, text to speech is working.',
@@ -752,11 +853,17 @@ class GeofenceChainService {
         const <Announcement>[];
     final now = DateTime.now();
     for (final announcement in announcements) {
+      // The SPEAK line's format is load-bearing: replay_ride.dart parses it.
       _log(
         'SPEAK ${announcement.kind.name} ${announcement.stationId}: '
         '${announcement.text}',
       );
-      unawaited(_speak(announcement.text));
+      final clip = _clipForAnnouncement(announcement);
+      if (clip != null) {
+        _enqueueClip(clip, fallbackText: announcement.text);
+      } else {
+        unawaited(_speak(announcement.text));
+      }
 
       if (announcement.kind == AnnouncementKind.arrival &&
           announcement.stationId == _journey?.destinationStationId) {

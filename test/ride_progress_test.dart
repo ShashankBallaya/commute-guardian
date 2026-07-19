@@ -330,6 +330,6 @@ void main() {
     // The warning fires as the train reaches the station, so it must tell the
     // rider to get off HERE, by name. "Alight at the next station" reads as an
     // instruction to stay on for one more stop.
-    expect(airoli.text, 'You have passed your stop. Please alight here, at Airoli.');
+    expect(airoli.text, 'You have passed your stop. It is alright. Please alight here, at Airoli.');
   });
 }

@@ -230,9 +230,12 @@ class WakeEscalation {
         'button, to show you are awake.';
   }
 
+  // The doubled "Wake up!" is owner-approved aggressive copy, synced with
+  // the Sarvam clip template so the TTS fallback speaks the same words as
+  // the clip (tool/build_clip_pack.py keeps en-IN byte-identical to code).
   String _firmText() => _targetIsDestination
-      ? 'Wake up. Your stop, ${_target.name}, is next.'
-      : 'Wake up. Your train change at ${_target.name} is next.';
+      ? 'Wake up! Wake up. Your stop, ${_target.name}, is next.'
+      : 'Wake up! Wake up. Your train change at ${_target.name} is next.';
 
   /// Resolves the current target and arms the next one. Every ladder ends
   /// here, whichever way it ends.

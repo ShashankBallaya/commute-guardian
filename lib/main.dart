@@ -184,6 +184,11 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// the service through the store at Start; default off keeps Start stock.
   bool _sarvamGreeting = false;
 
+  /// Debug bench flag, clip slice 2: station announcements play as Sarvam
+  /// clips from the pushed pack (Android only). Same lifecycle as the
+  /// greeting flag: per-Start, default off.
+  bool _sarvamClips = false;
+
   /// Journey history store; the injected test database or the on-device file.
   late final JourneyHistoryDatabase _history =
       widget.historyDatabase ?? JourneyHistoryDatabase.open();
@@ -573,6 +578,10 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     await FlutterForegroundTask.saveData(
       key: sarvamGreetingKey,
       value: _sarvamGreeting,
+    );
+    await FlutterForegroundTask.saveData(
+      key: sarvamClipsKey,
+      value: _sarvamClips,
     );
 
     final result = await FlutterForegroundTask.startService(
@@ -980,6 +989,17 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
                               activeThumbColor: Palette.dotGreen,
                               onChanged: (value) =>
                                   setState(() => _sarvamGreeting = value),
+                            ),
+                            Text(
+                              'Sarvam clips',
+                              style: TextStyle(color: Palette.textDim(0.6)),
+                            ),
+                            Switch(
+                              key: const Key('sarvam_clips_switch'),
+                              value: _sarvamClips,
+                              activeThumbColor: Palette.dotGreen,
+                              onChanged: (value) =>
+                                  setState(() => _sarvamClips = value),
                             ),
                           ],
                         ),

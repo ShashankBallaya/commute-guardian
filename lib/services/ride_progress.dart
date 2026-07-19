@@ -207,8 +207,12 @@ class RideProgress {
     return Announcement(
       stationId: station.id,
       kind: AnnouncementKind.overshoot,
-      text: 'You have passed your stop. Please alight here, at '
-          '${station.name}.',
+      // The reassurance breath ("It is alright.") is owner-approved copy,
+      // synced with the Sarvam clip template: a rider who overslept must
+      // not panic, and the TTS fallback must speak the same words as the
+      // clip (tool/build_clip_pack.py keeps en-IN byte-identical to code).
+      text: 'You have passed your stop. It is alright. Please alight here, '
+          'at ${station.name}.',
     );
   }
 
