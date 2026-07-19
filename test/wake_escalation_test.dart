@@ -390,6 +390,87 @@ void main() {
       expect((rung1[0] as Tone).volume, 0.3);
     });
 
+    test('a suspension that never gets an ended event resumes itself at the '
+        'timeout (the 18 Jul iPhone ladder death)', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+      wake.onStationEvent(_arrival('thane'), _t0);
+      wake.onTick(_t0.add(const Duration(seconds: 25))); // rung 1
+
+      // The real 18 Jul event: the Music app seized the session (the
+      // rider's own double-tap gone astray), the begin event suspended the
+      // ladder, and no ended event ever came because iOS does not
+      // guarantee one. The ladder stayed dead for the rest of the ride.
+      final suspendAt = _t0.add(const Duration(seconds: 30));
+      wake.onCallStateChanged(inCall: true, now: suspendAt);
+
+      // Still frozen inside the timeout window.
+      expect(wake.onTick(suspendAt.add(const Duration(minutes: 2))), isEmpty);
+
+      // At the timeout the engine assumes the ended event was lost and
+      // resumes on its own: the check-in comes back and silence escalates
+      // again. A false resume during a real long call costs an awake
+      // rider one ack tap; a ladder that never comes back costs a
+      // sleeping rider their stop.
+      final resume =
+          wake.onTick(suspendAt.add(const Duration(minutes: 3)));
+      expect(resume, hasLength(1));
+      expect(
+        (resume.single as Speak).text,
+        'Your stop, Digha Gaon, is next. Tap your earphones, or press the '
+        'I am awake button, to show you are awake.',
+      );
+      final rung1 = wake.onTick(
+          suspendAt.add(const Duration(minutes: 3, seconds: 25)));
+      expect((rung1[0] as Tone).volume, 0.3);
+    });
+
+    test('the stop passing during an unresumed suspension comes back firm '
+        'at the timeout', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+      wake.onCallStateChanged(inCall: true, now: _t0);
+      wake.onStationEvent(_arrival('thane'), _t0.add(const Duration(minutes: 1)));
+      wake.onStationEvent(_arrival('digha'), _t0.add(const Duration(minutes: 2)));
+
+      final resume = wake.onTick(_t0.add(const Duration(minutes: 3)));
+      expect(resume, hasLength(3));
+      expect((resume[0] as Tone).volume, 1.0);
+      expect(resume[1], isA<Vibrate>());
+      expect(
+        (resume[2] as Speak).text,
+        'While you were on your call, the train reached your stop, '
+        'Digha Gaon. Get off the train now.',
+      );
+    });
+
+    test('a real ended event before the timeout clears the deadline', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+      wake.onStationEvent(_arrival('thane'), _t0);
+      wake.onCallStateChanged(
+          inCall: true, now: _t0.add(const Duration(seconds: 5)));
+      wake.onCallStateChanged(
+          inCall: false, now: _t0.add(const Duration(minutes: 1)));
+      wake.acknowledge(_t0.add(const Duration(minutes: 1, seconds: 5)));
+
+      // The old deadline must not fire a phantom resume after the ladder
+      // was legitimately resumed and acknowledged.
+      expect(
+        wake.onTick(_t0.add(const Duration(minutes: 4))),
+        isEmpty,
+      );
+    });
+
     test('hanging up at or past the stop skips the gentle ramp and goes '
         'straight to a firm rung', () {
       final wake = WakeEscalation(

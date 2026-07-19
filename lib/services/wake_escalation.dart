@@ -107,6 +107,19 @@ class WakeEscalation {
   /// end can re-orient the rider to where the train is NOW.
   bool _inCall = false;
 
+  /// When the suspension began, for the self-resume below.
+  DateTime? _suspendedAt;
+
+  /// How long a suspension may run without an ended event before the
+  /// engine resumes on its own. iOS does not guarantee the
+  /// interruption-ended event (on the 18 Jul ride the Music app seized
+  /// the session, no ended ever came, and the ladder stayed dead for the
+  /// rest of the ride). The asymmetry picks the timeout's side: a false
+  /// resume during a real long call costs an awake rider one ack tap,
+  /// while a ladder that never comes back costs a sleeping rider their
+  /// stop.
+  static const interruptionResumeTimeout = Duration(minutes: 3);
+
   /// Whether the ladder was mid-flight when the call suspended it, so call
   /// end knows to resume rather than wait for a trigger that already fired.
   bool _suspendedLadder = false;
@@ -265,6 +278,7 @@ class WakeEscalation {
     if (inCall) {
       if (_inCall) return const [];
       _inCall = true;
+      _suspendedAt = now;
       _suspendedLadder = _ladderLive;
       _passedDuringCall.clear();
       final toneWasPlaying = _ladderLive && _rung >= 1;
@@ -275,6 +289,7 @@ class WakeEscalation {
     }
     if (!_inCall) return const [];
     _inCall = false;
+    _suspendedAt = null;
 
     final targetIndex = _targetIndex;
 
@@ -351,7 +366,18 @@ class WakeEscalation {
   /// A clock tick from the shell. Climbs a live, unacknowledged ladder to
   /// its next rung once that rung's time has come.
   List<WakeAction> onTick(DateTime now) {
-    if (_inCall) return const [];
+    if (_inCall) {
+      // Self-resume: the ended event this suspension is waiting for may
+      // never arrive (see interruptionResumeTimeout). Delivering the
+      // synthetic call-end here runs the same catch-up logic a real
+      // hang-up gets, firm rung included if the stop went by.
+      final suspendedAt = _suspendedAt;
+      if (suspendedAt != null &&
+          !now.isBefore(suspendedAt.add(interruptionResumeTimeout))) {
+        return onCallStateChanged(inCall: false, now: now);
+      }
+      return const [];
+    }
 
     // Dead-reckoning: no ladder yet, but the countdown seeded by the last
     // usable fix keeps running through a blackout. A train that was 200
