@@ -39,13 +39,15 @@ void main() {
   test('Kalyan to Thane is one line, no change, with Mulund as the overshoot', () {
     final journey = _planner().plan(originId: 'kalyan', destinationId: 'thane');
 
-    // The exact 8 stations of the 12 Jul field ride, plus the overshoot pin.
+    // The exact 8 stations of the 12 Jul field ride. The overshoot pin is no
+    // longer a chain member: the chain ends at the destination and pins are
+    // carried separately.
     expect(_ids(journey.chain), [
       'kalyan', 'thakurli', 'dombivli', 'kopar', 'diva',
-      'mumbra', 'kalwa', 'thane', 'mulund',
+      'mumbra', 'kalwa', 'thane',
     ]);
     expect(journey.destinationStationId, 'thane');
-    expect(journey.overshootStationId, 'mulund');
+    expect(journey.overshootStationIds, ['mulund']);
     expect(journey.interchanges, isEmpty);
   });
 
@@ -57,10 +59,10 @@ void main() {
 
     expect(_ids(journey.chain), [
       'kalyan', 'thakurli', 'dombivli', 'kopar', 'diva',
-      'mumbra', 'kalwa', 'thane', 'digha', 'airoli',
+      'mumbra', 'kalwa', 'thane', 'digha',
     ]);
     expect(journey.destinationStationId, 'digha');
-    expect(journey.overshootStationId, 'airoli');
+    expect(journey.overshootStationIds, ['airoli']);
 
     expect(journey.interchanges, hasLength(1));
     final change = journey.interchanges.single;
@@ -94,7 +96,30 @@ void main() {
     final journey = _planner().plan(originId: 'kalyan', destinationId: 'kasara');
 
     expect(journey.chain.last.id, 'kasara');
-    expect(journey.overshootStationId, isNull);
+    expect(journey.overshootStationIds, isEmpty);
+  });
+
+  test('a terminus destination is netted on EVERY branch a train can run on '
+      'to (Thane to Kalyan, the 13 Jul known gap)', () {
+    // The trunk ends at Kalyan, but real trains run THROUGH it onto both the
+    // Kasara and the Karjat branch, and which one is genuinely ambiguous from
+    // the plan alone. A rider who sleeps through Kalyan therefore wakes in
+    // Shahad or in Vithalwadi, and until now got no warning in either case
+    // because the trunk had nothing past Kalyan to pin.
+    //
+    // Both pins are declared by throughServices, not guessed.
+    final journey = _planner().plan(originId: 'thane', destinationId: 'kalyan');
+
+    expect(journey.destinationStationId, 'kalyan');
+    expect(journey.overshootStationIds, ['shahad', 'vithalwadi']);
+
+    // The chain must stay LINEAR and end at the destination. The two pins
+    // diverge geographically, and feeding a fork to the backstop's chain
+    // projection is what produced the false "You have passed Thane" on
+    // 18 Jul. Pins are proximity-tested, never projected.
+    expect(journey.chain.last.id, 'kalyan');
+    expect(_ids(journey.chain), isNot(contains('shahad')));
+    expect(_ids(journey.chain), isNot(contains('vithalwadi')));
   });
 
   test('riding a branch through its junction is not a change of train', () {
@@ -107,10 +132,10 @@ void main() {
     final journey = _planner().plan(originId: 'shahad', destinationId: 'dombivli');
 
     expect(_ids(journey.chain), [
-      'shahad', 'kalyan', 'thakurli', 'dombivli', 'kopar',
+      'shahad', 'kalyan', 'thakurli', 'dombivli',
     ]);
     expect(journey.interchanges, isEmpty);
-    expect(journey.overshootStationId, 'kopar');
+    expect(journey.overshootStationIds, ['kopar']);
 
     // And so the only thing said at Kalyan is the ordinary passing ping.
     expect(journey.arrivalAnnouncements.containsKey('kalyan'), isFalse);
@@ -150,8 +175,9 @@ void main() {
 
     expect(journey.interchanges, isEmpty);
     expect(_ids(journey.chain), [
-      'dombivli', 'thakurli', 'kalyan', 'shahad', 'ambivli',
+      'dombivli', 'thakurli', 'kalyan', 'shahad',
     ]);
+    expect(journey.overshootStationIds, ['ambivli']);
   });
 
   test('a change between two real services is still a change', () {

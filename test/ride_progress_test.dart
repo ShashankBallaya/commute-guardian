@@ -352,4 +352,82 @@ void main() {
     // instruction to stay on for one more stop.
     expect(airoli.text, 'You have passed your stop. It is alright. Please alight here, at Airoli.');
   });
+
+  test('a TERMINUS destination is netted on whichever branch the train took '
+      '(Kalyan, the 13 Jul known gap)', () {
+    // The trunk ends at Kalyan, so a sleeping rider continues onto the Kasara
+    // branch (Shahad) or the Karjat branch (Vithalwadi) and until now got no
+    // warning on either. Both are pinned; the train takes exactly one.
+    //
+    // Coords are OSM station nodes from the bundled JSON, the independent
+    // source of truth.
+    final shahad = _s('shahad', 'Shahad', 19.2435838, 73.1580746, 350);
+    final vithalwadi = _s('vithalwadi', 'Vithalwadi', 19.2284195, 73.1491076, 400);
+
+    RideProgress terminusRide() => RideProgress(
+          chain: [
+            _s('thane', 'Thane', 19.1864830, 72.9757664, 500),
+            _s('kalwa', 'Kalwa', 19.1952243, 72.9963331, 400),
+            _s('thakurli', 'Thakurli', 19.2262813, 73.0980174, 400),
+            _s('kalyan', 'Kalyan', 19.2358216, 73.1308101, 500),
+          ],
+          destinationStationId: 'kalyan',
+          overshootStations: [shahad, vithalwadi],
+        );
+
+    // Kasara branch: the rider wakes in Shahad.
+    final kasaraRide = terminusRide();
+    kasaraRide.onFix(lat: 19.2358216, lng: 73.1308101, accuracyM: 20); // Kalyan
+    final atShahad =
+        kasaraRide.onFix(lat: 19.2435838, lng: 73.1580746, accuracyM: 20);
+    final shahadWarning =
+        atShahad.firstWhere((a) => a.stationId == 'shahad');
+    expect(shahadWarning.kind, AnnouncementKind.overshoot);
+    expect(
+      shahadWarning.text,
+      'You have passed your stop. It is alright. Please alight here, at Shahad.',
+    );
+
+    // Karjat branch: a different train, the other pin, same protection.
+    final karjatRide = terminusRide();
+    karjatRide.onFix(lat: 19.2358216, lng: 73.1308101, accuracyM: 20); // Kalyan
+    final atVithalwadi =
+        karjatRide.onFix(lat: 19.2284195, lng: 73.1491076, accuracyM: 20);
+    final vithalwadiWarning =
+        atVithalwadi.firstWhere((a) => a.stationId == 'vithalwadi');
+    expect(vithalwadiWarning.kind, AnnouncementKind.overshoot);
+    expect(
+      vithalwadiWarning.text,
+      'You have passed your stop. It is alright. Please alight here, at '
+      'Vithalwadi.',
+    );
+  });
+
+  test('an overshoot pin never moves chain progress (the divergent-branch '
+      'guard)', () {
+    // The two Kalyan pins sit on branches that fan apart. If a pin could act
+    // as a chain slot, a fix near one would project the train past stations it
+    // has not reached, which is the 18 Jul false "You have passed Thane" bug
+    // class. Pins are proximity-only, so a pin fix must announce the overshoot
+    // and nothing else.
+    final ride = RideProgress(
+      chain: [
+        _s('thane', 'Thane', 19.1864830, 72.9757664, 500),
+        _s('kalwa', 'Kalwa', 19.1952243, 72.9963331, 400),
+        _s('thakurli', 'Thakurli', 19.2262813, 73.0980174, 400),
+        _s('kalyan', 'Kalyan', 19.2358216, 73.1308101, 500),
+      ],
+      destinationStationId: 'kalyan',
+      overshootStations: [
+        _s('shahad', 'Shahad', 19.2435838, 73.1580746, 350),
+      ],
+    );
+    ride.onFix(lat: 19.1864830, lng: 72.9757664, accuracyM: 20); // at Thane
+
+    final atShahad = ride.onFix(lat: 19.2435838, lng: 73.1580746, accuracyM: 20);
+
+    // It must warn, and it must NOT invent arrivals for Kalwa, Thakurli or
+    // Kalyan, which the train did pass but which no fix ever evidenced.
+    expect(atShahad.map((a) => a.stationId), ['shahad']);
+  });
 }

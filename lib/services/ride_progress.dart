@@ -31,6 +31,7 @@ class RideProgress {
   RideProgress({
     required this.chain,
     required this.destinationStationId,
+    this.overshootStations = const [],
     this.approachRadiusM = const {},
     this.arrivalAnnouncements = const {},
     this.maxAccuracyM = 150,
@@ -38,6 +39,16 @@ class RideProgress {
 
   final List<Station> chain;
   final String destinationStationId;
+
+  /// The safety-net stations one stop past the destination, OUTSIDE [chain].
+  ///
+  /// Past a terminus there is more than one, because a through service can run
+  /// onto either branch and the plan cannot know which. They are matched by
+  /// proximity alone and never take part in chain projection: they diverge
+  /// geographically, so treating one as a chain slot would project the train
+  /// past stations no fix has evidenced. That is the shape of the 18 Jul false
+  /// "You have passed Thane".
+  final List<Station> overshootStations;
   final Map<String, int> approachRadiusM;
   final Map<String, String> arrivalAnnouncements;
   final double maxAccuracyM;
@@ -66,6 +77,24 @@ class RideProgress {
     // one. Wait for a confident fix.
     if (accuracyM > maxAccuracyM) {
       return const [];
+    }
+
+    // The overshoot net comes first and answers alone. Reaching a pin means
+    // the alight was missed, so the only useful thing to say is "get off
+    // here"; a recap of the stations slept through would bury it. Returning
+    // also keeps the pin out of chain projection, which is the whole reason
+    // pins live outside the chain.
+    for (final pin in overshootStations) {
+      if (_distanceM(lat, lng, pin.lat, pin.lng) <= pin.radiusM &&
+          _announcedArrivals.add(pin.id)) {
+        return [
+          Announcement(
+            stationId: pin.id,
+            kind: AnnouncementKind.overshoot,
+            text: ClipKind.overshoot.render(pin.name),
+          ),
+        ];
+      }
     }
 
     final result = <Announcement>[];

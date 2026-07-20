@@ -612,11 +612,9 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     final reached =
         await FlutterForegroundTask.getData<bool>(key: destinationReachedKey) ??
         false;
-    // The overshoot pin is a safety net past the destination, not a station
-    // the rider planned to ride through.
-    final stationCount = journey.chain
-        .takeWhile((s) => s.id != journey.overshootStationId)
-        .length;
+    // The chain ends at the destination now; the overshoot pins live outside
+    // it, so the trip length is simply the chain.
+    final stationCount = journey.chain.length;
     try {
       await _history.record(
         originId: journey.originStationId,
@@ -1362,12 +1360,9 @@ class _JourneySummary extends StatelessWidget {
     }
 
     final ride = journey!;
-    // The overshoot pin is a safety net, not part of the trip, so it would only
-    // confuse the summary. Counting off the filtered list also keeps the count
-    // honest at a terminus, where there is no overshoot pin to exclude.
-    final stops = ride.chain
-        .where((s) => s.id != ride.overshootStationId)
-        .toList();
+    // The overshoot pins are a safety net, not part of the trip. They are no
+    // longer chain members, so the chain is already exactly the trip.
+    final stops = ride.chain;
     final nameOf = {for (final s in ride.chain) s.id: s.name};
     final changes = ride.interchanges.isEmpty
         ? 'No change of train.'

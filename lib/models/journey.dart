@@ -56,12 +56,19 @@ class Journey {
     required this.chain,
     required this.originStationId,
     required this.destinationStationId,
-    required this.overshootStationId,
+    required this.overshootStations,
     required this.interchanges,
   });
 
-  /// Every station the ride passes, in travel order, from the origin through the
-  /// destination and on to the [overshootStationId] when there is one.
+  /// Every station the ride passes, in travel order, from the origin through to
+  /// the destination.
+  ///
+  /// LINEAR BY CONTRACT, and it ends at the destination. The overshoot pins are
+  /// deliberately NOT in here: past a terminus there can be more than one, they
+  /// diverge geographically, and RideProgress projects position along this list
+  /// by chain order. Feeding it a fork is the same shape as the 18 Jul false
+  /// "You have passed Thane", where a fix near a doubled-back chain slot read
+  /// as the train being a station further on than it was.
   final List<Station> chain;
 
   final String originStationId;
@@ -69,10 +76,22 @@ class Journey {
   /// Where the rider alights. Announced as an arrival, not a passing ping.
   final String destinationStationId;
 
-  /// One station past the destination, kept in the [chain] as a safety net so a
-  /// missed alight still gets a "you have passed your stop" warning. Null when
-  /// the destination is the end of the line and there is nothing past it.
-  final String? overshootStationId;
+  /// The stations one stop past the destination: the safety net that still
+  /// warns a rider who slept through the alight.
+  ///
+  /// Usually one. At a TERMINUS destination it is one per branch the train may
+  /// run through onto, because which one it takes cannot be known from the plan
+  /// (a Kalyan train continues to Kasara or to Karjat, or terminates). Empty
+  /// only when nothing runs past the destination at all. These are matched by
+  /// proximity, never by chain order.
+  ///
+  /// Full stations, not ids: they sit outside [chain], so nothing else can
+  /// resolve their coordinates, and both the geofences and RideProgress's
+  /// proximity test need them.
+  final List<Station> overshootStations;
+
+  List<String> get overshootStationIds =>
+      [for (final station in overshootStations) station.id];
 
   final List<Interchange> interchanges;
 

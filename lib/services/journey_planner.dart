@@ -266,21 +266,61 @@ class JourneyPlanner {
       );
     }
 
-    // Safety net: carry the chain one station PAST the destination, so a rider who
-    // sleeps through the alight still gets a "you have passed your stop" warning.
-    // A destination at the end of the line has nothing past it to warn from.
-    final overshootId = _stationPast(legs.last, destinationId);
-    if (overshootId != null) {
-      chainIds.add(overshootId);
-    }
-
     return Journey(
       chain: [for (final id in chainIds) stationsById[id]!],
       originStationId: originId,
       destinationStationId: destinationId,
-      overshootStationId: overshootId,
+      overshootStations: [
+        for (final id in _overshootPins(legs.last, destinationId,
+            chainIds.toSet()))
+          stationsById[id]!,
+      ],
       interchanges: interchanges,
     );
+  }
+
+  /// The safety-net pins one station past the destination.
+  ///
+  /// Ordinarily the next station along the final leg's own line. At the END of
+  /// that line the train does not stop existing: through services run it onto a
+  /// branch, so every branch declared as through-running from here gets its own
+  /// pin. Which one the train actually takes is unknowable from the plan (a
+  /// Kalyan train continues to Kasara or to Karjat, or terminates), so the net
+  /// covers all of them rather than guessing one.
+  ///
+  /// Only DECLARED through services count, never same-name inference: that was
+  /// the v1 rule the 12 Jul audit killed.
+  List<String> _overshootPins(
+    _Leg finalLeg,
+    String destinationId,
+    Set<String> alreadyInChain,
+  ) {
+    final onOwnLine = _stationPast(finalLeg, destinationId);
+    if (onOwnLine != null) return [onOwnLine];
+
+    final pins = <String>[];
+    for (final pair in throughServices) {
+      if (!pair.contains(finalLeg.lineId)) continue;
+      final ontoId = pair.first == finalLeg.lineId ? pair.last : pair.first;
+      final ids = linesById[ontoId]?.stationIds;
+      if (ids == null) continue;
+      final at = ids.indexOf(destinationId);
+      // The destination has to be an END of the onward line for the train to
+      // run through it; the pin is that line's next station inward.
+      final String? pin;
+      if (at == 0) {
+        pin = ids.length > 1 ? ids[1] : null;
+      } else if (at == ids.length - 1) {
+        pin = ids.length > 1 ? ids[ids.length - 2] : null;
+      } else {
+        pin = null;
+      }
+      // A pin the ride already passed would send the rider backwards.
+      if (pin != null && !alreadyInChain.contains(pin) && !pins.contains(pin)) {
+        pins.add(pin);
+      }
+    }
+    return pins;
   }
 
   /// The station the onward leg's line ends at in its direction of travel, e.g.

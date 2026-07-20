@@ -182,6 +182,7 @@ class GeofenceChainService {
     _rideProgress = RideProgress(
       chain: journey.chain,
       destinationStationId: journey.destinationStationId,
+      overshootStations: journey.overshootStations,
       approachRadiusM: journey.approachRadiusM,
       arrivalAnnouncements: journey.arrivalAnnouncements,
     );
@@ -242,7 +243,10 @@ class GeofenceChainService {
 
     final approachRadiusM = journey.approachRadiusM;
     final regions = <GeofenceRegion>{};
-    for (final station in journey.chain) {
+    // The overshoot pins need fences too. They are not chain members (they can
+    // fork past a terminus), but the net is worthless without a trigger: on
+    // 13 Jul the overshoot warning fired off the pin's native fence.
+    for (final station in [...journey.chain, ...journey.overshootStations]) {
       regions.add(
         GeofenceRegion.circular(
           id: station.id,
