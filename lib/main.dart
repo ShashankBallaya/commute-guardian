@@ -260,8 +260,13 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   Future<dynamic> _onMediaAck(MethodCall call) async {
     if (call.method == 'ack') {
       FlutterForegroundTask.sendDataToTask('wake_ack');
+      // iOS forwards which remote command fired (the double-tap gesture maps
+      // to different ones across earbuds); Android sends none. Logging it
+      // turns the next iPhone bench into evidence of whether the tap reached
+      // us at all, the 20 Jul open question.
+      final via = call.arguments is String ? ' via ${call.arguments}' : '';
       setState(() {
-        _logs.insert(0, 'Media button received, ack forwarded to service.');
+        _logs.insert(0, 'Media button received$via, ack forwarded to service.');
       });
     }
     return null;

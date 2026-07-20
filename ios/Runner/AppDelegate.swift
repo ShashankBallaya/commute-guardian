@@ -85,6 +85,15 @@ import flutter_foreground_task
   /// tick while a ladder is live, so a player an interruption killed comes
   /// back within a tick.
   private func startTone(volume: Float) {
+    // Re-assert Now Playing ownership on every tick. flutter_tts activates the
+    // shared session for each utterance (check-in, each rung), which can hand
+    // remote-command routing back to whatever spoke last, so a double-tap
+    // mid-ladder finds no target. This was the 20 Jul regression: the tone
+    // loop (096d96c) was fine, but the earphone ack silently stopped working
+    // and the rider had to open the app. Dart resends startTone every ~5 s, so
+    // reclaiming here keeps us the target between utterances. Cheap and safe:
+    // re-posting the card does not touch the session or the tone.
+    refreshNowPlaying()
     if let player = tonePlayer, player.isPlaying {
       player.volume = volume
       return
@@ -124,29 +133,41 @@ import flutter_foreground_task
 
     startKeepAlive()
 
-    // Without a Now Playing card some iOS versions still treat the previous
-    // music app as the remote target. Rate 1.0 marks us as actively playing.
-    MPNowPlayingInfoCenter.default().nowPlayingInfo = [
-      MPMediaItemPropertyTitle: "Commute Guardian wake alert",
-      MPNowPlayingInfoPropertyPlaybackRate: 1.0,
-    ]
-
     let center = MPRemoteCommandCenter.shared()
-    let commands: [MPRemoteCommand] = [
-      center.playCommand,
-      center.pauseCommand,
-      center.togglePlayPauseCommand,
-      center.nextTrackCommand,
-      center.previousTrackCommand,
+    // Every remote command means "I'm awake". The name is forwarded so the
+    // ack log records which gesture actually reached us (a double-tap maps to
+    // different commands across earbuds); if none appears on a real tap, the
+    // tap never routed to us and the fix above did not hold.
+    let named: [(MPRemoteCommand, String)] = [
+      (center.playCommand, "play"),
+      (center.pauseCommand, "pause"),
+      (center.togglePlayPauseCommand, "togglePlayPause"),
+      (center.nextTrackCommand, "next"),
+      (center.previousTrackCommand, "previous"),
     ]
-    for command in commands {
+    for (command, name) in named {
       command.isEnabled = true
       let target = command.addTarget { [weak self] _ in
-        self?.mediaAckChannel?.invokeMethod("ack", arguments: nil)
+        self?.mediaAckChannel?.invokeMethod("ack", arguments: name)
         return .success
       }
       ackTargets.append((command, target))
     }
+
+    // Posted after the commands are registered, so the card and the routing
+    // target come up together.
+    refreshNowPlaying()
+  }
+
+  /// Posts (or re-posts) the Now Playing card that marks this app as the
+  /// active remote-command target. A no-op unless a ladder's ack session is
+  /// live (its commands are registered).
+  private func refreshNowPlaying() {
+    guard !ackTargets.isEmpty else { return }
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+      MPMediaItemPropertyTitle: "Commute Guardian wake alert",
+      MPNowPlayingInfoPropertyPlaybackRate: 1.0,
+    ]
   }
 
   private func stopAckSession() {
