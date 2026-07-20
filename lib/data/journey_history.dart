@@ -26,6 +26,19 @@ class JourneyRecords extends Table {
   /// Stations in the planned chain, overshoot pin excluded, so the row can
   /// say "8 stations" without replanning a route that may no longer exist.
   IntColumn get stationCount => integer()();
+
+  /// Battery percentage when the ride started and when it ended.
+  ///
+  /// NULLABLE on purpose, two ways: rows written before schema 2 have none,
+  /// and a platform that refuses the reading must not cost the rider their
+  /// history row. The ride is the record; the battery is a note on it.
+  ///
+  /// This is the measurement Phase 3 needs to hold "a full Thane to Karjat
+  /// ride costs under 8 to 10 percent" to account. It has been asked for on
+  /// every ride sheet since 13 Jul and written down on none of them, because
+  /// it depended on somebody remembering to look twice.
+  IntColumn get batteryStartPct => integer().nullable()();
+  IntColumn get batteryEndPct => integer().nullable()();
 }
 
 /// The journey history store. Phase 1 scope: record rides and list them,
@@ -54,7 +67,22 @@ class JourneyHistoryDatabase extends _$JourneyHistoryDatabase {
   }
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  /// Existing installs already hold rides (the 3T has recorded some), so the
+  /// battery columns are ADDED to the live table rather than the database
+  /// being recreated. Old rows keep null batteries, which is exactly what
+  /// they know.
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onCreate: (m) => m.createAll(),
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            await m.addColumn(journeyRecords, journeyRecords.batteryStartPct);
+            await m.addColumn(journeyRecords, journeyRecords.batteryEndPct);
+          }
+        },
+      );
 
   Future<void> record({
     required String originId,
@@ -65,6 +93,8 @@ class JourneyHistoryDatabase extends _$JourneyHistoryDatabase {
     required DateTime endedAt,
     required bool reachedDestination,
     required int stationCount,
+    int? batteryStartPct,
+    int? batteryEndPct,
   }) {
     return into(journeyRecords).insert(
       JourneyRecordsCompanion.insert(
@@ -76,6 +106,8 @@ class JourneyHistoryDatabase extends _$JourneyHistoryDatabase {
         endedAt: endedAt,
         reachedDestination: reachedDestination,
         stationCount: stationCount,
+        batteryStartPct: Value(batteryStartPct),
+        batteryEndPct: Value(batteryEndPct),
       ),
     );
   }

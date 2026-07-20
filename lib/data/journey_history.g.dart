@@ -112,6 +112,28 @@ class $JourneyRecordsTable extends JourneyRecords
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _batteryStartPctMeta = const VerificationMeta(
+    'batteryStartPct',
+  );
+  @override
+  late final GeneratedColumn<int> batteryStartPct = GeneratedColumn<int>(
+    'battery_start_pct',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _batteryEndPctMeta = const VerificationMeta(
+    'batteryEndPct',
+  );
+  @override
+  late final GeneratedColumn<int> batteryEndPct = GeneratedColumn<int>(
+    'battery_end_pct',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -123,6 +145,8 @@ class $JourneyRecordsTable extends JourneyRecords
     endedAt,
     reachedDestination,
     stationCount,
+    batteryStartPct,
+    batteryEndPct,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -215,6 +239,24 @@ class $JourneyRecordsTable extends JourneyRecords
     } else if (isInserting) {
       context.missing(_stationCountMeta);
     }
+    if (data.containsKey('battery_start_pct')) {
+      context.handle(
+        _batteryStartPctMeta,
+        batteryStartPct.isAcceptableOrUnknown(
+          data['battery_start_pct']!,
+          _batteryStartPctMeta,
+        ),
+      );
+    }
+    if (data.containsKey('battery_end_pct')) {
+      context.handle(
+        _batteryEndPctMeta,
+        batteryEndPct.isAcceptableOrUnknown(
+          data['battery_end_pct']!,
+          _batteryEndPctMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -260,6 +302,14 @@ class $JourneyRecordsTable extends JourneyRecords
         DriftSqlType.int,
         data['${effectivePrefix}station_count'],
       )!,
+      batteryStartPct: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}battery_start_pct'],
+      ),
+      batteryEndPct: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}battery_end_pct'],
+      ),
     );
   }
 
@@ -285,6 +335,19 @@ class JourneyRecord extends DataClass implements Insertable<JourneyRecord> {
   /// Stations in the planned chain, overshoot pin excluded, so the row can
   /// say "8 stations" without replanning a route that may no longer exist.
   final int stationCount;
+
+  /// Battery percentage when the ride started and when it ended.
+  ///
+  /// NULLABLE on purpose, two ways: rows written before schema 2 have none,
+  /// and a platform that refuses the reading must not cost the rider their
+  /// history row. The ride is the record; the battery is a note on it.
+  ///
+  /// This is the measurement Phase 3 needs to hold "a full Thane to Karjat
+  /// ride costs under 8 to 10 percent" to account. It has been asked for on
+  /// every ride sheet since 13 Jul and written down on none of them, because
+  /// it depended on somebody remembering to look twice.
+  final int? batteryStartPct;
+  final int? batteryEndPct;
   const JourneyRecord({
     required this.id,
     required this.originId,
@@ -295,6 +358,8 @@ class JourneyRecord extends DataClass implements Insertable<JourneyRecord> {
     required this.endedAt,
     required this.reachedDestination,
     required this.stationCount,
+    this.batteryStartPct,
+    this.batteryEndPct,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -308,6 +373,12 @@ class JourneyRecord extends DataClass implements Insertable<JourneyRecord> {
     map['ended_at'] = Variable<DateTime>(endedAt);
     map['reached_destination'] = Variable<bool>(reachedDestination);
     map['station_count'] = Variable<int>(stationCount);
+    if (!nullToAbsent || batteryStartPct != null) {
+      map['battery_start_pct'] = Variable<int>(batteryStartPct);
+    }
+    if (!nullToAbsent || batteryEndPct != null) {
+      map['battery_end_pct'] = Variable<int>(batteryEndPct);
+    }
     return map;
   }
 
@@ -322,6 +393,12 @@ class JourneyRecord extends DataClass implements Insertable<JourneyRecord> {
       endedAt: Value(endedAt),
       reachedDestination: Value(reachedDestination),
       stationCount: Value(stationCount),
+      batteryStartPct: batteryStartPct == null && nullToAbsent
+          ? const Value.absent()
+          : Value(batteryStartPct),
+      batteryEndPct: batteryEndPct == null && nullToAbsent
+          ? const Value.absent()
+          : Value(batteryEndPct),
     );
   }
 
@@ -340,6 +417,8 @@ class JourneyRecord extends DataClass implements Insertable<JourneyRecord> {
       endedAt: serializer.fromJson<DateTime>(json['endedAt']),
       reachedDestination: serializer.fromJson<bool>(json['reachedDestination']),
       stationCount: serializer.fromJson<int>(json['stationCount']),
+      batteryStartPct: serializer.fromJson<int?>(json['batteryStartPct']),
+      batteryEndPct: serializer.fromJson<int?>(json['batteryEndPct']),
     );
   }
   @override
@@ -355,6 +434,8 @@ class JourneyRecord extends DataClass implements Insertable<JourneyRecord> {
       'endedAt': serializer.toJson<DateTime>(endedAt),
       'reachedDestination': serializer.toJson<bool>(reachedDestination),
       'stationCount': serializer.toJson<int>(stationCount),
+      'batteryStartPct': serializer.toJson<int?>(batteryStartPct),
+      'batteryEndPct': serializer.toJson<int?>(batteryEndPct),
     };
   }
 
@@ -368,6 +449,8 @@ class JourneyRecord extends DataClass implements Insertable<JourneyRecord> {
     DateTime? endedAt,
     bool? reachedDestination,
     int? stationCount,
+    Value<int?> batteryStartPct = const Value.absent(),
+    Value<int?> batteryEndPct = const Value.absent(),
   }) => JourneyRecord(
     id: id ?? this.id,
     originId: originId ?? this.originId,
@@ -378,6 +461,12 @@ class JourneyRecord extends DataClass implements Insertable<JourneyRecord> {
     endedAt: endedAt ?? this.endedAt,
     reachedDestination: reachedDestination ?? this.reachedDestination,
     stationCount: stationCount ?? this.stationCount,
+    batteryStartPct: batteryStartPct.present
+        ? batteryStartPct.value
+        : this.batteryStartPct,
+    batteryEndPct: batteryEndPct.present
+        ? batteryEndPct.value
+        : this.batteryEndPct,
   );
   JourneyRecord copyWithCompanion(JourneyRecordsCompanion data) {
     return JourneyRecord(
@@ -400,6 +489,12 @@ class JourneyRecord extends DataClass implements Insertable<JourneyRecord> {
       stationCount: data.stationCount.present
           ? data.stationCount.value
           : this.stationCount,
+      batteryStartPct: data.batteryStartPct.present
+          ? data.batteryStartPct.value
+          : this.batteryStartPct,
+      batteryEndPct: data.batteryEndPct.present
+          ? data.batteryEndPct.value
+          : this.batteryEndPct,
     );
   }
 
@@ -414,7 +509,9 @@ class JourneyRecord extends DataClass implements Insertable<JourneyRecord> {
           ..write('startedAt: $startedAt, ')
           ..write('endedAt: $endedAt, ')
           ..write('reachedDestination: $reachedDestination, ')
-          ..write('stationCount: $stationCount')
+          ..write('stationCount: $stationCount, ')
+          ..write('batteryStartPct: $batteryStartPct, ')
+          ..write('batteryEndPct: $batteryEndPct')
           ..write(')'))
         .toString();
   }
@@ -430,6 +527,8 @@ class JourneyRecord extends DataClass implements Insertable<JourneyRecord> {
     endedAt,
     reachedDestination,
     stationCount,
+    batteryStartPct,
+    batteryEndPct,
   );
   @override
   bool operator ==(Object other) =>
@@ -443,7 +542,9 @@ class JourneyRecord extends DataClass implements Insertable<JourneyRecord> {
           other.startedAt == this.startedAt &&
           other.endedAt == this.endedAt &&
           other.reachedDestination == this.reachedDestination &&
-          other.stationCount == this.stationCount);
+          other.stationCount == this.stationCount &&
+          other.batteryStartPct == this.batteryStartPct &&
+          other.batteryEndPct == this.batteryEndPct);
 }
 
 class JourneyRecordsCompanion extends UpdateCompanion<JourneyRecord> {
@@ -456,6 +557,8 @@ class JourneyRecordsCompanion extends UpdateCompanion<JourneyRecord> {
   final Value<DateTime> endedAt;
   final Value<bool> reachedDestination;
   final Value<int> stationCount;
+  final Value<int?> batteryStartPct;
+  final Value<int?> batteryEndPct;
   const JourneyRecordsCompanion({
     this.id = const Value.absent(),
     this.originId = const Value.absent(),
@@ -466,6 +569,8 @@ class JourneyRecordsCompanion extends UpdateCompanion<JourneyRecord> {
     this.endedAt = const Value.absent(),
     this.reachedDestination = const Value.absent(),
     this.stationCount = const Value.absent(),
+    this.batteryStartPct = const Value.absent(),
+    this.batteryEndPct = const Value.absent(),
   });
   JourneyRecordsCompanion.insert({
     this.id = const Value.absent(),
@@ -477,6 +582,8 @@ class JourneyRecordsCompanion extends UpdateCompanion<JourneyRecord> {
     required DateTime endedAt,
     required bool reachedDestination,
     required int stationCount,
+    this.batteryStartPct = const Value.absent(),
+    this.batteryEndPct = const Value.absent(),
   }) : originId = Value(originId),
        destinationId = Value(destinationId),
        originName = Value(originName),
@@ -495,6 +602,8 @@ class JourneyRecordsCompanion extends UpdateCompanion<JourneyRecord> {
     Expression<DateTime>? endedAt,
     Expression<bool>? reachedDestination,
     Expression<int>? stationCount,
+    Expression<int>? batteryStartPct,
+    Expression<int>? batteryEndPct,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -506,6 +615,8 @@ class JourneyRecordsCompanion extends UpdateCompanion<JourneyRecord> {
       if (endedAt != null) 'ended_at': endedAt,
       if (reachedDestination != null) 'reached_destination': reachedDestination,
       if (stationCount != null) 'station_count': stationCount,
+      if (batteryStartPct != null) 'battery_start_pct': batteryStartPct,
+      if (batteryEndPct != null) 'battery_end_pct': batteryEndPct,
     });
   }
 
@@ -519,6 +630,8 @@ class JourneyRecordsCompanion extends UpdateCompanion<JourneyRecord> {
     Value<DateTime>? endedAt,
     Value<bool>? reachedDestination,
     Value<int>? stationCount,
+    Value<int?>? batteryStartPct,
+    Value<int?>? batteryEndPct,
   }) {
     return JourneyRecordsCompanion(
       id: id ?? this.id,
@@ -530,6 +643,8 @@ class JourneyRecordsCompanion extends UpdateCompanion<JourneyRecord> {
       endedAt: endedAt ?? this.endedAt,
       reachedDestination: reachedDestination ?? this.reachedDestination,
       stationCount: stationCount ?? this.stationCount,
+      batteryStartPct: batteryStartPct ?? this.batteryStartPct,
+      batteryEndPct: batteryEndPct ?? this.batteryEndPct,
     );
   }
 
@@ -563,6 +678,12 @@ class JourneyRecordsCompanion extends UpdateCompanion<JourneyRecord> {
     if (stationCount.present) {
       map['station_count'] = Variable<int>(stationCount.value);
     }
+    if (batteryStartPct.present) {
+      map['battery_start_pct'] = Variable<int>(batteryStartPct.value);
+    }
+    if (batteryEndPct.present) {
+      map['battery_end_pct'] = Variable<int>(batteryEndPct.value);
+    }
     return map;
   }
 
@@ -577,7 +698,9 @@ class JourneyRecordsCompanion extends UpdateCompanion<JourneyRecord> {
           ..write('startedAt: $startedAt, ')
           ..write('endedAt: $endedAt, ')
           ..write('reachedDestination: $reachedDestination, ')
-          ..write('stationCount: $stationCount')
+          ..write('stationCount: $stationCount, ')
+          ..write('batteryStartPct: $batteryStartPct, ')
+          ..write('batteryEndPct: $batteryEndPct')
           ..write(')'))
         .toString();
   }
@@ -606,6 +729,8 @@ typedef $$JourneyRecordsTableCreateCompanionBuilder =
       required DateTime endedAt,
       required bool reachedDestination,
       required int stationCount,
+      Value<int?> batteryStartPct,
+      Value<int?> batteryEndPct,
     });
 typedef $$JourneyRecordsTableUpdateCompanionBuilder =
     JourneyRecordsCompanion Function({
@@ -618,6 +743,8 @@ typedef $$JourneyRecordsTableUpdateCompanionBuilder =
       Value<DateTime> endedAt,
       Value<bool> reachedDestination,
       Value<int> stationCount,
+      Value<int?> batteryStartPct,
+      Value<int?> batteryEndPct,
     });
 
 class $$JourneyRecordsTableFilterComposer
@@ -671,6 +798,16 @@ class $$JourneyRecordsTableFilterComposer
 
   ColumnFilters<int> get stationCount => $composableBuilder(
     column: $table.stationCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get batteryStartPct => $composableBuilder(
+    column: $table.batteryStartPct,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get batteryEndPct => $composableBuilder(
+    column: $table.batteryEndPct,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -728,6 +865,16 @@ class $$JourneyRecordsTableOrderingComposer
     column: $table.stationCount,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get batteryStartPct => $composableBuilder(
+    column: $table.batteryStartPct,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get batteryEndPct => $composableBuilder(
+    column: $table.batteryEndPct,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$JourneyRecordsTableAnnotationComposer
@@ -773,6 +920,16 @@ class $$JourneyRecordsTableAnnotationComposer
 
   GeneratedColumn<int> get stationCount => $composableBuilder(
     column: $table.stationCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get batteryStartPct => $composableBuilder(
+    column: $table.batteryStartPct,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get batteryEndPct => $composableBuilder(
+    column: $table.batteryEndPct,
     builder: (column) => column,
   );
 }
@@ -823,6 +980,8 @@ class $$JourneyRecordsTableTableManager
                 Value<DateTime> endedAt = const Value.absent(),
                 Value<bool> reachedDestination = const Value.absent(),
                 Value<int> stationCount = const Value.absent(),
+                Value<int?> batteryStartPct = const Value.absent(),
+                Value<int?> batteryEndPct = const Value.absent(),
               }) => JourneyRecordsCompanion(
                 id: id,
                 originId: originId,
@@ -833,6 +992,8 @@ class $$JourneyRecordsTableTableManager
                 endedAt: endedAt,
                 reachedDestination: reachedDestination,
                 stationCount: stationCount,
+                batteryStartPct: batteryStartPct,
+                batteryEndPct: batteryEndPct,
               ),
           createCompanionCallback:
               ({
@@ -845,6 +1006,8 @@ class $$JourneyRecordsTableTableManager
                 required DateTime endedAt,
                 required bool reachedDestination,
                 required int stationCount,
+                Value<int?> batteryStartPct = const Value.absent(),
+                Value<int?> batteryEndPct = const Value.absent(),
               }) => JourneyRecordsCompanion.insert(
                 id: id,
                 originId: originId,
@@ -855,6 +1018,8 @@ class $$JourneyRecordsTableTableManager
                 endedAt: endedAt,
                 reachedDestination: reachedDestination,
                 stationCount: stationCount,
+                batteryStartPct: batteryStartPct,
+                batteryEndPct: batteryEndPct,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

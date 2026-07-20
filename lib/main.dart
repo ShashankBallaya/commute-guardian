@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:battery_plus/battery_plus.dart';
 import 'package:fl_location/fl_location.dart' as fl;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -198,6 +199,11 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// riding the chain it was handed at Start.
   Journey? _activeRide;
   DateTime? _rideStartedAt;
+
+  /// Battery percentage at Start, held until the ride is recorded. In memory
+  /// like [_rideStartedAt] and lost the same way if the activity dies, which
+  /// is consistent: history recording has always been best-effort.
+  int? _rideStartBatteryPct;
 
   /// Whether the service's wake ladder is currently asking to be
   /// acknowledged. Drives the "I'm awake" button and the media session.
@@ -596,7 +602,23 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     if (result is ServiceRequestSuccess) {
       _activeRide = journey;
       _rideStartedAt = DateTime.now();
+      _rideStartBatteryPct = await _batteryPct();
       setState(() => _isRunning = true);
+    }
+  }
+
+  /// Battery percentage, or null if the platform will not say.
+  ///
+  /// Never allowed to throw or hang: this sits on the ride start and ride end
+  /// paths, and a battery reading is a note on a journey, never a reason to
+  /// lose one.
+  Future<int?> _batteryPct() async {
+    try {
+      return await Battery()
+          .batteryLevel
+          .timeout(const Duration(seconds: 2));
+    } catch (_) {
+      return null;
     }
   }
 
@@ -606,8 +628,10 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   Future<void> _recordRide() async {
     final journey = _activeRide;
     final startedAt = _rideStartedAt;
+    final startBattery = _rideStartBatteryPct;
     _activeRide = null;
     _rideStartedAt = null;
+    _rideStartBatteryPct = null;
     if (journey == null || startedAt == null) return;
     final reached =
         await FlutterForegroundTask.getData<bool>(key: destinationReachedKey) ??
@@ -625,6 +649,8 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
         endedAt: DateTime.now(),
         reachedDestination: reached,
         stationCount: stationCount,
+        batteryStartPct: startBattery,
+        batteryEndPct: await _batteryPct(),
       );
     } catch (error) {
       setState(() => _logs.insert(0, 'History record failed: $error'));
@@ -753,7 +779,8 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
                     subtitle: Text(
                       '${_historyTimestamp(ride.endedAt)} • '
                       '${ride.stationCount} stations • '
-                      '${ride.reachedDestination ? 'reached' : 'ended early'}',
+                      '${ride.reachedDestination ? 'reached' : 'ended early'}'
+                      '${_batterySummary(ride)}',
                       style: TextStyle(color: Palette.textDim(0.5)),
                     ),
                   );
@@ -764,6 +791,18 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   }
 
   /// "17 Jul 21:52" without pulling in intl for a debug row.
+  /// " • 84% → 71% (13%)" when both readings exist, otherwise nothing. The
+  /// DROP is the number worth reading; the endpoints are there so a suspicious
+  /// figure can be sanity-checked against a charge mid-ride.
+  static String _batterySummary(JourneyRecord ride) {
+    final start = ride.batteryStartPct;
+    final end = ride.batteryEndPct;
+    if (start == null || end == null) return '';
+    final drop = start - end;
+    final cost = drop > 0 ? ' ($drop%)' : '';
+    return ' • $start% → $end%$cost';
+  }
+
   static String _historyTimestamp(DateTime t) {
     const months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',

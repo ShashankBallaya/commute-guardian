@@ -69,4 +69,37 @@ void main() {
 
     expect(await db.recent(limit: 20), hasLength(20));
   });
+
+  test('a ride records the battery it started and ended on', () async {
+    // The cost of a ride has been guessed at since the 13 Jul thermal report
+    // and asked for on every ride sheet since; nobody ever wrote the numbers
+    // down. Storing them per ride is what makes Phase 3's "under 8 to 10
+    // percent for a full Thane to Karjat run" measurable instead of folklore.
+    await db.record(
+      originId: 'thane',
+      destinationId: 'kalyan',
+      originName: 'Thane',
+      destinationName: 'Kalyan',
+      startedAt: DateTime(2026, 7, 20, 9),
+      endedAt: DateTime(2026, 7, 20, 10),
+      reachedDestination: true,
+      stationCount: 8,
+      batteryStartPct: 84,
+      batteryEndPct: 71,
+    );
+
+    final row = (await db.recent()).single;
+    expect(row.batteryStartPct, 84);
+    expect(row.batteryEndPct, 71);
+  });
+
+  test('a ride whose battery could not be read still records', () async {
+    // A platform that refuses the reading must never cost the rider their
+    // history row: the ride is the record, the battery is a note on it.
+    await ride('kalyan', 'Kalyan', DateTime(2026, 7, 20, 19));
+
+    final row = (await db.recent()).single;
+    expect(row.batteryStartPct, isNull);
+    expect(row.batteryEndPct, isNull);
+  });
 }
