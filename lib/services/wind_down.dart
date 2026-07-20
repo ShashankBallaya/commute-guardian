@@ -69,32 +69,37 @@ class WindDown {
   /// pauses at stairs included.
   static const exitWalkM = 150.0;
 
-  /// Above this the rider is provably in a vehicle again, so the "exit"
-  /// reading is wrong (a crawling train that picked back up, or a rickshaw
-  /// straight from the gate). One such fix stands auto-off down permanently
-  /// and cancels any live countdown: ending Travel Mode from inside a
-  /// moving vehicle is exactly the mistake the overshoot net exists to
-  /// survive. The old fence-band rule guarded the same 13 Jul crawl case;
-  /// the speed cancel replaces it without needing the fence.
+  /// Receding from the alight anchor faster than this average pace is a
+  /// vehicle, not a walk: a crawling train that picked back up, or a degraded
+  /// stream drifting the rider away. It sits above [walkingSpeedMaxMps] to
+  /// leave a dead-band, so ordinary walking jitter never reads as a vehicle.
   static const vehicleSpeedMps = 4.0;
 
-  /// Speeds between [walkingSpeedMaxMps] and [vehicleSpeedMps] are the
-  /// ambiguous band: too fast to be a walk, too slow to prove a vehicle.
-  /// A single such fix only breaks the walking streak, because a real
-  /// walker throws jog-speed noise and must not lose auto-off for it. Two
-  /// in a row is a different claim: GPS noise rarely repeats, while a train
-  /// accelerating off the platform sits in this band for several fixes on
-  /// its way up. Without this, a sparse fix stream that happened to sample
-  /// a departing train only below 2.5 m/s could still arm the countdown,
-  /// which is the "can never end under a sleeping rider" promise broken.
-  static const ambiguousFixesToDisarm = 2;
+  /// A vehicle is disarmed only on SUSTAINED recession: this many continuous
+  /// fixes each farther from the anchor than a walk could reach. One is never
+  /// enough, so a lone GPS teleport (the 20 Jul 3T Asangaon 157 m jump) does
+  /// not permanently end Travel Mode.
+  static const vehicleFixesToDisarm = 2;
+
+  /// A gap longer than this between fixes breaks continuity: the missing fixes
+  /// could hide either a walk or a train, so the recession streak does not
+  /// count across it. On the 20 Jul ride the normal cadence was ~1 s and the
+  /// arrival gap was 15 s. Bench-tunable.
+  static const vehicleStreakGap = Duration(seconds: 12);
+
+  /// How soon after the first anchor a re-anchor may still happen. The arrival
+  /// artifact settles within seconds (the 20 Jul Shahad re-anchor was 37 s in);
+  /// a near-stationary dip minutes into the walk, like the Kalyan stairs pause,
+  /// is past this window and must not move the anchor forward.
+  static const reanchorWindow = Duration(seconds: 90);
 
   /// Same gate as the other engines: blackout-quality fixes prove nothing.
   static const maxAccuracyM = 150.0;
 
   bool _armed = false;
   int _qualifyingFixes = 0;
-  int _ambiguousFixes = 0;
+  int _vehicleFixes = 0;
+  DateTime? _lastFixAt;
   bool _countingDown = false;
   DateTime? _endAt;
 
@@ -117,6 +122,25 @@ class WindDown {
   /// from the anchor is reachable on foot in the time since: a rider cannot be
   /// 150 m away two seconds after the train stopped.
   DateTime? _anchorAt;
+
+  /// When the FIRST anchor was set (arrival). Re-anchoring is only allowed
+  /// within [reanchorWindow] of this, so a mid-walk dip cannot claim it.
+  DateTime? _firstAnchorAt;
+
+  /// A GPS gap happened after the anchor was set, so the anchor may be stale:
+  /// the missing fixes could hide the train's final crawl to the platform, as
+  /// on the 20 Jul Shahad walk where a 15 m/... 135 m jump across a 15 s gap
+  /// left the anchor 135 m from where the rider actually alighted. The next
+  /// settled (slow, in-fence) fix re-anchors to the real alight point. Only a
+  /// gap arms this; a continuous walking dip never re-anchors, so the frozen
+  /// anchor still holds through the stairs-pause case it was built for.
+  bool _reanchorPending = false;
+
+  /// The anchor may be re-set only ONCE, for the arrival artifact. Later gaps
+  /// happen mid-walk (the 20 Jul Shahad walk had a second 41 s gap on the way
+  /// to the parking); re-anchoring on those would keep resetting the walker's
+  /// accumulated distance so the exit never reaches 150 m.
+  bool _reanchored = false;
 
   /// Whether the auto-off countdown is running. The shell mirrors this into
   /// the notification buttons and the debug screen.
@@ -156,38 +180,45 @@ class WindDown {
     if (!_armed && !_countingDown) return const [];
     if (accuracyM > maxAccuracyM) return const [];
 
-    // Vehicle speed after the alight kills auto-off for the ride, live
-    // countdown included. Cancelling is silent: if this was a crawling
-    // train picking back up the rider is asleep, and if it was a rickshaw
-    // the notification still offers End now.
-    if (_alightSeen && speedMps > walkingSpeedMaxMps) {
-      _ambiguousFixes++;
-      final provenVehicle = speedMps > vehicleSpeedMps ||
-          _ambiguousFixes >= ambiguousFixesToDisarm;
-      if (provenVehicle) {
-        _armed = false;
-        _disarmed = true;
-        _countingDown = false;
-        _endAt = null;
-        _qualifyingFixes = 0;
-        return const [];
-      }
-    } else {
-      _ambiguousFixes = 0;
+    // A gap in the stream breaks the sustained-motion streak: the fix that
+    // ends it reports a speed for the whole jump the missing fixes hid, which
+    // is not proof of a vehicle. This is what saved the 20 Jul Shahad walk,
+    // where a 15 s gap produced a lone 6.2 m/s reading.
+    final lastAt = _lastFixAt;
+    _lastFixAt = now;
+    final continuous =
+        lastAt != null && now.difference(lastAt) <= vehicleStreakGap;
+    // A gap after we anchored may have hidden the train's final approach, so
+    // the anchor may be stale (135 m off, on the 20 Jul Shahad walk). Mark it
+    // for re-setting at the next settled fix. Only the FIRST gap, and only
+    // inside the re-anchor window; once that passes, trust the anchor and let
+    // recession judge normally again.
+    if (_alightSeen && !continuous && !_reanchored) _reanchorPending = true;
+    if (_reanchorPending &&
+        _firstAnchorAt != null &&
+        now.difference(_firstAnchorAt!) > reanchorWindow) {
+      _reanchorPending = false;
+      _reanchored = true;
     }
-    if (_countingDown) return const [];
 
     final distanceM =
         _distanceM(lat, lng, destination.lat, destination.lng);
 
-    if (!_alightSeen &&
+    final canReanchor = _reanchorPending && !_reanchored;
+    if ((!_alightSeen || canReanchor) &&
         distanceM <= destination.radiusM &&
         speedMps >= 0 &&
         speedMps <= alightSpeedMaxMps) {
+      if (_alightSeen) _reanchored = true;
       _alightSeen = true;
       _anchorLat = lat;
       _anchorLng = lng;
       _anchorAt = now;
+      _firstAnchorAt ??= now;
+      _reanchorPending = false;
+      // Both streaks from a stale anchor are void.
+      _qualifyingFixes = 0;
+      _vehicleFixes = 0;
       return const [];
     }
 
@@ -197,18 +228,53 @@ class WindDown {
       return const [];
     }
 
+    // Everything keys off DISPLACEMENT from the alight anchor over the time
+    // since it was set, never the reported per-fix speed. On the 20 Jul ride
+    // the reported speed lied both ways: it read 6.2 m/s on a lone gap-jump
+    // while the rider walked to the Shahad parking, and 0.0 on a degraded
+    // stream while the train carried the rider past Ambivli. Distance over
+    // time cannot be faked by a single reading: a walker stays near the
+    // alight point, a departing train recedes hundreds of metres fast.
     final walkedM = _distanceM(lat, lng, anchorLat, anchorLng);
-    // The distance from the anchor has to be reachable on foot in the time
-    // since the anchor was set. On the 20 Jul 3T ride a degraded fix jumped
-    // 157 m from the anchor one second after it, and two such fixes cleared
-    // the 150 m threshold two seconds after arrival. A person cannot walk
-    // 157 m in a second, so that displacement is a GPS glitch, not an exit.
     final elapsedS = now.difference(_anchorAt!).inSeconds;
-    final reachableM = walkingSpeedMaxMps * elapsedS;
+    final walkReachM = walkingSpeedMaxMps * elapsedS;
+    final vehicleReachM = vehicleSpeedMps * elapsedS;
+
+    // Receding faster than any walk, sustained: the train left with the
+    // rider (or a degraded stream is drifting them away). Disarm auto-off for
+    // the ride, live countdown included. Sustained (two continuous fixes) so a
+    // lone GPS teleport does not end Travel Mode; silent, the notification
+    // still offers End now.
+    // Recession is not judged while a re-anchor is pending: the anchor is
+    // known stale (a gap hid the real alight point), so its distance would
+    // read as a phantom vehicle. It resumes once the anchor re-settles.
+    if (!_reanchorPending && continuous && walkedM > vehicleReachM) {
+      _vehicleFixes++;
+      if (_vehicleFixes >= vehicleFixesToDisarm) {
+        _armed = false;
+        _disarmed = true;
+        _countingDown = false;
+        _endAt = null;
+        _qualifyingFixes = 0;
+        return const [];
+      }
+    } else {
+      _vehicleFixes = 0;
+    }
+    if (_countingDown) return const [];
+
+    // A walk off the platform: past 150 m from the anchor, but no farther than
+    // a walk could have carried the rider in the time since (so a glitch that
+    // teleports past 150 m in a second cannot arm it), and at a walking-speed
+    // reading. Two continuous fixes confirm it.
+    // No continuity requirement here (unlike recession): the walk exit is
+    // already guarded by walkedM <= walkReachM, which a gap-jump past 150 m
+    // in a second fails on its own. Requiring continuity would also reject a
+    // sparse but genuine walk.
     final exitingOnFoot = speedMps >= 0 &&
         speedMps <= walkingSpeedMaxMps &&
         walkedM > exitWalkM &&
-        walkedM <= reachableM;
+        walkedM <= walkReachM;
     if (exitingOnFoot) {
       _qualifyingFixes++;
     } else {

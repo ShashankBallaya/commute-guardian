@@ -142,11 +142,10 @@ void main() {
     windDown.onStationEvent(_dighaArrival(), _t0);
     _alight(windDown, _t0.add(const Duration(seconds: 30)));
 
-    // A train accelerating off the platform sits in the 2.5 to 4.0 band for
-    // several fixes on its way up. Sampled only there, the old rule neither
-    // disarmed nor counted, so a later sub-2.5 sample could still arm the
-    // countdown and end Travel Mode under a sleeping rider.
-    for (final t in [70, 75]) {
+    // A train accelerating off the platform holds above walking speed for
+    // several continuous fixes on its way up. Two in a row disarm: sustained
+    // motion, not a lone spike.
+    for (final t in [35, 40]) {
       windDown.onFix(
         lat: _outsideLat,
         lng: _outsideLng,
@@ -386,14 +385,21 @@ void main() {
     windDown.onStationEvent(_dighaArrival(), _t0);
     _alight(windDown, _t0.add(const Duration(seconds: 30)));
 
-    // The train the rider is still asleep on leaves the platform: a fix at
-    // vehicle speed is proof the "alight" did not stick.
+    // The train the rider is still asleep on leaves the platform: two
+    // continuous vehicle-speed fixes are proof the "alight" did not stick.
+    windDown.onFix(
+      lat: _outsideLat,
+      lng: _outsideLng,
+      accuracyM: 20,
+      speedMps: 12,
+      now: _t0.add(const Duration(seconds: 35)),
+    );
     final departing = windDown.onFix(
       lat: _outsideLat,
       lng: _outsideLng,
       accuracyM: 20,
       speedMps: 12,
-      now: _t0.add(const Duration(minutes: 1)),
+      now: _t0.add(const Duration(seconds: 40)),
     );
     expect(departing, isEmpty,
         reason: 'train-speed movement must keep Travel Mode (and the '
@@ -514,6 +520,52 @@ void main() {
     expect(windDown.isCountingDown, isFalse);
   });
 
+  test('a lone fast reading across a GPS gap does not disarm the genuine '
+      'walk-off (the 20 Jul 3T Shahad walk to parking)', () {
+    // The one real walk-off of the 20 Jul ride, and it never fired. The rider
+    // alighted at Shahad and walked to the parking, but 15 s after arrival a
+    // GPS gap ended with the position 135 m from the anchor, and the provider
+    // reported 6.2 m/s for that one fix, the gap-crossing distance over time,
+    // not a vehicle. The old guard disarmed on that single reading and the
+    // 340 m walk that followed never armed the countdown. A fast reading that
+    // comes across a gap, and does not persist, is not a departing train.
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+    _alight(windDown, _t0.add(const Duration(seconds: 2)));
+
+    // 15 s gap, then a fix 135 m from the anchor reporting 6.2 m/s: the gap
+    // artifact. It must not disarm.
+    windDown.onFix(
+      lat: 19.18198, // ~135 m north of the Digha anchor at _alight
+      lng: 72.9944301,
+      accuracyM: 55,
+      speedMps: 6.2,
+      now: _t0.add(const Duration(seconds: 17)),
+    );
+
+    // The walk to parking: two continuous walking fixes past 150 m from the
+    // anchor, over enough time to be a real walk. The countdown must arm.
+    final first = windDown.onFix(
+      lat: _outsideLat, // ~180 m from the anchor
+      lng: _outsideLng,
+      accuracyM: 12,
+      speedMps: 1.2,
+      now: _t0.add(const Duration(minutes: 2)),
+    );
+    final second = windDown.onFix(
+      lat: _outsideLat,
+      lng: _outsideLng,
+      accuracyM: 10,
+      speedMps: 1.3,
+      now: _t0.add(const Duration(minutes: 2, seconds: 6)),
+    );
+    expect(first, isEmpty);
+    expect(second, hasLength(1),
+        reason: 'the genuine walk-off must fire; the gap artifact must not '
+            'have disarmed it');
+    expect(windDown.isCountingDown, isTrue);
+  });
+
   test('vehicle speed during a live countdown cancels it silently', () {
     final windDown = _newWindDown();
     windDown.onStationEvent(_dighaArrival(), _t0);
@@ -534,16 +586,26 @@ void main() {
     );
     expect(windDown.isCountingDown, isTrue);
 
-    // What read as a walking exit was a slow train now picking up speed:
-    // the countdown must die before it ends Travel Mode under a sleeping
-    // rider. Silent on purpose; the state flip reaches the notification
-    // through the shell's isCountingDown mirror.
-    final cancel = windDown.onFix(
-      lat: _outsideLat,
+    // What read as a walking exit was a slow train, and now the rider is
+    // found far past the anchor, faster than any walk could have carried
+    // them: two continuous fixes of that recession prove a vehicle and the
+    // countdown must die before it ends Travel Mode under a sleeping rider.
+    // Silent on purpose; the state flip reaches the notification through the
+    // isCountingDown mirror. ~700 m north of Digha.
+    const farLat = 19.18708;
+    windDown.onFix(
+      lat: farLat,
       lng: _outsideLng,
       accuracyM: 20,
       speedMps: 8,
-      now: _t0.add(const Duration(minutes: 3, seconds: 20)),
+      now: _t0.add(const Duration(minutes: 3, seconds: 10)),
+    );
+    final cancel = windDown.onFix(
+      lat: farLat,
+      lng: _outsideLng,
+      accuracyM: 20,
+      speedMps: 8,
+      now: _t0.add(const Duration(minutes: 3, seconds: 15)),
     );
     expect(cancel, isEmpty);
     expect(windDown.isCountingDown, isFalse);
