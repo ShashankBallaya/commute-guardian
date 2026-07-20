@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../models/station.dart';
+import 'announcement_templates.dart';
 
 /// The kind of announcement an [Announcement] represents.
 enum AnnouncementKind { approach, arrival, passed, overshoot }
@@ -120,10 +121,18 @@ class RideProgress {
       // legitimate eliminative catch-up (Rabale) moved 13 s later; the false
       // Thane announcement disappeared.
       if (claimIndex > _reachedIndex && !direct) {
-        if (_pendingEliminativeIndex < 0) {
+        if (_pendingEliminativeIndex < 0 ||
+            claimIndex < _pendingEliminativeIndex) {
+          // First sighting, or a fix that walks the claim BACK. Neither is
+          // corroboration: hold (the weaker claim, so a wobble cannot
+          // ratchet the train forward) and wait for the next usable fix.
           _pendingEliminativeIndex = claimIndex;
           claimIndex = _reachedIndex;
         } else {
+          // The new fix independently proves the train is at or beyond the
+          // held claim, so it corroborates. Speak the FRESHER index: it is
+          // the better-evidenced position, and it has already passed the
+          // per-station _isPast test above.
           _pendingEliminativeIndex = -1;
         }
       } else {
@@ -165,7 +174,7 @@ class RideProgress {
         Announcement(
           stationId: nearest.id,
           kind: AnnouncementKind.approach,
-          text: 'Now approaching ${nearest.name}.',
+          text: ClipKind.approach.render(nearest.name),
         ),
       );
     }
@@ -181,7 +190,7 @@ class RideProgress {
           stationId: station.id,
           kind: AnnouncementKind.arrival,
           text: arrivalAnnouncements[station.id] ??
-              'Now approaching ${station.name}.',
+              ClipKind.approach.render(station.name),
         );
   }
 
@@ -192,7 +201,7 @@ class RideProgress {
         Announcement(
           stationId: station.id,
           kind: AnnouncementKind.passed,
-          text: 'You have passed ${station.name}.',
+          text: ClipKind.passed.render(station.name),
         );
   }
 
@@ -207,12 +216,10 @@ class RideProgress {
     return Announcement(
       stationId: station.id,
       kind: AnnouncementKind.overshoot,
-      // The reassurance breath ("It is alright.") is owner-approved copy,
-      // synced with the Sarvam clip template: a rider who overslept must
-      // not panic, and the TTS fallback must speak the same words as the
-      // clip (tool/build_clip_pack.py keeps en-IN byte-identical to code).
-      text: 'You have passed your stop. It is alright. Please alight here, '
-          'at ${station.name}.',
+      // The reassurance breath ("It is alright.") is owner-approved copy.
+      // The wording lives in ClipKind so the device TTS floor and the
+      // Sarvam clip speak the same sentence by construction.
+      text: ClipKind.overshoot.render(station.name),
     );
   }
 

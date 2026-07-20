@@ -300,6 +300,26 @@ void main() {
     expect(rabale.kind, AnnouncementKind.passed);
   });
 
+  test('an eliminative claim that walks BACK is not corroboration; the '
+      'weaker claim is held instead', () {
+    final ride = _returnRide();
+    ride.onFix(lat: 19.11671, lng: 73.00683, accuracyM: 20);
+
+    // The same held Rabale claim as the test above.
+    expect(ride.onFix(lat: 19.15122, lng: 73.00109, accuracyM: 110), isEmpty);
+
+    // Now a fix that reads EARLIER on the chain, back toward Ghansoli. It is
+    // eliminative too, so before this fix any second eliminative claim
+    // released the held one. A fix that disagrees about how far the train
+    // has come is not agreement, so nothing may speak yet.
+    final backwards = ride.onFix(lat: 19.12300, lng: 73.00600, accuracyM: 120);
+    expect(
+      backwards.map((a) => a.stationId),
+      isNot(contains('rabale')),
+      reason: 'a claim walking back must not release the held claim',
+    );
+  });
+
   test('a catch-up with direct evidence still fires on a single fix '
       '(Thakurli wake trigger, 18 Jul)', () {
     final ride = _returnRide();

@@ -14,6 +14,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../data/station_repository.dart';
 import '../models/journey.dart';
 import '../models/station.dart';
+import 'announcement_templates.dart';
 import 'clip_library.dart';
 import 'ride_progress.dart';
 import 'wake_alert_output.dart';
@@ -205,9 +206,15 @@ class GeofenceChainService {
       final dir = await getExternalStorageDirectory();
       final root =
           dir == null ? null : Directory('${dir.path}/clips/en-IN');
-      if (root != null && await root.exists()) {
-        _clips = ClipLibrary(root);
-        _log('CLIPS enabled from ${root.path}');
+      final clips = root != null && await root.exists()
+          ? ClipLibrary.open(root)
+          : null;
+      if (clips != null) {
+        _clips = clips;
+        _log('CLIPS enabled from ${root!.path}, ${clips.length} in manifest');
+      } else if (root != null && await root.exists()) {
+        _log('CLIPS pack has no readable manifest.json, using device TTS. '
+            'Regenerate with build_clip_pack.py --manifest-only and push it.');
       } else {
         _log('CLIPS requested but no pack found, using device TTS.');
       }
@@ -331,21 +338,31 @@ class GeofenceChainService {
       stationName: chain[index].name,
     );
     if (kind == null) return null;
-    return clips.clipFor(announcement.stationId, kind);
+    return clips.clipFor(
+      announcement.stationId,
+      kind,
+      expectedSentence: announcement.text,
+    );
   }
 
-  /// Queues a clip behind any clips already playing. A failed clip falls
-  /// back to TTS with the exact same sentence, so the rider loses the nicer
-  /// voice, never the information.
-  void _enqueueClip(File clip, {required String fallbackText}) {
+  /// Queues a clip behind any clips already playing. A failed clip drops to
+  /// the device TTS floor with the exact same sentence, so the rider loses
+  /// the nicer voice, never the information.
+  void _enqueueClip(File clip, {required String floorText}) {
     _clipChain = _clipChain.then((_) async {
       try {
         _log('CLIP ${clip.uri.pathSegments.last}');
         await _playClipFile(clip);
       } catch (error) {
         _log('CLIP failed, using device TTS: $error');
-        await _speak(fallbackText);
+        await _speak(floorText);
       }
+      // Nothing may escape into the chain itself. A rejected future here
+      // poisons every clip queued after it for the rest of the ride, which
+      // would silence announcements one by one instead of dropping a single
+      // one to the floor.
+    }).catchError((Object error) {
+      _log('CLIP chain error, queue continues: $error');
     });
   }
 
@@ -554,15 +571,16 @@ class GeofenceChainService {
     final chain = _journey?.chain;
     if (_clips != null && chain != null && chain.isNotEmpty) {
       final origin = chain.first;
+      final text = ClipKind.approach.render(origin.name);
       final clip = _clipForAnnouncement(
         Announcement(
           stationId: origin.id,
           kind: AnnouncementKind.approach,
-          text: 'Now approaching ${origin.name}.',
+          text: text,
         ),
       );
       if (clip != null) {
-        _enqueueClip(clip, fallbackText: 'Now approaching ${origin.name}.');
+        _enqueueClip(clip, floorText: text);
         return;
       }
     }
@@ -860,7 +878,7 @@ class GeofenceChainService {
       );
       final clip = _clipForAnnouncement(announcement);
       if (clip != null) {
-        _enqueueClip(clip, fallbackText: announcement.text);
+        _enqueueClip(clip, floorText: announcement.text);
       } else {
         unawaited(_speak(announcement.text));
       }

@@ -71,18 +71,30 @@ class WindDown {
 
   /// Above this the rider is provably in a vehicle again, so the "exit"
   /// reading is wrong (a crawling train that picked back up, or a rickshaw
-  /// straight from the gate). Auto-off stands down permanently and any
-  /// live countdown is cancelled: ending Travel Mode from inside a moving
-  /// vehicle is exactly the mistake the overshoot net exists to survive.
-  /// The old fence-band rule guarded the same 13 Jul crawl case; the speed
-  /// cancel replaces it without needing the fence.
+  /// straight from the gate). One such fix stands auto-off down permanently
+  /// and cancels any live countdown: ending Travel Mode from inside a
+  /// moving vehicle is exactly the mistake the overshoot net exists to
+  /// survive. The old fence-band rule guarded the same 13 Jul crawl case;
+  /// the speed cancel replaces it without needing the fence.
   static const vehicleSpeedMps = 4.0;
+
+  /// Speeds between [walkingSpeedMaxMps] and [vehicleSpeedMps] are the
+  /// ambiguous band: too fast to be a walk, too slow to prove a vehicle.
+  /// A single such fix only breaks the walking streak, because a real
+  /// walker throws jog-speed noise and must not lose auto-off for it. Two
+  /// in a row is a different claim: GPS noise rarely repeats, while a train
+  /// accelerating off the platform sits in this band for several fixes on
+  /// its way up. Without this, a sparse fix stream that happened to sample
+  /// a departing train only below 2.5 m/s could still arm the countdown,
+  /// which is the "can never end under a sleeping rider" promise broken.
+  static const ambiguousFixesToDisarm = 2;
 
   /// Same gate as the other engines: blackout-quality fixes prove nothing.
   static const maxAccuracyM = 150.0;
 
   bool _armed = false;
   int _qualifyingFixes = 0;
+  int _ambiguousFixes = 0;
   bool _countingDown = false;
   DateTime? _endAt;
 
@@ -143,13 +155,20 @@ class WindDown {
     // countdown included. Cancelling is silent: if this was a crawling
     // train picking back up the rider is asleep, and if it was a rickshaw
     // the notification still offers End now.
-    if (_alightSeen && speedMps > vehicleSpeedMps) {
-      _armed = false;
-      _disarmed = true;
-      _countingDown = false;
-      _endAt = null;
-      _qualifyingFixes = 0;
-      return const [];
+    if (_alightSeen && speedMps > walkingSpeedMaxMps) {
+      _ambiguousFixes++;
+      final provenVehicle = speedMps > vehicleSpeedMps ||
+          _ambiguousFixes >= ambiguousFixesToDisarm;
+      if (provenVehicle) {
+        _armed = false;
+        _disarmed = true;
+        _countingDown = false;
+        _endAt = null;
+        _qualifyingFixes = 0;
+        return const [];
+      }
+    } else {
+      _ambiguousFixes = 0;
     }
     if (_countingDown) return const [];
 

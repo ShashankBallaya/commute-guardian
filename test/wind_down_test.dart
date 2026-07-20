@@ -100,6 +100,82 @@ void main() {
     expect(windDown.isCountingDown, isTrue);
   });
 
+  test('one jog-speed fix in the ambiguous band breaks the streak but does '
+      'not cost a real walker their auto-off', () {
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+    _alight(windDown, _t0.add(const Duration(seconds: 30)));
+
+    // 3.0 m/s: too fast for a walk, too slow to prove a vehicle. GPS throws
+    // this at real walkers, so a single one must only reset the streak.
+    windDown.onFix(
+      lat: _outsideLat,
+      lng: _outsideLng,
+      accuracyM: 20,
+      speedMps: 3.0,
+      now: _t0.add(const Duration(minutes: 2)),
+    );
+
+    // Walking again, so the countdown is still reachable: not disarmed.
+    windDown.onFix(
+      lat: _outsideLat,
+      lng: _outsideLng,
+      accuracyM: 20,
+      speedMps: 1.4,
+      now: _t0.add(const Duration(minutes: 2, seconds: 5)),
+    );
+    final second = windDown.onFix(
+      lat: _outsideLat,
+      lng: _outsideLng,
+      accuracyM: 20,
+      speedMps: 1.4,
+      now: _t0.add(const Duration(minutes: 2, seconds: 10)),
+    );
+    expect(second, hasLength(1));
+    expect(windDown.isCountingDown, isTrue);
+  });
+
+  test('two consecutive ambiguous-band fixes disarm auto-off, closing the '
+      'sparse-sampling hole under a departing train', () {
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+    _alight(windDown, _t0.add(const Duration(seconds: 30)));
+
+    // A train accelerating off the platform sits in the 2.5 to 4.0 band for
+    // several fixes on its way up. Sampled only there, the old rule neither
+    // disarmed nor counted, so a later sub-2.5 sample could still arm the
+    // countdown and end Travel Mode under a sleeping rider.
+    for (final t in [70, 75]) {
+      windDown.onFix(
+        lat: _outsideLat,
+        lng: _outsideLng,
+        accuracyM: 20,
+        speedMps: 3.2,
+        now: _t0.add(Duration(seconds: t)),
+      );
+    }
+
+    // Now two clean walking-speed fixes far from the anchor. Auto-off is
+    // gone for the ride, so they must produce nothing.
+    final first = windDown.onFix(
+      lat: _outsideLat,
+      lng: _outsideLng,
+      accuracyM: 20,
+      speedMps: 1.4,
+      now: _t0.add(const Duration(minutes: 3)),
+    );
+    final second = windDown.onFix(
+      lat: _outsideLat,
+      lng: _outsideLng,
+      accuracyM: 20,
+      speedMps: 1.4,
+      now: _t0.add(const Duration(minutes: 3, seconds: 5)),
+    );
+    expect(first, isEmpty);
+    expect(second, isEmpty);
+    expect(windDown.isCountingDown, isFalse);
+  });
+
   test('a train that blew through the destination and later crawled far '
       'away never triggers (the real 13 Jul Thakurli replay bug)', () {
     final windDown = _newWindDown();

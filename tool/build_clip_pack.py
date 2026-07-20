@@ -157,9 +157,48 @@ def write_audition_page(jobs: list[tuple[str, str, str, float | None]]) -> None:
     )
 
 
+def write_manifests(jobs: list[tuple[str, str, str, float | None]]) -> list[str]:
+    """Write one manifest.json per language directory in the pack.
+
+    The app refuses to play any clip a manifest does not vouch for. Matching
+    on filename alone is not enough: the station JSON is generated, so a pack
+    cut before a name change would keep passing a code-only check while
+    naming the wrong station out loud. Recording the exact sentence each clip
+    was cut from is what makes the byte-identical rule (ADR 0001) real
+    instead of aspirational.
+
+    Derived purely from the templates and the station JSON, so this costs no
+    Sarvam credits and never touches the audio.
+    """
+    per_lang: dict[str, dict[str, str]] = {}
+    for rel, text, lang, _pace in jobs:
+        stem = pathlib.Path(rel).stem
+        if stem.startswith("_fixed__"):
+            continue
+        per_lang.setdefault(lang, {})[stem] = text
+
+    written = []
+    for lang, sentences in per_lang.items():
+        out = PACK_DIR / lang / "manifest.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(
+            json.dumps(sentences, ensure_ascii=False, indent=1, sort_keys=True),
+            encoding="utf-8",
+        )
+        written.append(f"{out} ({len(sentences)} clips)")
+    return written
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--station", help="single station id: audition mode")
+    ap.add_argument(
+        "--manifest-only",
+        action="store_true",
+        help="write manifest.json for each language and exit, synthesizing "
+        "nothing. Use this to bless a pack that was cut before manifests "
+        "existed; it costs no credits.",
+    )
     ap.add_argument(
         "--lang",
         action="append",
@@ -169,7 +208,6 @@ def main() -> None:
     )
     args = ap.parse_args()
 
-    key = load_key()
     data = json.loads(STATIONS_JSON.read_text(encoding="utf-8"))
     stations = data["stations"]
     if args.station:
@@ -178,6 +216,13 @@ def main() -> None:
             sys.exit(f"unknown station id {args.station!r}")
 
     jobs = list(clip_jobs(stations, args.lang))
+
+    if args.manifest_only:
+        for line in write_manifests(jobs):
+            print(f"wrote {line}")
+        return
+
+    key = load_key()
     fetched = skipped = 0
     for rel, text, lang, pace in jobs:
         out = PACK_DIR / rel
@@ -194,6 +239,8 @@ def main() -> None:
     if args.station:
         write_audition_page(jobs)
         print(f"audition page: {PACK_DIR / 'audition.html'}")
+    for line in write_manifests(jobs):
+        print(f"wrote {line}")
     print(f"{fetched} fetched, {skipped} already present, {len(jobs)} total.")
 
 
