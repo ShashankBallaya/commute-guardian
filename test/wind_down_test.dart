@@ -38,10 +38,11 @@ void _alight(WindDown windDown, DateTime at) {
   );
 }
 
-/// ~450 m north of the Digha station node: outside the 350 m fence, where
-/// someone walking out of the station ends up a couple of minutes after
-/// alighting.
-const _outsideLat = 19.1848;
+/// ~180 m north of the Digha station node: past the 150 m exit-walk threshold
+/// from an anchor at the platform, and a distance a real walker covers in the
+/// minute-plus these fixtures allow (450 m in 90 s, the old value, was 5 m/s,
+/// not a walk, and the time-plausibility guard rightly rejects it).
+const _outsideLat = 19.18240;
 const _outsideLng = 72.9944301;
 
 void main() {
@@ -411,6 +412,105 @@ void main() {
       );
       expect(crawl, isEmpty, reason: 'auto-off is disarmed for the ride');
     }
+    expect(windDown.isCountingDown, isFalse);
+  });
+
+  test('an invalid speed reading cannot set the alight anchor (the 20 Jul '
+      'iPhone Ambivli overshoot failure)', () {
+    // Real shape of the 20 Jul iPhone return leg. Destination Ambivli, the
+    // rider riding one stop PAST to Shahad to test the overshoot net. The
+    // alight anchor was set 36 m inside the Ambivli fence on a fix whose
+    // speed was -1.0, the location provider's sentinel for "speed unknown".
+    // -1.0 slipped under the <= 1.0 stationary check, so a fix that proved
+    // nothing about motion became the anchor. The train then carried the
+    // rider past, the drift read as a 150 m walk over three minutes, and
+    // wind-down ended Travel Mode before Shahad: the overshoot warning never
+    // fired. An unknown speed is not proof of a stop.
+    final ambivli = Station(
+      id: 'ambivli',
+      code: 'ABY',
+      name: 'Ambivli',
+      nameHi: 'Ambivli',
+      nameMr: 'Ambivli',
+      lat: 19.2682913,
+      lng: 73.1722459,
+      radiusM: 350,
+    );
+    final windDown = WindDown(destination: ambivli);
+    windDown.onStationEvent(
+      const Announcement(
+        stationId: 'ambivli',
+        kind: AnnouncementKind.arrival,
+        text: 'You have arrived at your destination, Ambivli.',
+      ),
+      _t0,
+    );
+
+    // The would-be anchor: 36 m inside the fence, speed -1.0 (unknown). This
+    // must not anchor. It is the only in-fence low-speed fix; the train then
+    // moves away toward Shahad, so nothing after it is inside the fence.
+    windDown.onFix(
+      lat: 19.26862,
+      lng: 73.17227,
+      accuracyM: 20,
+      speedMps: -1.0,
+      now: _t0.add(const Duration(seconds: 5)),
+    );
+
+    // Two walking-speed fixes ~450 m past Ambivli toward Shahad, well over
+    // 150 m from the would-be anchor and spread over enough time to look like
+    // a walk. With no anchor set, they must produce nothing.
+    final walk1 = windDown.onFix(
+      lat: 19.26424,
+      lng: 73.1722459,
+      accuracyM: 20,
+      speedMps: 1.4,
+      now: _t0.add(const Duration(minutes: 4)),
+    );
+    final walk2 = windDown.onFix(
+      lat: 19.26424,
+      lng: 73.1722459,
+      accuracyM: 20,
+      speedMps: 1.4,
+      now: _t0.add(const Duration(minutes: 4, seconds: 5)),
+    );
+    expect(walk1, isEmpty);
+    expect(walk2, isEmpty,
+        reason: 'an unknown-speed fix never anchored, so nothing can arm');
+    expect(windDown.isCountingDown, isFalse);
+  });
+
+  test('an implausibly fast jump between two fixes is a GPS glitch, not a '
+      'walk (the 20 Jul 3T Asangaon 157 m/s teleport)', () {
+    // The 3T false fire: the alight anchor sat 202 m out, then the very next
+    // fix one second later was 157 m away, both reporting speed 0 through a
+    // degraded stream. 157 m in one second is 157 m/s. Two such fixes cleared
+    // the 150 m walk threshold instantly and ended Travel Mode two seconds
+    // after arrival. A step the rider could not physically have walked must
+    // not count toward the exit.
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+    _alight(windDown, _t0.add(const Duration(seconds: 30)));
+
+    // Two fixes 150 m+ from the anchor but only ONE SECOND apart: a teleport,
+    // not a walk. Reported speed is the degraded stream's bogus 0.
+    final jump1 = windDown.onFix(
+      lat: _outsideLat,
+      lng: _outsideLng,
+      accuracyM: 100,
+      speedMps: 0.0,
+      now: _t0.add(const Duration(minutes: 1)),
+    );
+    final jump2 = windDown.onFix(
+      lat: _outsideLat + 0.0001,
+      lng: _outsideLng,
+      accuracyM: 100,
+      speedMps: 0.0,
+      now: _t0.add(const Duration(minutes: 1, seconds: 1)),
+    );
+    expect(jump1, isEmpty);
+    expect(jump2, isEmpty,
+        reason: '150 m in 1 s is not a walk; the exit must not arm');
     expect(windDown.isCountingDown, isFalse);
   });
 

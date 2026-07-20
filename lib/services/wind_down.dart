@@ -113,6 +113,11 @@ class WindDown {
   double? _anchorLat;
   double? _anchorLng;
 
+  /// When the anchor was set. The exit walk is only believed if the distance
+  /// from the anchor is reachable on foot in the time since: a rider cannot be
+  /// 150 m away two seconds after the train stopped.
+  DateTime? _anchorAt;
+
   /// Whether the auto-off countdown is running. The shell mirrors this into
   /// the notification buttons and the debug screen.
   bool get isCountingDown => _countingDown;
@@ -177,10 +182,12 @@ class WindDown {
 
     if (!_alightSeen &&
         distanceM <= destination.radiusM &&
+        speedMps >= 0 &&
         speedMps <= alightSpeedMaxMps) {
       _alightSeen = true;
       _anchorLat = lat;
       _anchorLng = lng;
+      _anchorAt = now;
       return const [];
     }
 
@@ -191,8 +198,17 @@ class WindDown {
     }
 
     final walkedM = _distanceM(lat, lng, anchorLat, anchorLng);
-    final exitingOnFoot =
-        speedMps <= walkingSpeedMaxMps && walkedM > exitWalkM;
+    // The distance from the anchor has to be reachable on foot in the time
+    // since the anchor was set. On the 20 Jul 3T ride a degraded fix jumped
+    // 157 m from the anchor one second after it, and two such fixes cleared
+    // the 150 m threshold two seconds after arrival. A person cannot walk
+    // 157 m in a second, so that displacement is a GPS glitch, not an exit.
+    final elapsedS = now.difference(_anchorAt!).inSeconds;
+    final reachableM = walkingSpeedMaxMps * elapsedS;
+    final exitingOnFoot = speedMps >= 0 &&
+        speedMps <= walkingSpeedMaxMps &&
+        walkedM > exitWalkM &&
+        walkedM <= reachableM;
     if (exitingOnFoot) {
       _qualifyingFixes++;
     } else {

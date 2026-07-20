@@ -29,8 +29,12 @@ final _chain = <Station>[
   _s('kalwa', 'Kalwa', 19.1952243, 72.9963331, 400),
   _s('thane', 'Thane', 19.1864830, 72.9757664, 500),
   _s('digha', 'Digha Gaon', 19.1807762, 72.9944301, 350),
-  _s('airoli', 'Airoli', 19.1585231, 72.9994023, 400),
 ];
+
+/// Airoli, one stop past Digha: the overshoot pin. It lives OUTSIDE the chain
+/// (the chain ends at the destination) and is matched by proximity, the way
+/// the planner now builds journeys.
+final _airoli = _s('airoli', 'Airoli', 19.1585231, 72.9994023, 400);
 
 /// The 18 Jul evening ride, Ghansoli toward Kalyan: the direction in which the
 /// chain doubles back around the Thane creek V (in from Digha in the east, out
@@ -63,6 +67,7 @@ RideProgress _returnRide() => RideProgress(
 RideProgress _newRide() => RideProgress(
       chain: _chain,
       destinationStationId: 'digha',
+      overshootStations: [_airoli],
       approachRadiusM: const {'thane': 1200, 'digha': 1000},
       arrivalAnnouncements: const {
         'thane': 'You have reached Thane. Change here for the Trans Harbour line.',
@@ -337,11 +342,12 @@ void main() {
     expect(thakurli.kind, AnnouncementKind.passed);
   });
 
-  test('reaching a station past the destination is an overshoot warning', () {
+  test('reaching the overshoot pin past the destination is an overshoot '
+      'warning', () {
     final ride = _newRide();
     ride.onFix(lat: 19.1807762, lng: 72.9944301, accuracyM: 20); // at Digha (destination)
 
-    // Rode on to Airoli, one past the alighting point.
+    // Rode on to Airoli, the pin one past the alighting point.
     final result = ride.onFix(lat: 19.1585231, lng: 72.9994023, accuracyM: 20);
 
     expect(result.map((a) => a.stationId), contains('airoli'));

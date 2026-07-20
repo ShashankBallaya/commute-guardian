@@ -211,44 +211,27 @@ class RideProgress {
     return result;
   }
 
-  /// Arrival announcement for [station], or an overshoot warning when the
-  /// station sits past the destination on the chain (the rider has gone too far).
+  /// Arrival announcement for [station].
+  ///
+  /// The overshoot warning is no longer decided here. Since the chain ends at
+  /// the destination (the pins live in [overshootStations], matched by
+  /// proximity at the top of [onFix]), no chain station is ever past the
+  /// destination, so the old in-chain overshoot branch was dead.
   Announcement _arrival(Station station) {
-    return _overshootFor(station) ??
-        Announcement(
-          stationId: station.id,
-          kind: AnnouncementKind.arrival,
-          text: arrivalAnnouncements[station.id] ??
-              ClipKind.approach.render(station.name),
-        );
-  }
-
-  /// Late catch-up for a station the train is provably beyond. Overshoot beats
-  /// the recap: past the destination the rider needs the warning, not history.
-  Announcement _passed(Station station) {
-    return _overshootFor(station) ??
-        Announcement(
-          stationId: station.id,
-          kind: AnnouncementKind.passed,
-          text: ClipKind.passed.render(station.name),
-        );
-  }
-
-  /// The overshoot warning for [station], or null when it is not past the
-  /// destination. Names the station: this fires as the train reaches it, so
-  /// "alight at the next station" would send the rider one stop too far.
-  Announcement? _overshootFor(Station station) {
-    final index = chain.indexOf(station);
-    final destinationIndex =
-        chain.indexWhere((s) => s.id == destinationStationId);
-    if (index <= destinationIndex) return null;
     return Announcement(
       stationId: station.id,
-      kind: AnnouncementKind.overshoot,
-      // The reassurance breath ("It is alright.") is owner-approved copy.
-      // The wording lives in ClipKind so the device TTS floor and the
-      // Sarvam clip speak the same sentence by construction.
-      text: ClipKind.overshoot.render(station.name),
+      kind: AnnouncementKind.arrival,
+      text: arrivalAnnouncements[station.id] ??
+          ClipKind.approach.render(station.name),
+    );
+  }
+
+  /// Late catch-up for a station the train is provably beyond.
+  Announcement _passed(Station station) {
+    return Announcement(
+      stationId: station.id,
+      kind: AnnouncementKind.passed,
+      text: ClipKind.passed.render(station.name),
     );
   }
 
