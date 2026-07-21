@@ -164,10 +164,25 @@ import flutter_foreground_task
   /// live (its commands are registered).
   private func refreshNowPlaying() {
     guard !ackTargets.isEmpty else { return }
-    MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+    let center = MPNowPlayingInfoCenter.default()
+    center.nowPlayingInfo = [
       MPMediaItemPropertyTitle: "Commute Guardian wake alert",
       MPNowPlayingInfoPropertyPlaybackRate: 1.0,
+      MPNowPlayingInfoPropertyElapsedPlaybackTime: 0.0,
+      MPMediaItemPropertyPlaybackDuration: 0.0,
+      MPNowPlayingInfoPropertyIsLiveStream: true,
     ]
+    // The 21 Jul bench proved the rider's double-tap DOES emit a media command
+    // (it skips tracks in his music app) and that it never reaches us. Posting
+    // the card and enabling the commands is not enough: since iOS 13 an app
+    // that does not drive MPMusicPlayerController must declare playbackState
+    // explicitly to be treated as the Now Playing app, and only the Now Playing
+    // app receives an accessory's command. Without this the tap goes to
+    // whichever app does claim it, which is what the rider observed. This also
+    // explains the regression between IPA #17 and #20 with no change to the ack
+    // code: 096d96c moved the tone into this class and changed who the system
+    // saw playing.
+    center.playbackState = .playing
   }
 
   private func stopAckSession() {
@@ -182,6 +197,9 @@ import flutter_foreground_task
     ackTargets = []
 
     stopKeepAlive()
+    // Stand down as the Now Playing app before dropping the card, so the
+    // rider's music app is free to reclaim the accessory's buttons.
+    MPNowPlayingInfoCenter.default().playbackState = .stopped
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
 
     // notifyOthersOnDeactivation is what invites the rider's music back.
