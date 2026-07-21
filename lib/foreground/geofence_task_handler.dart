@@ -34,6 +34,15 @@ const destinationReachedKey = 'destination_reached';
 const windDownEndNowId = 'wind_down_end_now';
 const windDownExtendId = 'wind_down_extend';
 
+/// Wake acknowledgment messages. The two carry the SOURCE because the ride log
+/// is the only capture a sideloaded iPhone gives us, and a stand-down looks
+/// identical from an earphone tap and from the on-screen button. The 21 Jul
+/// bench could not tell them apart, which is what this exists to end: the
+/// earphone form carries the remote command that fired, so a real tap leaves
+/// proof in the file even with the phone in a pocket.
+const wakeAckButtonId = 'wake_ack';
+const wakeAckMediaPrefix = 'wake_ack_media:';
+
 /// Runs the ride inside the Android foreground service isolate so it survives
 /// screen lock and app backgrounding.
 class GeofenceTaskHandler extends TaskHandler {
@@ -149,8 +158,13 @@ class GeofenceTaskHandler extends TaskHandler {
         _chain?.testWakeAlert();
       case 'test_wind_down':
         _chain?.testWindDown();
-      case 'wake_ack':
-        _chain?.wakeAck();
+      case wakeAckButtonId:
+        _chain?.wakeAck(source: 'screen button');
+      case final String message when message.startsWith(wakeAckMediaPrefix):
+        final via = message.substring(wakeAckMediaPrefix.length);
+        _chain?.wakeAck(
+          source: via.isEmpty ? 'media button' : 'media button ($via)',
+        );
       case windDownEndNowId:
         _chain?.windDownEndNow();
       case windDownExtendId:

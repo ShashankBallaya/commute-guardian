@@ -259,14 +259,19 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// runs.
   Future<dynamic> _onMediaAck(MethodCall call) async {
     if (call.method == 'ack') {
-      FlutterForegroundTask.sendDataToTask('wake_ack');
-      // iOS forwards which remote command fired (the double-tap gesture maps
-      // to different ones across earbuds); Android sends none. Logging it
-      // turns the next iPhone bench into evidence of whether the tap reached
-      // us at all, the 20 Jul open question.
-      final via = call.arguments is String ? ' via ${call.arguments}' : '';
+      // iOS forwards which remote command fired (the double-tap maps
+      // to different ones across earbuds); Android sends none. It travels
+      // WITH the ack so the service writes it to the ride log: the 21 Jul
+      // bench proved the on-screen list alone is not evidence, because a
+      // rider watching the road never sees it.
+      final via = call.arguments is String ? call.arguments as String : '';
+      FlutterForegroundTask.sendDataToTask('$wakeAckMediaPrefix$via');
       setState(() {
-        _logs.insert(0, 'Media button received$via, ack forwarded to service.');
+        _logs.insert(
+          0,
+          'Media button received${via.isEmpty ? '' : ' via $via'}, '
+          'ack forwarded to service.',
+        );
       });
     }
     return null;
@@ -735,7 +740,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   }
 
   void _wakeAck() {
-    FlutterForegroundTask.sendDataToTask('wake_ack');
+    FlutterForegroundTask.sendDataToTask(wakeAckButtonId);
   }
 
   void _windDownEndNow() {

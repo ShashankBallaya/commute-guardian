@@ -641,7 +641,11 @@ class GeofenceChainService {
   /// An acknowledgment from outside the service isolate: the earphone tap
   /// (native media session, forwarded by the UI isolate) or the on-screen
   /// "I'm awake" button.
-  void wakeAck() {
+  /// [source] names which path acked so the log file can tell an earphone tap
+  /// from the on-screen button. Logged BEFORE the engine is asked, so a tap
+  /// that arrives when no ladder is live still leaves a trace.
+  void wakeAck({String? source}) {
+    _log('WAKE ack from ${source ?? 'unknown'}.');
     _handleWakeActions(
       _wakeEscalation?.acknowledge(DateTime.now()) ?? const [],
     );
