@@ -17,6 +17,7 @@ import '../models/station.dart';
 import 'announcement_templates.dart';
 import 'clip_library.dart';
 import 'ride_progress.dart';
+import 'self_audio_interruption.dart';
 import 'wake_alert_output.dart';
 import 'wake_escalation.dart';
 import 'wind_down.dart';
@@ -128,6 +129,10 @@ class GeofenceChainService {
   StreamSubscription<fl.Location>? _rawLocationSub;
   StreamSubscription<AudioInterruptionEvent>? _interruptionSub;
   AudioSession? _session;
+
+  /// Keeps the wake engine from mistaking this app's own audio for the rider
+  /// taking a call. See [SelfAudioInterruptionFilter] for the bench evidence.
+  final _selfInterruption = SelfAudioInterruptionFilter();
 
   /// Serializes announcements so two never overlap, and so the ducking window
   /// spans a whole run of them (see [_speak]).
@@ -377,6 +382,7 @@ class GeofenceChainService {
     try {
       await player.setAudioContext(_clipDuckContext);
       final completed = player.onPlayerComplete.first..ignore();
+      _selfInterruption.noteOwnAudioStarted(DateTime.now());
       await player.play(ap.DeviceFileSource(clip.path));
       // The longest templates run ~8 s; a wedged player must not dam the
       // clip chain for the rest of the ride.
@@ -484,6 +490,21 @@ class GeofenceChainService {
     // catch-up. The log lines are load-bearing: replay_ride.dart parses
     // them to reproduce call handling from a real ride's log.
     _interruptionSub = session.interruptionEventStream.listen((event) {
+      final now = DateTime.now();
+      // Our own clip colliding with our own speech raises this same event, and
+      // feeding that to the engine stood a live ladder DOWN (21 Jul bench,
+      // reproduced 2 for 2; the 20 Jul Vasind case in the field). Withheld
+      // events are still logged, distinctly: replay_ride.dart parses these
+      // lines to reproduce call handling, and a silently dropped line would
+      // change how old rides replay.
+      if (_selfInterruption.shouldIgnore(begin: event.begin, now: now)) {
+        _log(
+          event.begin
+              ? 'Audio session interrupted by our own audio, ignored.'
+              : 'Audio session interruption ended (ours, ignored).',
+        );
+        return;
+      }
       _log(
         event.begin
             ? 'Audio session interrupted (call or other audio).'
@@ -492,7 +513,7 @@ class GeofenceChainService {
       _handleWakeActions(
         _wakeEscalation?.onCallStateChanged(
               inCall: event.begin,
-              now: DateTime.now(),
+              now: now,
             ) ??
             const [],
       );
@@ -541,6 +562,9 @@ class GeofenceChainService {
     _pendingSpeaks++;
     _speaking = _speaking.then((_) async {
       try {
+        // Activating the session is itself one half of the collision, so the
+        // window opens here rather than after the utterance starts.
+        _selfInterruption.noteOwnAudioStarted(DateTime.now());
         await _session?.setActive(true);
         await _tts.speak(text);
       } catch (error) {

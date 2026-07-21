@@ -34,8 +34,13 @@ final _fixPattern = RegExp(
   r'^(\S+) FIX lat (-?[\d.]+), lng (-?[\d.]+), accuracy (\d+)m'
   r'(?:, speed (-?[\d.]+)m/s)?',
 );
+// Anchored at the end so the "by our own audio, ignored" variants never match.
+// Those are the interruptions the app itself withheld from the wake engine
+// (SelfAudioInterruptionFilter); treating them as calls here would make replay
+// disagree with the ride it is meant to reproduce.
 final _interruptionPattern = RegExp(
-  r'^(\S+) Audio session (interrupted|interruption ended)',
+  r'^(\S+) Audio session (interrupted \(call or other audio\)|'
+  r'interruption ended)\.$',
 );
 
 const _tick = Duration(seconds: 5);
@@ -143,7 +148,7 @@ void main(List<String> args) {
     if (interruption != null) {
       final at = DateTime.parse(interruption.group(1)!);
       tickUpTo(at);
-      final began = interruption.group(2) == 'interrupted';
+      final began = interruption.group(2)!.startsWith('interrupted');
       stdout.writeln(
         '${stamp(at)}  CALL      ${began ? 'started' : 'ended'}',
       );
