@@ -119,7 +119,7 @@ class GeofenceTaskHandler extends TaskHandler {
     if (chain == null) return;
     _chain = null;
     FlutterForegroundTask.sendDataToMain({'rideEnded': true});
-    await chain.stop();
+    await chain.stop(reason: 'wind-down auto-off');
     await FlutterForegroundTask.stopService();
   }
 
@@ -140,7 +140,11 @@ class GeofenceTaskHandler extends TaskHandler {
 
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
-    await _chain?.stop();
+    // onDestroy covers the rider holding End, the OS reclaiming the
+    // service, and a timeout. Only the first is the rider's doing, but
+    // the handler cannot tell them apart, so the line stays honest about
+    // that rather than guessing.
+    await _chain?.stop(reason: 'service destroyed (End pressed, or the OS)');
     _chain = null;
     // The clip flags are per-Start choices, but saveData persists across
     // app restarts. Cleared here so a service start that bypasses the UI

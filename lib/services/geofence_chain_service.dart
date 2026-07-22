@@ -777,7 +777,16 @@ class GeofenceChainService {
     }
   }
 
-  Future<void> stop() async {
+  /// Ends the ride. [reason] is written to the ride log before the farewell.
+  ///
+  /// The farewell line is byte-identical whether the app decided to end or
+  /// the rider held the button, and on the 22 Jul ride that ambiguity had me
+  /// read two manual ends as a slow auto-off and report a wind-down tail that
+  /// never existed. A log that records outcomes but not causes cannot be
+  /// audited. Same lesson as the wake ack source (bb19b39) and the wind-down
+  /// notes: say WHY, at the moment it happens.
+  Future<void> stop({String reason = 'unspecified'}) async {
+    _log('Journey ending: $reason.');
     // The engine dies first so nothing re-starts the tone mid-teardown; a
     // ride ended mid-ladder must also release the UI's media session.
     _wakeEscalation = null;
