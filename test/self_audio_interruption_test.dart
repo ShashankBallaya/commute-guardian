@@ -72,4 +72,57 @@ void main() {
       isFalse,
     );
   });
+
+  _sustainedToneTests();
+}
+
+void _sustainedToneTests() {
+  test('an interruption while our wake alarm loops is ours, however late it '
+      'arrives (the 22 Jul iPhone ladder that silenced itself)', () {
+    final filter = SelfAudioInterruptionFilter();
+    final t0 = DateTime(2026, 7, 22, 14, 54, 2);
+
+    // The tone starts. On iOS it is a native loop that holds the session for
+    // as long as the ladder climbs.
+    filter.setSustainedOwnAudio(active: true);
+    filter.noteOwnAudioStarted(t0);
+
+    // The real deltas from that ride: 192 ms, then 1.94 s, then 11.5 s after
+    // a rung. Only the first is inside the 1 s window; all three are our own
+    // tone, and all three stood the ladder down.
+    for (final delta in [
+      const Duration(milliseconds: 192),
+      const Duration(milliseconds: 1940),
+      const Duration(milliseconds: 11500),
+      const Duration(minutes: 3),
+    ]) {
+      expect(
+        filter.shouldIgnore(begin: true, now: t0.add(delta)),
+        isTrue,
+        reason: 'a $delta interruption during our own loop is not a call',
+      );
+      expect(filter.shouldIgnore(begin: false, now: t0.add(delta)), isTrue);
+    }
+  });
+
+  test('a real call once our tone has stopped still counts (decision 8 is '
+      'untouched)', () {
+    final filter = SelfAudioInterruptionFilter();
+    final t0 = DateTime(2026, 7, 22, 14, 54, 2);
+    filter.setSustainedOwnAudio(active: true);
+    filter.noteOwnAudioStarted(t0);
+    expect(filter.shouldIgnore(begin: true, now: t0), isTrue);
+    filter.shouldIgnore(begin: false, now: t0.add(const Duration(seconds: 1)));
+
+    // Ladder acked, tone stopped. The rider's phone rings a minute later.
+    filter.setSustainedOwnAudio(active: false);
+    expect(
+      filter.shouldIgnore(
+        begin: true,
+        now: t0.add(const Duration(minutes: 1)),
+      ),
+      isFalse,
+      reason: 'on a call means awake; the filter must not swallow that',
+    );
+  });
 }

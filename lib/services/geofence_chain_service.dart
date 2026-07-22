@@ -688,9 +688,18 @@ class GeofenceChainService {
         case Tone(:final volume):
           _log('WAKE tone ${volume.toStringAsFixed(1)}.');
           _wakeToneVolume = volume;
+          // The alarm loop is our own audio for as long as it runs. Without
+          // this the tone's own contention comes back as "the rider took a
+          // call" and stands the ladder down mid-climb, which is exactly how
+          // the 22 Jul iPhone leg went 0.3 -> 0.6 -> silence, twice, into the
+          // rider's destination. The clip and speak paths were already
+          // covered; the tone never was, on either platform.
+          _selfInterruption.setSustainedOwnAudio(active: true);
+          _selfInterruption.noteOwnAudioStarted(DateTime.now());
           unawaited(_wakeOutput?.ensureToneAt(volume));
         case StopTone():
           _wakeToneVolume = null;
+          _selfInterruption.setSustainedOwnAudio(active: false);
           unawaited(_wakeOutput?.stopTone());
         case Vibrate():
           unawaited(_wakeOutput?.vibrate());
@@ -775,6 +784,11 @@ class GeofenceChainService {
     _wakeTestCeilingAt = null;
     _wakeTestCeiling = null;
     _wakeToneVolume = null;
+    // stop() tears the tone down directly rather than through a StopTone
+    // action, so the sustained flag has to be cleared by hand here. A flag
+    // left set would outlive the ride and make the NEXT one ignore a real
+    // call, which is the one failure mode this whole filter must not cause.
+    _selfInterruption.setSustainedOwnAudio(active: false);
     await _wakeOutput?.stopTone();
     await _wakeOutput?.dispose();
     _wakeOutput = null;

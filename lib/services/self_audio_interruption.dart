@@ -26,6 +26,23 @@ class SelfAudioInterruptionFilter {
 
   DateTime? _ownAudioStartedAt;
 
+  /// Whether a sound of ours is playing RIGHT NOW, for as long as it lasts.
+  ///
+  /// The window above catches a collision at the moment two sounds start. It
+  /// cannot catch the wake alarm, which is a LOOP: it holds the session for
+  /// minutes, and iOS raised interruptions 1.9 s and 11.5 s into it on the
+  /// 22 Jul ride, long past any sane window. Widening the window is the wrong
+  /// answer, because it would start swallowing real calls; a looping tone is
+  /// simply our own audio for its whole duration, so it gets a flag rather
+  /// than a timer.
+  bool _sustained = false;
+
+  /// Call when a sound of ours starts and stops that lasts longer than an
+  /// utterance: today that is the wake alarm loop.
+  void setSustainedOwnAudio({required bool active}) {
+    _sustained = active;
+  }
+
   /// Whether the interruption currently in progress was judged to be ours.
   /// Kept so the matching "ended" event is dropped too: delivering a resume
   /// for an interruption the engine never heard begin would hand the wake
@@ -47,8 +64,8 @@ class SelfAudioInterruptionFilter {
       return wasOurs;
     }
     final startedAt = _ownAudioStartedAt;
-    _ignoringCurrent =
-        startedAt != null && now.difference(startedAt) < window;
+    _ignoringCurrent = _sustained ||
+        (startedAt != null && now.difference(startedAt) < window);
     return _ignoringCurrent;
   }
 }
