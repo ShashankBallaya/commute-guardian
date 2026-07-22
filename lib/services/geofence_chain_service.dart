@@ -1016,6 +1016,8 @@ class GeofenceChainService {
         case WindDownEnd():
           _log('WIND_DOWN ending Travel Mode.');
           onAutoOff?.call();
+        case WindDownNote(:final reason):
+          _log('WIND_DOWN $reason.');
       }
     }
     // Mirrors the countdown state out to the notification buttons and the

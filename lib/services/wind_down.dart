@@ -22,6 +22,18 @@ class WindDownEnd extends WindDownAction {
   const WindDownEnd();
 }
 
+/// A diagnostic for the ride log, never spoken.
+///
+/// Exists because SILENCE HAS NO CAUSE IN A LOG: a wind-down that armed and
+/// was disarmed looks exactly like one that never armed at all, and after the
+/// 22 Jul ride that ambiguity cost a session of guessing (and one confidently
+/// wrong root cause). Same fix as bb19b39 gave the wake ack: make the engine
+/// say WHY, in the file, at the moment it decides.
+class WindDownNote extends WindDownAction {
+  const WindDownNote(this.reason);
+  final String reason;
+}
+
 /// Pure, platform-free decision engine for the post-arrival auto-off.
 ///
 /// Sibling of RideProgress and WakeEscalation: time and fixes are passed
@@ -88,6 +100,19 @@ class WindDown {
   /// stream drifting the rider away. It sits above [walkingSpeedMaxMps] to
   /// leave a dead-band, so ordinary walking jitter never reads as a vehicle.
   static const vehicleSpeedMps = 4.0;
+
+  /// Recession is a RATE, and a rate measured over a few seconds is mostly
+  /// position noise. The 22 Jul iPhone leg anchored at Shahad and disarmed
+  /// 8 seconds later on "61 m in 7 s", which is the fix stream settling after
+  /// the doors opened, not a train: at a 7 s baseline the bar is only 28 m,
+  /// well inside the jitter of a 20 m-accuracy fix. Because the disarm is
+  /// permanent, that cost the rider auto-off for the whole journey.
+  ///
+  /// Waiting costs nothing, and that is what makes this safe: the walk exit
+  /// needs walkedM > 150 AND walkedM <= 2.5 * elapsed, so it cannot fire
+  /// before ~61 s no matter what the rider does. A vehicle verdict at 30 s
+  /// still beats it by half a minute.
+  static const vehicleMinElapsed = Duration(seconds: 30);
 
   /// A vehicle is disarmed only on SUSTAINED recession: this many continuous
   /// fixes each farther from the anchor than a walk could reach. One is never
@@ -186,7 +211,7 @@ class WindDown {
       for (final pin in overshootStations) {
         if (pin.id == announcement.stationId) {
           _rearmAt(pin);
-          return const [];
+          return [WindDownNote('re-armed at overshoot pin ${pin.id}')];
         }
       }
     }
@@ -194,10 +219,17 @@ class WindDown {
     if (announcement.stationId == destination.id &&
         announcement.kind == AnnouncementKind.arrival) {
       _armed = true;
+      return const [WindDownNote('armed on destination arrival')];
     } else if (_armed) {
       _armed = false;
       _disarmed = true;
       _qualifyingFixes = 0;
+      return [
+        WindDownNote(
+          'disarmed: ${announcement.stationId} '
+          '${announcement.kind.name} after arrival, rider still aboard',
+        ),
+      ];
     }
     return const [];
   }
@@ -275,7 +307,12 @@ class WindDown {
       // Both streaks from a stale anchor are void.
       _qualifyingFixes = 0;
       _vehicleFixes = 0;
-      return const [];
+      return [
+        WindDownNote(
+          '${_reanchored ? 're-anchored' : 'alight anchor set'} at '
+          '${_exitStation.id}, ${distanceM.round()} m from the node',
+        ),
+      ];
     }
 
     final anchorLat = _anchorLat;
@@ -304,15 +341,26 @@ class WindDown {
     // Recession is not judged while a re-anchor is pending: the anchor is
     // known stale (a gap hid the real alight point), so its distance would
     // read as a phantom vehicle. It resumes once the anchor re-settles.
-    if (!_reanchorPending && continuous && walkedM > vehicleReachM) {
+    if (!_reanchorPending &&
+        continuous &&
+        elapsedS >= vehicleMinElapsed.inSeconds &&
+        walkedM > vehicleReachM) {
       _vehicleFixes++;
       if (_vehicleFixes >= vehicleFixesToDisarm) {
+        final wasCountingDown = _countingDown;
         _armed = false;
         _disarmed = true;
         _countingDown = false;
         _endAt = null;
         _qualifyingFixes = 0;
-        return const [];
+        return [
+          WindDownNote(
+            'disarmed: receded ${walkedM.round()} m from the '
+            '${_exitStation.id} anchor in ${elapsedS}s, over the '
+            '${vehicleReachM.round()} m a walk allows'
+            '${wasCountingDown ? ', countdown cancelled' : ''}',
+          ),
+        ];
       }
     } else {
       _vehicleFixes = 0;

@@ -131,6 +131,7 @@ void main(List<String> args) {
       final line = switch (action) {
         WindDownSpeak(:final text) => 'speak     $text',
         WindDownEnd() => 'END TRAVEL MODE',
+        WindDownNote(:final reason) => 'note      $reason',
       };
       stdout.writeln('${stamp(at)}  WIND_DOWN $line');
     }
