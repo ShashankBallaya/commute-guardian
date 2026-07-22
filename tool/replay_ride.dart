@@ -83,6 +83,11 @@ void main(List<String> args) {
   final ride = RideProgress(
     chain: journey.chain,
     destinationStationId: journey.destinationStationId,
+    // Was missing, and the replay was silently blind because of it: once
+    // d21dc69 moved the terminus pins OUT of the chain, a replay without
+    // them could never reproduce an overshoot warning, so the 22 Jul
+    // Kalyan-to-Shahad ride replayed as if the rider had simply stopped.
+    overshootStations: journey.overshootStations,
     approachRadiusM: journey.approachRadiusM,
     arrivalAnnouncements: journey.arrivalAnnouncements,
   );
@@ -96,6 +101,7 @@ void main(List<String> args) {
   final windDown = WindDown(
     destination: journey.chain
         .firstWhere((s) => s.id == journey.destinationStationId),
+    overshootStations: journey.overshootStations,
   );
 
   var fixes = 0;

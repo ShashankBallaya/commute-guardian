@@ -194,6 +194,7 @@ class GeofenceChainService {
     _windDown = WindDown(
       destination: journey.chain
           .firstWhere((s) => s.id == journey.destinationStationId),
+      overshootStations: journey.overshootStations,
     );
     // The wake engine watches the same critical stations the journey
     // defines: the interchanges THIS route requires, then the destination

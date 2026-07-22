@@ -16,9 +16,67 @@ final _digha = Station(
   radiusM: 350,
 );
 
+/// Airoli, the overshoot pin of the fixture ride: where a rider carried past
+/// Digha is told to alight. OSM coords from the same station data.
+final _airoli = Station(
+  id: 'airoli',
+  code: 'AIRL',
+  name: 'Airoli',
+  nameHi: 'Airoli',
+  nameMr: 'Airoli',
+  lat: 19.1585231,
+  lng: 72.9994023,
+  radiusM: 400,
+);
+
 final _t0 = DateTime(2026, 7, 16, 19, 0, 0);
 
-WindDown _newWindDown() => WindDown(destination: _digha);
+WindDown _newWindDown() =>
+    WindDown(destination: _digha, overshootStations: [_airoli]);
+
+Announcement _airoliOvershoot() => const Announcement(
+      stationId: 'airoli',
+      kind: AnnouncementKind.overshoot,
+      text: 'You have passed your stop. It is alright. Please alight here, '
+          'at Airoli.',
+    );
+
+/// ~180 m north of the Airoli node, the same shape as [_outsideLat] is for
+/// Digha: past the 150 m exit walk, and reachable on foot in the time the
+/// fixtures allow.
+const _airoliOutsideLat = 19.16014;
+const _airoliOutsideLng = 72.9994023;
+
+/// The alight dwell at the overshoot pin: one in-fence fix slow enough to be
+/// a stopped train, which is what moves the anchor to this station.
+void _alightAtAiroli(WindDown windDown, DateTime at) {
+  windDown.onFix(
+    lat: _airoli.lat,
+    lng: _airoli.lng,
+    accuracyM: 20,
+    speedMps: 0.3,
+    now: at,
+  );
+}
+
+/// Two walking-speed fixes 180 m off the Airoli anchor: the platform exit.
+/// Returns what the second one produced, which is where the countdown starts.
+List<WindDownAction> _walkOutOfAiroli(WindDown windDown, DateTime from) {
+  windDown.onFix(
+    lat: _airoliOutsideLat,
+    lng: _airoliOutsideLng,
+    accuracyM: 20,
+    speedMps: 1.3,
+    now: from.add(const Duration(seconds: 90)),
+  );
+  return windDown.onFix(
+    lat: _airoliOutsideLat,
+    lng: _airoliOutsideLng,
+    accuracyM: 20,
+    speedMps: 1.3,
+    now: from.add(const Duration(seconds: 95)),
+  );
+}
 
 Announcement _dighaArrival() => const Announcement(
       stationId: 'digha',
@@ -685,32 +743,105 @@ void main() {
     expect(windDown.isCountingDown, isTrue);
   });
 
-  test('a station event after arrival disarms wind-down permanently (the '
-      'rider stayed on the train)', () {
+  test('an overshoot re-arms the exit watch at the overshoot station', () {
+    // Was the opposite assertion until the 22 Jul ride: an overshoot used to
+    // disarm auto-off for the whole ride, so the owner walked home from
+    // Shahad with both phones still streaming GPS and had to end the journey
+    // by hand. The still-aboard reasoning was right; it just never let go
+    // once the overshot rider finally got off.
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+    windDown.onStationEvent(
+      _airoliOvershoot(),
+      _t0.add(const Duration(minutes: 6)),
+    );
+
+    final atAiroli = _t0.add(const Duration(minutes: 7));
+    _alightAtAiroli(windDown, atAiroli);
+
+    final result = _walkOutOfAiroli(windDown, atAiroli);
+    expect(result.whereType<WindDownSpeak>(), hasLength(1));
+  });
+
+  test('the overshoot re-arm survives the vehicle disarm that precedes it '
+      '(the 22 Jul Kalyan-to-Shahad case)', () {
+    // The real sequence: destination reached, then the train pulls out with
+    // the rider still aboard, which disarms on recession BEFORE the overshoot
+    // announcement ever fires. If the re-arm respected that disarm it would
+    // never run on a real overshoot, which is the only way this happens.
     final windDown = _newWindDown();
     windDown.onStationEvent(_dighaArrival(), _t0);
 
-    // The overshoot warning at the next station: the rider is provably
-    // still aboard, and past-the-stop recovery is manual-end territory.
+    _alight(windDown, _t0);
+    // Receding far faster than a walk, two continuous fixes: the train left.
+    windDown.onFix(
+      lat: 19.1834712, // 300 m north of Digha
+      lng: _digha.lng,
+      accuracyM: 20,
+      speedMps: 0.0,
+      now: _t0.add(const Duration(seconds: 5)),
+    );
+    windDown.onFix(
+      lat: 19.1861662, // 600 m north of Digha
+      lng: _digha.lng,
+      accuracyM: 20,
+      speedMps: 0.0,
+      now: _t0.add(const Duration(seconds: 10)),
+    );
+
+    windDown.onStationEvent(
+      _airoliOvershoot(),
+      _t0.add(const Duration(minutes: 6)),
+    );
+
+    final atAiroli = _t0.add(const Duration(minutes: 7));
+    _alightAtAiroli(windDown, atAiroli);
+
+    final result = _walkOutOfAiroli(windDown, atAiroli);
+    expect(result.whereType<WindDownSpeak>(), hasLength(1));
+  });
+
+  test('after the re-arm the old destination is no longer the exit station',
+      () {
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+    windDown.onStationEvent(
+      _airoliOvershoot(),
+      _t0.add(const Duration(minutes: 6)),
+    );
+
+    // A dwell and a walk back at Digha: the anchor moved to Airoli, so these
+    // are just a rider wandering 2.7 km from the station that now matters.
+    final atDigha = _t0.add(const Duration(minutes: 7));
+    _alight(windDown, atDigha);
+    final result = windDown.onFix(
+      lat: _outsideLat,
+      lng: _outsideLng,
+      accuracyM: 20,
+      speedMps: 1.3,
+      now: atDigha.add(const Duration(seconds: 90)),
+    );
+    expect(result, isEmpty);
+  });
+
+  test('a non-overshoot station event after arrival still disarms wind-down '
+      'permanently (the rider stayed on the train)', () {
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+
+    // A plain arrival further down the line is not a pin telling the rider to
+    // get off, so the original reasoning stands: still aboard, manual end.
     windDown.onStationEvent(
       const Announcement(
         stationId: 'airoli',
-        kind: AnnouncementKind.overshoot,
-        text: 'You have passed your stop. Please alight here, at Airoli.',
+        kind: AnnouncementKind.arrival,
+        text: 'Now approaching Airoli.',
       ),
       _t0.add(const Duration(minutes: 6)),
     );
 
-    // Walking out of Airoli later must NOT trigger the Digha wind-down.
-    for (var i = 0; i < 3; i++) {
-      final result = windDown.onFix(
-        lat: 19.1585231,
-        lng: 72.9994023,
-        accuracyM: 20,
-        speedMps: 1.3,
-        now: _t0.add(Duration(minutes: 10, seconds: i * 5)),
-      );
-      expect(result, isEmpty);
-    }
+    final atAiroli = _t0.add(const Duration(minutes: 7));
+    _alightAtAiroli(windDown, atAiroli);
+    expect(_walkOutOfAiroli(windDown, atAiroli), isEmpty);
   });
 }

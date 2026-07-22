@@ -38,9 +38,23 @@ class WindDownEnd extends WindDownAction {
 /// unreachable on foot in any reasonable time; the anchor is reachable by
 /// definition.
 class WindDown {
-  WindDown({required this.destination});
+  WindDown({required this.destination, this.overshootStations = const []})
+      : _exitStation = destination;
 
   final Station destination;
+
+  /// The terminus pins for this journey, the stations a rider carried past
+  /// the destination is told to alight at. Needed here (not just in
+  /// RideProgress) because reaching one MOVES the exit watch to it: see
+  /// [onStationEvent].
+  final List<Station> overshootStations;
+
+  /// The station the exit watch is currently anchored to. Starts as the
+  /// destination and moves to an overshoot pin when the rider is carried
+  /// past. Everything positional keys off this, never off [destination]
+  /// directly, so the rider who overshot is measured at the platform they
+  /// actually stand on.
+  Station _exitStation;
 
   /// How long after the platform exit is detected Travel Mode ends on its
   /// own (the handover's WIND_DOWN countdown).
@@ -155,7 +169,27 @@ class WindDown {
   /// station event disarms it permanently, because a rider passing another
   /// station is still aboard and the "exit" watch would be watching the
   /// wrong platform.
+  ///
+  /// ONE EVENT OUTRANKS THAT DISARM: reaching an overshoot pin. A pin is the
+  /// app telling the rider "you have passed your stop, get off HERE", so it
+  /// is the one later station event that predicts an imminent alighting
+  /// rather than ruling one out. It moves the exit watch to that station and
+  /// re-arms from scratch.
+  ///
+  /// It must outrank [_disarmed] rather than sit behind it, and that is the
+  /// whole reason the 22 Jul ride never wound down: the train pulling out of
+  /// the destination disarms on recession SECONDS after the arrival, long
+  /// before the pin is reached, so a re-arm that respected the disarm would
+  /// never run on the only journeys that need it.
   List<WindDownAction> onStationEvent(Announcement announcement, DateTime now) {
+    if (announcement.kind == AnnouncementKind.overshoot) {
+      for (final pin in overshootStations) {
+        if (pin.id == announcement.stationId) {
+          _rearmAt(pin);
+          return const [];
+        }
+      }
+    }
     if (_disarmed) return const [];
     if (announcement.stationId == destination.id &&
         announcement.kind == AnnouncementKind.arrival) {
@@ -166,6 +200,28 @@ class WindDown {
       _qualifyingFixes = 0;
     }
     return const [];
+  }
+
+  /// Point the exit watch at [station] and clear every trace of the previous
+  /// one. The anchor, both streaks and the re-anchor allowance are all
+  /// artifacts of an alighting that did not happen, and a stale anchor
+  /// hundreds of metres back down the line would read as a phantom vehicle
+  /// and disarm again immediately.
+  void _rearmAt(Station station) {
+    _exitStation = station;
+    _armed = true;
+    _disarmed = false;
+    _alightSeen = false;
+    _anchorLat = null;
+    _anchorLng = null;
+    _anchorAt = null;
+    _firstAnchorAt = null;
+    _reanchorPending = false;
+    _reanchored = false;
+    _qualifyingFixes = 0;
+    _vehicleFixes = 0;
+    _countingDown = false;
+    _endAt = null;
   }
 
   /// One raw GPS fix. After arrival, consecutive walking-speed fixes far
@@ -202,11 +258,11 @@ class WindDown {
     }
 
     final distanceM =
-        _distanceM(lat, lng, destination.lat, destination.lng);
+        _distanceM(lat, lng, _exitStation.lat, _exitStation.lng);
 
     final canReanchor = _reanchorPending && !_reanchored;
     if ((!_alightSeen || canReanchor) &&
-        distanceM <= destination.radiusM &&
+        distanceM <= _exitStation.radiusM &&
         speedMps >= 0 &&
         speedMps <= alightSpeedMaxMps) {
       if (_alightSeen) _reanchored = true;
