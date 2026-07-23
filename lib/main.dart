@@ -274,6 +274,21 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
         );
       });
     }
+    if (call.method == 'callState') {
+      // iOS only, from CXCallObserver. The audio session cannot see a call
+      // that arrives while we are silent (23 Jul bench: a real answered call
+      // logged nothing at all), so this is the only signal decision 8 has on
+      // iPhone outside our own announcements.
+      final inCall = call.arguments == true;
+      FlutterForegroundTask.sendDataToTask('$wakeCallStatePrefix$inCall');
+      setState(() {
+        _logs.insert(
+          0,
+          'Native call state: ${inCall ? 'on a call' : 'call ended'}, '
+          'forwarded to service.',
+        );
+      });
+    }
     return null;
   }
 

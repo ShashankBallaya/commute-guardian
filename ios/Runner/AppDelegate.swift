@@ -1,4 +1,5 @@
 import AVFoundation
+import CallKit
 import Flutter
 import MediaPlayer
 import UIKit
@@ -32,6 +33,30 @@ import flutter_foreground_task
   /// session this class already owns.
   private var tonePlayer: AVAudioPlayer?
   private var toneAssetPath: String?
+
+  /// Call detection, independent of the audio session (locked decision 8: on
+  /// a call means awake).
+  ///
+  /// The 23 Jul bench is why this exists. Travel Mode ran, the phone sat
+  /// silent, a real call was answered, and the app logged NOTHING at all: not
+  /// an interruption, not a withheld one. iOS delivers AVAudioSession
+  /// interruptions for a session it considers ACTIVE, and 45279c1
+  /// deliberately releases ours between announcements so the rider's music is
+  /// never left ducked. So the only calls we could ever see were the ones that
+  /// happened to arrive while we were making noise, which is every
+  /// interruption we have ever observed on iOS and none of the ones we cared
+  /// about most. CXCallObserver reports calls regardless of who owns audio.
+  ///
+  /// Do NOT "fix" the original gap by holding the session active for the whole
+  /// ride. That re-breaks the bench-verified ducking 45279c1 existed to get
+  /// right, and this costs nothing by comparison.
+  private var callObserver: CXCallObserver?
+
+  /// Calls currently proving the rider is awake, by UUID. A set rather than a
+  /// bool because call waiting, conference calls and a second incoming call
+  /// all overlap: the rider stops being on a call when the LAST one ends, not
+  /// when the first does.
+  private var engagedCalls: Set<UUID> = []
 
   override func application(
     _ application: UIApplication,
@@ -78,6 +103,15 @@ import flutter_foreground_task
       }
     }
     mediaAckChannel = channel
+
+    // Observed for the whole life of the app, not just while a ladder is
+    // live: the point of this signal is the call that arrives when we are
+    // making no sound at all, and the Dart side ignores it when no ride is
+    // running. Registering once here also means there is no start/stop pair
+    // to leave dangling.
+    let observer = CXCallObserver()
+    observer.setDelegate(self, queue: .main)
+    callObserver = observer
   }
 
   /// Starts the looping tone, or just moves its volume when it is already
@@ -250,5 +284,32 @@ import flutter_foreground_task
   private func stopKeepAlive() {
     keepAliveEngine?.stop()
     keepAliveEngine = nil
+  }
+}
+
+extension AppDelegate: CXCallObserverDelegate {
+  /// A call changed state. Reports the rider's aggregate call status to Dart
+  /// on the EDGES only, so a conference call's churn does not spam the engine.
+  ///
+  /// WHAT COUNTS AS "AWAKE", and this is the one judgement in here: a call is
+  /// counted once it has CONNECTED, or as soon as it is dialled if it is
+  /// outgoing (nobody dials in their sleep). A phone merely RINGING is
+  /// deliberately not counted. Decision 8 suspends the wake ladder for a rider
+  /// who is provably awake, and an unanswered ring proves the opposite if it
+  /// proves anything: it is exactly the sleeping rider we exist for, and
+  /// silencing their alarm because someone called them would be the worst
+  /// failure this app has. Erring here costs politeness in one direction and
+  /// the rider's stop in the other.
+  func callObserver(_ callObserver: CXCallObserver, callChanged call: CXCall) {
+    let engaged = !call.hasEnded && (call.hasConnected || call.isOutgoing)
+    let wasOnCall = !engagedCalls.isEmpty
+    if engaged {
+      engagedCalls.insert(call.uuid)
+    } else {
+      engagedCalls.remove(call.uuid)
+    }
+    let isOnCall = !engagedCalls.isEmpty
+    guard isOnCall != wasOnCall else { return }
+    mediaAckChannel?.invokeMethod("callState", arguments: isOnCall)
   }
 }

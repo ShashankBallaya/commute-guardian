@@ -541,6 +541,38 @@ class GeofenceChainService {
     }
   }
 
+  /// iOS CallKit call state, arriving from the main isolate. This and the
+  /// audio-session listener in [_configureAudio] both feed the same engine,
+  /// deliberately.
+  ///
+  /// They cover different gaps and neither is redundant. The session sees a
+  /// call only while it is active, which on iOS means only while we are making
+  /// noise: the 23 Jul bench answered a real call in silence and the app
+  /// logged nothing at all. CallKit sees the call whoever owns audio, but only
+  /// on iOS. Double delivery is harmless because
+  /// WakeEscalation.onCallStateChanged is idempotent on both edges (a second
+  /// begin, or an end with no begin, returns no actions), so whichever signal
+  /// arrives first wins and the other is a no-op.
+  ///
+  /// This is also what makes the sustained-tone filter safe. That filter
+  /// withholds every audio interruption while the alarm loops, which is right
+  /// for our own tone but did narrow decision 8: a genuine call during a
+  /// ladder was swallowed with it. CallKit does not go through the filter, so
+  /// a real call now gets through by another road.
+  void onNativeCallState(bool inCall) {
+    // Load-bearing, like the interruption lines: a ride log has to show which
+    // signal moved the ladder, or a later session cannot tell a CallKit
+    // suspension from a session one.
+    _log(inCall ? 'Call started (CallKit).' : 'Call ended (CallKit).');
+    _handleWakeActions(
+      _wakeEscalation?.onCallStateChanged(
+            inCall: inCall,
+            now: DateTime.now(),
+          ) ??
+          const [],
+    );
+  }
+
   /// Speaks [text], ducking other audio only for the duration of the speech.
   ///
   /// Calls are serialized on one chain, so a fix arriving mid-announcement

@@ -43,6 +43,11 @@ const windDownExtendId = 'wind_down_extend';
 const wakeAckButtonId = 'wake_ack';
 const wakeAckMediaPrefix = 'wake_ack_media:';
 
+/// Native call state from iOS CallKit, forwarded main isolate -> service.
+/// Android has no counterpart and does not need one: there the audio session
+/// already reports a real call, because the ringtone interrupts us.
+const wakeCallStatePrefix = 'wake_call_state:';
+
 /// Runs the ride inside the Android foreground service isolate so it survives
 /// screen lock and app backgrounding.
 class GeofenceTaskHandler extends TaskHandler {
@@ -168,6 +173,10 @@ class GeofenceTaskHandler extends TaskHandler {
         final via = message.substring(wakeAckMediaPrefix.length);
         _chain?.wakeAck(
           source: via.isEmpty ? 'media button' : 'media button ($via)',
+        );
+      case final String message when message.startsWith(wakeCallStatePrefix):
+        _chain?.onNativeCallState(
+          message.substring(wakeCallStatePrefix.length) == 'true',
         );
       case windDownEndNowId:
         _chain?.windDownEndNow();

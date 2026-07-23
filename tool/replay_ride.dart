@@ -42,6 +42,11 @@ final _interruptionPattern = RegExp(
   r'^(\S+) Audio session (interrupted \(call or other audio\)|'
   r'interruption ended)\.$',
 );
+// iOS CallKit, the other half of the call signal. Added the moment the signal
+// existed, because a replay blind to it would reproduce an iPhone ride as if
+// the ladder had never been suspended, which is the same shape of silent
+// wrongness the missing overshoot pins caused.
+final _callKitPattern = RegExp(r'^(\S+) Call (started|ended) \(CallKit\)\.$');
 
 const _tick = Duration(seconds: 5);
 
@@ -144,6 +149,18 @@ void main(List<String> args) {
       final began = interruption.group(2)!.startsWith('interrupted');
       stdout.writeln(
         '${stamp(at)}  CALL      ${began ? 'started' : 'ended'}',
+      );
+      printWake(wake.onCallStateChanged(inCall: began, now: at), at);
+      continue;
+    }
+
+    final callKit = _callKitPattern.firstMatch(line);
+    if (callKit != null) {
+      final at = DateTime.parse(callKit.group(1)!);
+      tickUpTo(at);
+      final began = callKit.group(2)! == 'started';
+      stdout.writeln(
+        '${stamp(at)}  CALL      ${began ? 'started' : 'ended'} (CallKit)',
       );
       printWake(wake.onCallStateChanged(inCall: began, now: at), at);
       continue;
