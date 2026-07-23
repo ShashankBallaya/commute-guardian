@@ -41,68 +41,103 @@ Announcement _airoliOvershoot() => const Announcement(
           'at Airoli.',
     );
 
-/// ~180 m north of the Airoli node, the same shape as [_outsideLat] is for
-/// Digha: past the 150 m exit walk, and reachable on foot in the time the
-/// fixtures allow.
-const _airoliOutsideLat = 19.16014;
-const _airoliOutsideLng = 72.9994023;
-
-/// The alight dwell at the overshoot pin: one in-fence fix slow enough to be
-/// a stopped train, which is what moves the anchor to this station.
-void _alightAtAiroli(WindDown windDown, DateTime at) {
-  windDown.onFix(
-    lat: _airoli.lat,
-    lng: _airoli.lng,
-    accuracyM: 20,
-    speedMps: 0.3,
-    now: at,
-  );
-}
-
-/// Two walking-speed fixes 180 m off the Airoli anchor: the platform exit.
-/// Returns what the second one produced, which is where the countdown starts.
-List<WindDownAction> _walkOutOfAiroli(WindDown windDown, DateTime from) {
-  windDown.onFix(
-    lat: _airoliOutsideLat,
-    lng: _airoliOutsideLng,
-    accuracyM: 20,
-    speedMps: 1.3,
-    now: from.add(const Duration(seconds: 90)),
-  );
-  return windDown.onFix(
-    lat: _airoliOutsideLat,
-    lng: _airoliOutsideLng,
-    accuracyM: 20,
-    speedMps: 1.3,
-    now: from.add(const Duration(seconds: 95)),
-  );
-}
-
 Announcement _dighaArrival() => const Announcement(
       stationId: 'digha',
       kind: AnnouncementKind.arrival,
       text: 'You have arrived at your destination, Digha Gaon.',
     );
 
+/// Metres per degree of latitude, so a fixture can say "180 m north of the
+/// platform" instead of a magic coordinate nobody can check.
+const _mPerDegLat = 111320.0;
+
+double _northOf(Station station, double metres) =>
+    station.lat + metres / _mPerDegLat;
+
+/// ~180 m north of a station node: past the 150 m exit-walk threshold from an
+/// anchor at the platform, and a distance a real walker covers in the
+/// minute-plus these fixtures allow (450 m in 90 s, the old value, was 5 m/s,
+/// not a walk, and the time-plausibility guard rightly rejects it).
+final _outsideLat = _northOf(_digha, 180);
+const _outsideLng = 72.9944301;
+
 /// The alight dwell: one fix inside the fence at walking speed, the train
 /// standing at the platform. Exit fixes only count after one of these.
-void _alight(WindDown windDown, DateTime at) {
+///
+/// Takes the station because the exit watch moves: after an overshoot the
+/// rider alights at the pin, not at the destination they slept through.
+void _alightAt(WindDown windDown, Station station, DateTime at) {
   windDown.onFix(
-    lat: _digha.lat,
-    lng: _digha.lng,
+    lat: station.lat,
+    lng: station.lng,
     accuracyM: 20,
     speedMps: 0.3,
     now: at,
   );
 }
 
-/// ~180 m north of the Digha station node: past the 150 m exit-walk threshold
-/// from an anchor at the platform, and a distance a real walker covers in the
-/// minute-plus these fixtures allow (450 m in 90 s, the old value, was 5 m/s,
-/// not a walk, and the time-plausibility guard rightly rejects it).
-const _outsideLat = 19.18240;
-const _outsideLng = 72.9944301;
+void _alight(WindDown windDown, DateTime at) =>
+    _alightAt(windDown, _digha, at);
 
+void _alightAtAiroli(WindDown windDown, DateTime at) =>
+    _alightAt(windDown, _airoli, at);
+
+/// Two walking-speed fixes 180 m off [station]'s anchor: the platform exit.
+/// Returns what the second one produced, which is where the countdown starts.
+List<WindDownAction> _walkOutOf(
+  WindDown windDown,
+  Station station,
+  DateTime from,
+) {
+  final lat = _northOf(station, 180);
+  windDown.onFix(
+    lat: lat,
+    lng: station.lng,
+    accuracyM: 20,
+    speedMps: 1.3,
+    now: from.add(const Duration(seconds: 90)),
+  );
+  return windDown.onFix(
+    lat: lat,
+    lng: station.lng,
+    accuracyM: 20,
+    speedMps: 1.3,
+    now: from.add(const Duration(seconds: 95)),
+  );
+}
+
+List<WindDownAction> _walkOutOfAiroli(WindDown windDown, DateTime from) =>
+    _walkOutOf(windDown, _airoli, from);
+
+/// A train pulling out of [station] with the rider still aboard: continuous
+/// fixes receding far faster than a walk, run past [WindDown.vehicleMinElapsed]
+/// so the recession is actually judged rather than dismissed as GPS settling.
+/// Returns what the last fix produced, so a test can assert the disarm landed.
+List<WindDownAction> _trainLeaves(
+  WindDown windDown,
+  Station station,
+  DateTime anchoredAt,
+) {
+  var last = const <WindDownAction>[];
+  // 10 s apart, inside the 12 s continuity gap, so the streak survives.
+  for (final (seconds, metres) in [
+    (10, 100.0),
+    (20, 200.0),
+    (30, 300.0),
+    (40, 600.0),
+  ]) {
+    last = windDown.onFix(
+      lat: _northOf(station, metres),
+      lng: station.lng,
+      accuracyM: 20,
+      // Reported speed says standing still throughout, deliberately: the
+      // verdict must come from displacement over time, never from this.
+      speedMps: 0.0,
+      now: anchoredAt.add(Duration(seconds: seconds)),
+    );
+  }
+  return last;
+}
 
 /// A wind-down that produced only [WindDownNote]s has done nothing the rider
 /// can hear: notes are diagnostics written to the ride log, not behaviour.
@@ -830,20 +865,18 @@ void main() {
     windDown.onStationEvent(_dighaArrival(), _t0);
 
     _alight(windDown, _t0);
-    // Receding far faster than a walk, two continuous fixes: the train left.
-    windDown.onFix(
-      lat: 19.1834712, // 300 m north of Digha
-      lng: _digha.lng,
-      accuracyM: 20,
-      speedMps: 0.0,
-      now: _t0.add(const Duration(seconds: 5)),
-    );
-    windDown.onFix(
-      lat: 19.1861662, // 600 m north of Digha
-      lng: _digha.lng,
-      accuracyM: 20,
-      speedMps: 0.0,
-      now: _t0.add(const Duration(seconds: 10)),
+    final disarm = _trainLeaves(windDown, _digha, _t0);
+
+    // ASSERTED, not assumed. This test spent a commit passing vacuously: its
+    // recession fixes sat at 5 s and 10 s, and once af72faa gave the vehicle
+    // rule a 30 s baseline they could no longer disarm anything, so the test
+    // went on proving that a re-arm survives a disarm that never happened.
+    // A precondition a test depends on has to be a real assertion, or the
+    // test quietly stops testing the thing it is named after.
+    expect(
+      disarm.whereType<WindDownNote>().map((n) => n.reason),
+      anyElement(contains('disarmed: receded')),
+      reason: 'the train has to actually disarm for this test to mean anything',
     );
 
     windDown.onStationEvent(

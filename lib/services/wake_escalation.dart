@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../models/journey.dart';
 import '../models/station.dart';
 import 'ride_progress.dart';
 
@@ -54,6 +55,18 @@ class WakeEscalation {
     required this.interchangeStationIds,
     required this.destinationStationId,
   });
+
+  /// Build the engine from the journey it runs for. The critical stations are
+  /// exactly what the journey already knows: the interchanges THIS route
+  /// requires, then the destination (locked decision 6), in the chain order
+  /// the planner emits. See [WindDown.forJourney] for why this is a factory.
+  factory WakeEscalation.forJourney(Journey journey) => WakeEscalation(
+        chain: journey.chain,
+        interchangeStationIds: [
+          for (final interchange in journey.interchanges) interchange.stationId,
+        ],
+        destinationStationId: journey.destinationStationId,
+      );
 
   final List<Station> chain;
   final List<String> interchangeStationIds;

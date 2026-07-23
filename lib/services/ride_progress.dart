@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../models/journey.dart';
 import '../models/station.dart';
 import 'announcement_templates.dart';
 
@@ -36,6 +37,17 @@ class RideProgress {
     this.arrivalAnnouncements = const {},
     this.maxAccuracyM = 150,
   });
+
+  /// Build the engine from the journey it runs for. See [WindDown.forJourney]
+  /// for why every caller should use these rather than wire the fields up by
+  /// hand: this is the engine the replay tool went blind on.
+  factory RideProgress.forJourney(Journey journey) => RideProgress(
+        chain: journey.chain,
+        destinationStationId: journey.destinationStationId,
+        overshootStations: journey.overshootStations,
+        approachRadiusM: journey.approachRadiusM,
+        arrivalAnnouncements: journey.arrivalAnnouncements,
+      );
 
   final List<Station> chain;
   final String destinationStationId;

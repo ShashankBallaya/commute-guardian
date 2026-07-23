@@ -37,10 +37,29 @@ class SelfAudioInterruptionFilter {
   /// than a timer.
   bool _sustained = false;
 
-  /// Call when a sound of ours starts and stops that lasts longer than an
-  /// utterance: today that is the wake alarm loop.
-  void setSustainedOwnAudio({required bool active}) {
-    _sustained = active;
+  /// Call when a sound of ours begins that outlasts a single utterance: today
+  /// that is the wake alarm loop.
+  ///
+  /// This raises the sustained flag AND stamps the start instant, because a
+  /// sustained sound is also an ordinary one at the moment it begins. Keeping
+  /// them one call is deliberate: while they were two, every caller had to
+  /// remember both, and a caller that raised the flag without stamping would
+  /// have silently narrowed the window back to nothing.
+  void noteSustainedOwnAudioStarted(DateTime now) {
+    _sustained = true;
+    _ownAudioStartedAt = now;
+  }
+
+  /// Call the moment that sound stops, and on EVERY path that can end a ladder
+  /// or a ride, including the ones that tear the tone down directly rather
+  /// than through a StopTone action.
+  ///
+  /// Cheap to call twice and disastrous to miss once: a flag left standing
+  /// outlives the ride and makes the next one ignore a real call, which is the
+  /// single failure this filter must never cause. It is therefore idempotent
+  /// and safe to call when no tone was ever playing.
+  void noteSustainedOwnAudioEnded() {
+    _sustained = false;
   }
 
   /// Whether the interruption currently in progress was judged to be ours.

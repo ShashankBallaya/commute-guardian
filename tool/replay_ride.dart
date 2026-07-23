@@ -80,29 +80,15 @@ void main(List<String> args) {
 
   stdout.writeln('Journey: ${journey.chain.map((s) => s.name).join(' -> ')}\n');
 
-  final ride = RideProgress(
-    chain: journey.chain,
-    destinationStationId: journey.destinationStationId,
-    // Was missing, and the replay was silently blind because of it: once
-    // d21dc69 moved the terminus pins OUT of the chain, a replay without
-    // them could never reproduce an overshoot warning, so the 22 Jul
-    // Kalyan-to-Shahad ride replayed as if the rider had simply stopped.
-    overshootStations: journey.overshootStations,
-    approachRadiusM: journey.approachRadiusM,
-    arrivalAnnouncements: journey.arrivalAnnouncements,
-  );
-  final wake = WakeEscalation(
-    chain: journey.chain,
-    interchangeStationIds: [
-      for (final interchange in journey.interchanges) interchange.stationId,
-    ],
-    destinationStationId: journey.destinationStationId,
-  );
-  final windDown = WindDown(
-    destination: journey.chain
-        .firstWhere((s) => s.id == journey.destinationStationId),
-    overshootStations: journey.overshootStations,
-  );
+  // Built through the same factories the service uses, deliberately. Listing
+  // the fields here by hand is what made this tool go blind: it stopped
+  // passing the overshoot pins when d21dc69 moved them out of the chain, so
+  // the 22 Jul Kalyan-to-Shahad ride replayed as if the rider had simply
+  // stopped after Kalyan. A replay that builds its engines differently from
+  // the app is not replaying the app.
+  final ride = RideProgress.forJourney(journey);
+  final wake = WakeEscalation.forJourney(journey);
+  final windDown = WindDown.forJourney(journey);
 
   var fixes = 0;
   var spoken = 0;

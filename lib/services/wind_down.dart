@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../models/journey.dart';
 import '../models/station.dart';
 import 'ride_progress.dart';
 
@@ -52,6 +53,18 @@ class WindDownNote extends WindDownAction {
 class WindDown {
   WindDown({required this.destination, this.overshootStations = const []})
       : _exitStation = destination;
+
+  /// Build the engine from the journey it runs for. Everything this needs is
+  /// already on [Journey], and every caller (the service and the replay tool)
+  /// wants exactly this, so wiring the fields by hand at each call site only
+  /// created the chance for one of them to forget a field. Exactly that
+  /// happened once: the replay tool stopped passing the overshoot pins and
+  /// went silently blind to every overshoot for two commits.
+  factory WindDown.forJourney(Journey journey) => WindDown(
+        destination: journey.chain
+            .firstWhere((s) => s.id == journey.destinationStationId),
+        overshootStations: journey.overshootStations,
+      );
 
   final Station destination;
 
@@ -142,25 +155,24 @@ class WindDown {
   bool _countingDown = false;
   DateTime? _endAt;
 
-  /// Whether the train provably STOPPED at the destination platform (a
+  /// Where and when the train stopped: the first near-stationary in-fence fix.
+  ///
+  /// Frozen once set, deliberately. Walking through a crowded station includes
+  /// near-stationary dips (the real Kalyan walk read 0.2 to 0.6 m/s at stairs),
+  /// and re-anchoring on each dip would chase the walker so the exit distance
+  /// never accumulates.
+  _Anchor? _anchor;
+
+  /// Whether the train provably STOPPED at the exit station platform (a
   /// near-stationary fix inside the fence) after the arrival. A rider can
   /// only have alighted from a stopped train; the 13 Jul fast local
   /// crossed the Thakurli fence at 22 m/s and nobody got off it there.
   /// Exit fixes count for nothing until this is seen.
-  bool _alightSeen = false;
-
-  /// Where the train stopped: the first near-stationary in-fence fix.
-  /// Frozen once set, deliberately. Walking through a crowded station
-  /// includes near-stationary dips (the real Kalyan walk read 0.2 to 0.6
-  /// m/s at stairs), and re-anchoring on each dip would chase the walker
-  /// so the exit distance never accumulates.
-  double? _anchorLat;
-  double? _anchorLng;
-
-  /// When the anchor was set. The exit walk is only believed if the distance
-  /// from the anchor is reachable on foot in the time since: a rider cannot be
-  /// 150 m away two seconds after the train stopped.
-  DateTime? _anchorAt;
+  ///
+  /// Derived from the anchor rather than tracked beside it: the two were always
+  /// set and cleared together, so a separate flag was one more thing a future
+  /// reset could forget.
+  bool get _alightSeen => _anchor != null;
 
   /// When the FIRST anchor was set (arrival). Re-anchoring is only allowed
   /// within [reanchorWindow] of this, so a mid-walk dip cannot claim it.
@@ -186,8 +198,13 @@ class WindDown {
   bool get isCountingDown => _countingDown;
 
   /// Once the rider is provably still on the train past the destination,
-  /// auto-off is off the table for the whole ride: recovery from a missed
-  /// stop is manual-end territory.
+  /// auto-off is off the table until the app tells them where to get off:
+  /// there is no exit to watch for while they are still aboard.
+  ///
+  /// This used to be permanent for the ride, and that was the bug the 22 Jul
+  /// ride exposed. Reaching an overshoot pin lifts it (see [onStationEvent]),
+  /// because a pin names a platform the rider is about to stand on. Nothing
+  /// else does.
   bool _disarmed = false;
 
   /// The arrival at the destination is what arms the exit watch; any later
@@ -243,10 +260,7 @@ class WindDown {
     _exitStation = station;
     _armed = true;
     _disarmed = false;
-    _alightSeen = false;
-    _anchorLat = null;
-    _anchorLng = null;
-    _anchorAt = null;
+    _anchor = null;
     _firstAnchorAt = null;
     _reanchorPending = false;
     _reanchored = false;
@@ -297,11 +311,9 @@ class WindDown {
         distanceM <= _exitStation.radiusM &&
         speedMps >= 0 &&
         speedMps <= alightSpeedMaxMps) {
+      // Checked before the anchor moves, because _alightSeen reads the anchor.
       if (_alightSeen) _reanchored = true;
-      _alightSeen = true;
-      _anchorLat = lat;
-      _anchorLng = lng;
-      _anchorAt = now;
+      _anchor = _Anchor(lat: lat, lng: lng, at: now);
       _firstAnchorAt ??= now;
       _reanchorPending = false;
       // Both streaks from a stale anchor are void.
@@ -309,17 +321,14 @@ class WindDown {
       _vehicleFixes = 0;
       return [
         WindDownNote(
-          '${_reanchored ? 're-anchored' : 'alight anchor set'} at '
-          '${_exitStation.id}, ${distanceM.round()} m from the node',
+          '${_reanchored ? 're-anchored' : 'alight anchor set'} '
+          '${distanceM.round()} m from ${_exitStation.id}',
         ),
       ];
     }
 
-    final anchorLat = _anchorLat;
-    final anchorLng = _anchorLng;
-    if (!_alightSeen || anchorLat == null || anchorLng == null) {
-      return const [];
-    }
+    final anchor = _anchor;
+    if (anchor == null) return const [];
 
     // Everything keys off DISPLACEMENT from the alight anchor over the time
     // since it was set, never the reported per-fix speed. On the 20 Jul ride
@@ -328,8 +337,8 @@ class WindDown {
     // stream while the train carried the rider past Ambivli. Distance over
     // time cannot be faked by a single reading: a walker stays near the
     // alight point, a departing train recedes hundreds of metres fast.
-    final walkedM = _distanceM(lat, lng, anchorLat, anchorLng);
-    final elapsedS = now.difference(_anchorAt!).inSeconds;
+    final walkedM = _distanceM(lat, lng, anchor.lat, anchor.lng);
+    final elapsedS = now.difference(anchor.at).inSeconds;
     final walkReachM = walkingSpeedMaxMps * elapsedS;
     final vehicleReachM = vehicleSpeedMps * elapsedS;
 
@@ -450,4 +459,19 @@ class WindDown {
   }
 
   static double _toRad(double deg) => deg * math.pi / 180.0;
+}
+
+/// The alight anchor: where the train stopped, and when.
+///
+/// One value rather than three parallel nullables, because the position and
+/// the instant are meaningless apart. Every judgement this engine makes is
+/// distance from here over time since then, so a position without its
+/// timestamp cannot say whether a walk was plausible, and either one missing
+/// means there is no anchor at all.
+class _Anchor {
+  const _Anchor({required this.lat, required this.lng, required this.at});
+
+  final double lat;
+  final double lng;
+  final DateTime at;
 }

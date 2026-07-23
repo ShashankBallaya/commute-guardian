@@ -184,28 +184,17 @@ class GeofenceChainService {
       return;
     }
     _journey = journey;
-    _rideProgress = RideProgress(
-      chain: journey.chain,
-      destinationStationId: journey.destinationStationId,
-      overshootStations: journey.overshootStations,
-      approachRadiusM: journey.approachRadiusM,
-      arrivalAnnouncements: journey.arrivalAnnouncements,
-    );
-    _windDown = WindDown(
-      destination: journey.chain
-          .firstWhere((s) => s.id == journey.destinationStationId),
-      overshootStations: journey.overshootStations,
-    );
-    // The wake engine watches the same critical stations the journey
-    // defines: the interchanges THIS route requires, then the destination
-    // (locked decision 6), all in chain order as the planner emits them.
-    _wakeEscalation = WakeEscalation(
-      chain: journey.chain,
-      interchangeStationIds: [
-        for (final interchange in journey.interchanges) interchange.stationId,
-      ],
-      destinationStationId: journey.destinationStationId,
-    );
+    // All three engines are built from the journey and nothing else, through
+    // the factories, so the replay tool cannot drift from the service the way
+    // it did when it silently stopped passing the overshoot pins.
+    _rideProgress = RideProgress.forJourney(journey);
+    _windDown = WindDown.forJourney(journey);
+    _wakeEscalation = WakeEscalation.forJourney(journey);
+    // A ride starting on a service that already ran one must not inherit a
+    // raised sustained flag: it would spend the whole new ride treating real
+    // calls as our own alarm. stop() clears it, but a restart that never went
+    // through stop() would not.
+    _selfInterruption.noteSustainedOwnAudioEnded();
     _wakeOutput =
         WakeAlertOutput(log: _log, onIosToneCommand: onIosToneCommand);
 
@@ -694,18 +683,22 @@ class GeofenceChainService {
           // the 22 Jul iPhone leg went 0.3 -> 0.6 -> silence, twice, into the
           // rider's destination. The clip and speak paths were already
           // covered; the tone never was, on either platform.
-          _selfInterruption.setSustainedOwnAudio(active: true);
-          _selfInterruption.noteOwnAudioStarted(DateTime.now());
+          _selfInterruption.noteSustainedOwnAudioStarted(DateTime.now());
           unawaited(_wakeOutput?.ensureToneAt(volume));
         case StopTone():
           _wakeToneVolume = null;
-          _selfInterruption.setSustainedOwnAudio(active: false);
+          _selfInterruption.noteSustainedOwnAudioEnded();
           unawaited(_wakeOutput?.stopTone());
         case Vibrate():
           unawaited(_wakeOutput?.vibrate());
         case HardStop():
           _log('WAKE hard stop: ceiling reached, ladder given up.');
           _wakeToneVolume = null;
+          // The engine always pairs StopTone with HardStop when a tone was
+          // playing, so this clear is redundant today. It stays because the
+          // cost of the two disagreeing one day is a flag stuck up for the
+          // rest of the ride, and clearing twice costs nothing.
+          _selfInterruption.noteSustainedOwnAudioEnded();
           unawaited(_wakeOutput?.stopTone());
       }
     }
@@ -785,7 +778,11 @@ class GeofenceChainService {
   /// never existed. A log that records outcomes but not causes cannot be
   /// audited. Same lesson as the wake ack source (bb19b39) and the wind-down
   /// notes: say WHY, at the moment it happens.
-  Future<void> stop({String reason = 'unspecified'}) async {
+  ///
+  /// [reason] is required on purpose. A default would let a future call site
+  /// produce exactly the unauditable "the ride ended, no idea why" line this
+  /// parameter was added to abolish.
+  Future<void> stop({required String reason}) async {
     _log('Journey ending: $reason.');
     // The engine dies first so nothing re-starts the tone mid-teardown; a
     // ride ended mid-ladder must also release the UI's media session.
@@ -797,7 +794,7 @@ class GeofenceChainService {
     // action, so the sustained flag has to be cleared by hand here. A flag
     // left set would outlive the ride and make the NEXT one ignore a real
     // call, which is the one failure mode this whole filter must not cause.
-    _selfInterruption.setSustainedOwnAudio(active: false);
+    _selfInterruption.noteSustainedOwnAudioEnded();
     await _wakeOutput?.stopTone();
     await _wakeOutput?.dispose();
     _wakeOutput = null;
