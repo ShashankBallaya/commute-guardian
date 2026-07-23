@@ -925,22 +925,48 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
                 // the earphone tap does not route to us. White fill: loud
                 // enough to find half-asleep, and crimson stays reserved for
                 // starting or ending a journey.
-                ElevatedButton(
-                  key: const Key('im_awake'),
-                  onPressed: _wakeAck,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Palette.text,
-                    foregroundColor: Palette.ground,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                //
+                // Announce rides alongside it because this row used to REPLACE
+                // the debug triggers outright, which made the one test that
+                // discriminates the 22 Jul iPhone failure impossible to run:
+                // firing a station announcement while a ladder climbs. Every
+                // iPhone ladder that died that day went live within seconds of
+                // an announcement, and the survivor did not, so being able to
+                // stage that collision by hand is worth a debug button.
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: ElevatedButton(
+                        key: const Key('im_awake'),
+                        onPressed: _wakeAck,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Palette.text,
+                          foregroundColor: Palette.ground,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: const Text(
+                          "I'm awake",
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
                     ),
-                    elevation: 0,
-                  ),
-                  child: const Text(
-                    "I'm awake",
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                  ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _TestButton(
+                        label: 'Announce',
+                        onPressed: _isRunning ? _testTts : null,
+                        buttonKey: const Key('announce_during_ladder'),
+                      ),
+                    ),
+                  ],
                 )
               else if (_windDownLive)
                 // Mirrors the notification's wind-down actions for when the
