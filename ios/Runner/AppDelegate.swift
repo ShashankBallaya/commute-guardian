@@ -136,6 +136,25 @@ import flutter_foreground_task
       NSLog("WakeTone: wake_alarm.wav not found in the bundle")
       return
     }
+    // The player is not playing, so either it never started or something took
+    // the session out from under us and iOS stopped it. Re-seize BEFORE
+    // playing: an interruption deactivates our session, and calling play() on
+    // a dead session produces a player that reports success and makes no
+    // sound.
+    //
+    // The 23 Jul bench is why this exists. Mid-ladder the rider opened Music
+    // and pressed play. iOS interrupted us, our tone stopped, and nothing ever
+    // took the session back, so the ladder went on logging rungs 0.6 and 1.0
+    // into total silence. Six test announcements, the stand-down line and the
+    // farewell were all inaudible too. Remote commands kept working (the card
+    // is re-posted above), so the rider could still ack; they just could not
+    // hear anything. A wake alarm that reports success while making no sound
+    // is the worst failure this app has.
+    //
+    // Deliberately NOT done on the healthy path above: changing the category
+    // of a live session can cut off audio that is already playing, including
+    // our own TTS. Only the recovery path needs it.
+    reseizeSession()
     do {
       let player = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
       player.numberOfLoops = -1
@@ -152,11 +171,17 @@ import flutter_foreground_task
     tonePlayer = nil
   }
 
-  private func startAckSession() {
-    guard ackTargets.isEmpty else { return }
-
-    // Exclusive playback is what earns remote-command routing. The rider's
-    // music is interrupted (paused); stand-down hands it back.
+  /// Takes the audio session exclusively.
+  ///
+  /// Exclusive (non-mixing) playback is what earns remote-command routing:
+  /// iOS gives Now Playing to the app playing PRIMARY audio, so a mixing
+  /// session can never own the earphone tap. The rider's music is interrupted
+  /// (paused) as a consequence, and stand-down hands it back.
+  ///
+  /// Idempotent, which is what lets the tone watchdog call it on the recovery
+  /// path without having to know whether anything was actually lost: setting
+  /// the category and activating a session we already hold are both no-ops.
+  private func reseizeSession() {
     let session = AVAudioSession.sharedInstance()
     do {
       try session.setCategory(.playback, mode: .default, options: [])
@@ -164,6 +189,12 @@ import flutter_foreground_task
     } catch {
       NSLog("WakeAck: could not seize the audio session: \(error)")
     }
+  }
+
+  private func startAckSession() {
+    guard ackTargets.isEmpty else { return }
+
+    reseizeSession()
 
     startKeepAlive()
 

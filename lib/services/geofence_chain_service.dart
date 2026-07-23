@@ -475,12 +475,27 @@ class GeofenceChainService {
     _session = session;
     await session.configure(_duckProfile);
 
-    // The wake engine's call signal (locked decision 8: on a call means
-    // awake). An interruption suspends a live ladder; its end delivers the
-    // catch-up. The log lines are load-bearing: replay_ride.dart parses
-    // them to reproduce call handling from a real ride's log.
+    // Audio-session interruptions, which mean DIFFERENT THINGS per platform
+    // and are handled apart because of it.
+    //
+    // Android: still the call signal (locked decision 8, on a call means
+    // awake), because there is no CallKit and the ringtone genuinely
+    // interrupts us.
+    // iOS: means we lost audio, nothing more. Calls arrive through CallKit
+    // instead. See [_onIosAudioInterruption] for why the proxy was retired.
+    //
+    // The log lines are load-bearing: replay_ride.dart parses them to
+    // reproduce call handling from a real ride's log.
     _interruptionSub = session.interruptionEventStream.listen((event) {
       final now = DateTime.now();
+      if (Platform.isIOS) {
+        _onIosAudioInterruption(begin: event.begin);
+        return;
+      }
+      // ANDROID ONLY from here. There is no CallKit, and the ringtone really
+      // does interrupt us, so this remains the call signal (locked decision 8)
+      // and the filter below remains load-bearing.
+      //
       // Our own clip colliding with our own speech raises this same event, and
       // feeding that to the engine stood a live ladder DOWN (21 Jul bench,
       // reproduced 2 for 2; the 20 Jul Vasind case in the field). Withheld
@@ -490,8 +505,13 @@ class GeofenceChainService {
       if (_selfInterruption.shouldIgnore(begin: event.begin, now: now)) {
         _log(
           event.begin
-              ? 'Audio session interrupted by our own audio, ignored.'
-              : 'Audio session interruption ended (ours, ignored).',
+              // Says what we KNOW (our own audio was playing, so we withheld
+              // it) rather than what we were guessing (that the interruption
+              // was ours). On 23 Jul the rider started Music mid-ladder and
+              // this line claimed his music was our own audio.
+              ? 'Audio session interrupted while our own audio played, '
+                  'withheld.'
+              : 'Audio session interruption ended (withheld).',
         );
         return;
       }
@@ -541,24 +561,58 @@ class GeofenceChainService {
     }
   }
 
-  /// iOS CallKit call state, arriving from the main isolate. This and the
-  /// audio-session listener in [_configureAudio] both feed the same engine,
-  /// deliberately.
+  /// An audio-session interruption on iOS, where it means WE LOST AUDIO and
+  /// nothing else.
   ///
-  /// They cover different gaps and neither is redundant. The session sees a
-  /// call only while it is active, which on iOS means only while we are making
-  /// noise: the 23 Jul bench answered a real call in silence and the app
-  /// logged nothing at all. CallKit sees the call whoever owns audio, but only
-  /// on iOS. Double delivery is harmless because
-  /// WakeEscalation.onCallStateChanged is idempotent on both edges (a second
-  /// begin, or an end with no begin, returns no actions), so whichever signal
-  /// arrives first wins and the other is a no-op.
+  /// It used to mean "the rider is on a call" (locked decision 8), because the
+  /// session was the only call signal we had. It was always a proxy, and a bad
+  /// one: an AVAudioSession interruption is raised by a real call, by another
+  /// app taking audio, by Siri or a timer, and by our own sounds colliding,
+  /// and the session cannot say which. Guessing is what SelfAudioInterruption
+  /// Filter existed to do, and on 23 Jul it guessed wrong: the rider started
+  /// Music mid-ladder, we recorded it as our own audio, and the ladder went on
+  /// logging rungs into silence.
   ///
-  /// This is also what makes the sustained-tone filter safe. That filter
-  /// withholds every audio interruption while the alarm loops, which is right
-  /// for our own tone but did narrow decision 8: a genuine call during a
-  /// ladder was swallowed with it. CallKit does not go through the filter, so
-  /// a real call now gets through by another road.
+  /// CallKit reports calls directly now (see [onNativeCallState]), so the
+  /// proxy has no job left here and the two facts are separated: calls come
+  /// from CallKit, lost audio comes from the session.
+  ///
+  /// THE POINT OF THE SPLIT is that it makes the classification harmless. The
+  /// old response, standing a ladder down, was destructive, so a wrong guess
+  /// cost a sleeping rider their alarm. Re-seizing is idempotent: if the sound
+  /// was ours we already hold the session and nothing happens, and if another
+  /// app took it we take it back. We no longer have to know which it was.
+  void _onIosAudioInterruption({required bool begin}) {
+    if (!begin) {
+      _log('Audio session interruption ended.');
+      return;
+    }
+    final volume = _wakeToneVolume;
+    if (volume == null) {
+      // No ladder is sounding, so there is nothing to rescue. Announcements
+      // are one-shot and the next one activates the session for itself.
+      _log('Audio session interrupted (audio lost, nothing sounding).');
+      return;
+    }
+    // Re-assert immediately rather than waiting for the next ~5 s tick to do
+    // it. ensureToneAt reaches AppDelegate.startTone, which re-seizes the
+    // session before restarting the player.
+    _log('Audio session interrupted (audio lost), re-seizing for the ladder.');
+    unawaited(_wakeOutput?.ensureToneAt(volume));
+  }
+
+  /// iOS CallKit call state, arriving from the main isolate. On iOS this is
+  /// now the ONLY thing that tells the wake engine about a call.
+  ///
+  /// The audio session used to do it, and could not: it sees a call only while
+  /// it is active, which on iOS means only while we happen to be making noise.
+  /// The 23 Jul bench answered a real call in silence and the app logged
+  /// nothing at all. CallKit reports calls whoever owns audio.
+  ///
+  /// It also cannot be fooled the way the session could. A session
+  /// interruption is raised by calls, by other apps, by Siri and by our own
+  /// sounds alike; CallKit reports calls and only calls, so the rider starting
+  /// Music can never again read as "the rider is on a call".
   void onNativeCallState(bool inCall) {
     // Load-bearing, like the interruption lines: a ride log has to show which
     // signal moved the ladder, or a later session cannot tell a CallKit
