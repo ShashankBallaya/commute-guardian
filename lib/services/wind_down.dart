@@ -433,6 +433,12 @@ class WindDown {
   /// must not tear a ride down.
   List<WindDownAction> endNow(DateTime now) {
     if (_ended || !_countingDown) return const [];
+    return _finish();
+  }
+
+  /// Calls the ride over, once. Both endings share this so they cannot drift
+  /// on what a finished ride leaves behind.
+  List<WindDownAction> _finish() {
     _countingDown = false;
     _endAt = null;
     _ended = true;
@@ -455,10 +461,7 @@ class WindDown {
     if (_ended || !_countingDown || _endAt == null || now.isBefore(_endAt!)) {
       return const [];
     }
-    _countingDown = false;
-    _endAt = null;
-    _ended = true;
-    return const [WindDownEnd()];
+    return _finish();
   }
 
   /// Great-circle distance in metres (haversine), duplicated from the

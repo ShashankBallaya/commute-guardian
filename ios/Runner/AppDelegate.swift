@@ -111,6 +111,15 @@ import flutter_foreground_task
     // to leave dangling.
     let observer = CXCallObserver()
     observer.setDelegate(self, queue: .main)
+    // Seed from the calls already in progress. callChanged fires on
+    // TRANSITIONS only, so a call that was already connected when the observer
+    // registered would otherwise never be reported, and the rider would be
+    // escalated at mid-conversation.
+    for call in observer.calls where !call.hasEnded
+      && (call.hasConnected || call.isOutgoing)
+    {
+      engagedCalls.insert(call.uuid)
+    }
     callObserver = observer
   }
 
@@ -187,7 +196,9 @@ import flutter_foreground_task
       try session.setCategory(.playback, mode: .default, options: [])
       try session.setActive(true)
     } catch {
-      NSLog("WakeAck: could not seize the audio session: \(error)")
+      // Neutral prefix: this is called from the ack path AND from the tone
+      // watchdog's recovery path, and the log is read by grepping prefixes.
+      NSLog("WakeAudio: could not seize the audio session: \(error)")
     }
   }
 

@@ -940,15 +940,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
                       child: ElevatedButton(
                         key: const Key('im_awake'),
                         onPressed: _wakeAck,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Palette.text,
-                          foregroundColor: Palette.ground,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          elevation: 0,
-                        ),
+                        style: _urgentButtonStyle,
                         child: const Text(
                           "I'm awake",
                           style: TextStyle(
@@ -978,15 +970,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
                       child: ElevatedButton(
                         key: const Key('wind_down_end_now'),
                         onPressed: _windDownEndNow,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Palette.text,
-                          foregroundColor: Palette.ground,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          elevation: 0,
-                        ),
+                        style: _urgentButtonStyle,
                         child: const Text(
                           'End now',
                           style: TextStyle(
@@ -1113,6 +1097,18 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
 
 /// A quiet debug-only action. Outlined, dim, never competes with the journey
 /// CTA; disabled when no ride (and so no service isolate) is running.
+/// The white "act on this now" fill, shared by the wake ack and the
+/// wind-down End now. Loud enough to find half-asleep, and crimson stays
+/// reserved for starting or ending a journey (see the palette rule in
+/// design-system decisions). Shared so the two cannot drift apart.
+ButtonStyle get _urgentButtonStyle => ElevatedButton.styleFrom(
+      backgroundColor: Palette.text,
+      foregroundColor: Palette.ground,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 0,
+    );
+
 class _TestButton extends StatelessWidget {
   const _TestButton({required this.label, required this.onPressed, this.buttonKey});
 

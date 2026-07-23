@@ -487,46 +487,11 @@ class GeofenceChainService {
     // The log lines are load-bearing: replay_ride.dart parses them to
     // reproduce call handling from a real ride's log.
     _interruptionSub = session.interruptionEventStream.listen((event) {
-      final now = DateTime.now();
       if (Platform.isIOS) {
         _onIosAudioInterruption(begin: event.begin);
-        return;
+      } else {
+        _onAndroidAudioInterruption(begin: event.begin, now: DateTime.now());
       }
-      // ANDROID ONLY from here. There is no CallKit, and the ringtone really
-      // does interrupt us, so this remains the call signal (locked decision 8)
-      // and the filter below remains load-bearing.
-      //
-      // Our own clip colliding with our own speech raises this same event, and
-      // feeding that to the engine stood a live ladder DOWN (21 Jul bench,
-      // reproduced 2 for 2; the 20 Jul Vasind case in the field). Withheld
-      // events are still logged, distinctly: replay_ride.dart parses these
-      // lines to reproduce call handling, and a silently dropped line would
-      // change how old rides replay.
-      if (_selfInterruption.shouldIgnore(begin: event.begin, now: now)) {
-        _log(
-          event.begin
-              // Says what we KNOW (our own audio was playing, so we withheld
-              // it) rather than what we were guessing (that the interruption
-              // was ours). On 23 Jul the rider started Music mid-ladder and
-              // this line claimed his music was our own audio.
-              ? 'Audio session interrupted while our own audio played, '
-                  'withheld.'
-              : 'Audio session interruption ended (withheld).',
-        );
-        return;
-      }
-      _log(
-        event.begin
-            ? 'Audio session interrupted (call or other audio).'
-            : 'Audio session interruption ended.',
-      );
-      _handleWakeActions(
-        _wakeEscalation?.onCallStateChanged(
-              inCall: event.begin,
-              now: now,
-            ) ??
-            const [],
-      );
     });
 
     if (Platform.isIOS) {
@@ -582,23 +547,70 @@ class GeofenceChainService {
   /// cost a sleeping rider their alarm. Re-seizing is idempotent: if the sound
   /// was ours we already hold the session and nothing happens, and if another
   /// app took it we take it back. We no longer have to know which it was.
+  /// An audio-session interruption on Android, where it IS the call signal
+  /// (locked decision 8, on a call means awake). There is no CallKit here and
+  /// the ringtone genuinely interrupts us, so this path is unchanged.
+  ///
+  /// SelfAudioInterruptionFilter stays load-bearing on this platform only: our
+  /// own clip colliding with our own speech raises the same event, and feeding
+  /// that to the engine stood a live ladder DOWN (21 Jul bench, reproduced
+  /// 2 for 2; the 20 Jul Vasind case in the field). Withheld events are still
+  /// logged, distinctly, because replay_ride.dart parses these lines and a
+  /// silently dropped one would change how old rides replay.
+  void _onAndroidAudioInterruption({
+    required bool begin,
+    required DateTime now,
+  }) {
+    if (_selfInterruption.shouldIgnore(begin: begin, now: now)) {
+      _log(
+        begin
+            // Says what we KNOW (our own audio was playing, so we withheld
+            // it) rather than what we were guessing (that the interruption
+            // was ours). On 23 Jul the rider started Music mid-ladder and
+            // this line claimed his music was our own audio.
+            ? 'Audio session interrupted while our own audio played, withheld.'
+            : 'Audio session interruption ended (withheld).',
+      );
+      return;
+    }
+    _log(
+      begin
+          ? 'Audio session interrupted (call or other audio).'
+          : 'Audio session interruption ended.',
+    );
+    _handleWakeActions(
+      _wakeEscalation?.onCallStateChanged(inCall: begin, now: now) ?? const [],
+    );
+  }
+
+  /// WORDING IS LOAD-BEARING. These lines must not read like the Android call
+  /// lines, because replay_ride.dart parses those and would otherwise replay a
+  /// lost-audio recovery as a call, inventing a hang-up catch-up that never
+  /// happened. In particular this must never emit the bare
+  /// "Audio session interruption ended." that the Android branch uses.
+  ///
+  /// RECOVERY IS DELIBERATELY LEFT TO THE ~5 s TICK, not done here. The tick
+  /// already re-asserts the tone while a ladder is live, and startTone now
+  /// re-seizes the session, so audio comes back within one tick either way.
+  /// Doing it here as well would be worse than redundant: a REAL call raises
+  /// this interruption too, and CallKit's stand-down arrives a moment later,
+  /// so an immediate re-seize would restart the alarm into a ringing call and
+  /// only then be told to stop. Waiting a tick lets CallKit win that race, and
+  /// once a ladder has stood down there is no tone volume left to re-assert.
   void _onIosAudioInterruption({required bool begin}) {
     if (!begin) {
-      _log('Audio session interruption ended.');
+      _log('Audio regained (iOS interruption ended).');
       return;
     }
-    final volume = _wakeToneVolume;
-    if (volume == null) {
-      // No ladder is sounding, so there is nothing to rescue. Announcements
-      // are one-shot and the next one activates the session for itself.
-      _log('Audio session interrupted (audio lost, nothing sounding).');
-      return;
-    }
-    // Re-assert immediately rather than waiting for the next ~5 s tick to do
-    // it. ensureToneAt reaches AppDelegate.startTone, which re-seizes the
-    // session before restarting the player.
-    _log('Audio session interrupted (audio lost), re-seizing for the ladder.');
-    unawaited(_wakeOutput?.ensureToneAt(volume));
+    _log(
+      _wakeToneVolume == null
+          // Nothing of ours is sounding, so there is nothing to rescue.
+          // Announcements are one-shot and the next one activates the session
+          // for itself.
+          ? 'Audio lost (iOS interruption), nothing sounding.'
+          : 'Audio lost (iOS interruption) with a ladder live, '
+              'the tone watchdog will re-seize.',
+    );
   }
 
   /// iOS CallKit call state, arriving from the main isolate. On iOS this is
