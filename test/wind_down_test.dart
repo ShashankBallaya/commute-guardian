@@ -201,6 +201,39 @@ void main() {
     expect(windDown.isCountingDown, isTrue);
   });
 
+  test('a ride ends exactly once: the engine goes inert after WindDownEnd', () {
+    // Replaying the 22 Jul return leg is what exposed this. After the 15:53
+    // auto-off the 3T announced "Travel Mode will end in one minute" and ended
+    // again FIFTEEN more times, the last at 16:10, because the rider was still
+    // walking and the exit streak simply re-qualified. Production never saw it
+    // only because the shell tears the service down on the first end, so it
+    // was masked rather than prevented.
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+    _alight(windDown, _t0);
+    final start = _walkOutOf(windDown, _digha, _t0);
+    expect(start.whereType<WindDownSpeak>(), hasLength(1));
+
+    final ended = windDown.onTick(_t0.add(const Duration(minutes: 5)));
+    expect(ended.whereType<WindDownEnd>(), hasLength(1));
+
+    // The rider keeps walking, exactly as they did at Shahad.
+    for (var i = 0; i < 6; i++) {
+      final at = _t0.add(Duration(minutes: 6 + i));
+      expect(
+        _walkOutOf(windDown, _digha, at),
+        isEmpty,
+        reason: 'a ride that has ended cannot announce or end again',
+      );
+      expect(windDown.onTick(at), isEmpty);
+    }
+    expect(windDown.isCountingDown, isFalse);
+    // The manual actions are dead too, so a stale notification button cannot
+    // resurrect a finished ride.
+    expect(windDown.endNow(_t0.add(const Duration(minutes: 20))), isEmpty);
+    expect(windDown.extend(_t0.add(const Duration(minutes: 20))), isEmpty);
+  });
+
   test('one jog-speed fix in the ambiguous band breaks the streak but does '
       'not cost a real walker their auto-off', () {
     final windDown = _newWindDown();

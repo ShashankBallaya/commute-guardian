@@ -148,6 +148,24 @@ class WindDown {
   /// Same gate as the other engines: blackout-quality fixes prove nothing.
   static const maxAccuracyM = 150.0;
 
+  /// Whether this engine has already called the ride over. Terminal: a
+  /// WindDownEnd is emitted at most once per ride, and nothing this engine is
+  /// told afterwards produces anything.
+  ///
+  /// Without it the exit streak simply starts again. The rider is still
+  /// walking, still past the 150 m mark, and still at walking pace, so the
+  /// next two fixes re-qualify and a fresh countdown announces itself about a
+  /// minute later, forever. Replaying the 22 Jul return leg shows it plainly:
+  /// after the 15:53 auto-off, the 3T goes on to announce and end another
+  /// FIFTEEN times, the last at 16:10.
+  ///
+  /// In production it has been invisible because the shell stops the service
+  /// on the first WindDownEnd, so the engine dies before it can repeat. That
+  /// makes this a latent bug rather than a harmless quirk: it is masked by the
+  /// teardown, not prevented by anything, and it would surface the moment an
+  /// end is slow, fails, or gets a confirmation step in front of it.
+  bool _ended = false;
+
   bool _armed = false;
   int _qualifyingFixes = 0;
   int _vehicleFixes = 0;
@@ -224,6 +242,7 @@ class WindDown {
   /// before the pin is reached, so a re-arm that respected the disarm would
   /// never run on the only journeys that need it.
   List<WindDownAction> onStationEvent(Announcement announcement, DateTime now) {
+    if (_ended) return const [];
     if (announcement.kind == AnnouncementKind.overshoot) {
       for (final pin in overshootStations) {
         if (pin.id == announcement.stationId) {
@@ -279,6 +298,7 @@ class WindDown {
     required double speedMps,
     required DateTime now,
   }) {
+    if (_ended) return const [];
     if (!_armed && !_countingDown) return const [];
     if (accuracyM > maxAccuracyM) return const [];
 
@@ -412,16 +432,17 @@ class WindDown {
   /// Only meaningful while a countdown is live: pressing it any other time
   /// must not tear a ride down.
   List<WindDownAction> endNow(DateTime now) {
-    if (!_countingDown) return const [];
+    if (_ended || !_countingDown) return const [];
     _countingDown = false;
     _endAt = null;
+    _ended = true;
     return const [WindDownEnd()];
   }
 
   /// The [Extend 10 min] action. Replaces the deadline rather than adding
   /// to it: the rider's press is the moment they asked for more time.
   List<WindDownAction> extend(DateTime now) {
-    if (!_countingDown) return const [];
+    if (_ended || !_countingDown) return const [];
     _endAt = now.add(extension);
     return const [
       WindDownSpeak('Travel Mode will stay on for ten more minutes.'),
@@ -431,11 +452,12 @@ class WindDown {
   /// A clock tick from the shell. Fires the end exactly once when the
   /// countdown has run out.
   List<WindDownAction> onTick(DateTime now) {
-    if (!_countingDown || _endAt == null || now.isBefore(_endAt!)) {
+    if (_ended || !_countingDown || _endAt == null || now.isBefore(_endAt!)) {
       return const [];
     }
     _countingDown = false;
     _endAt = null;
+    _ended = true;
     return const [WindDownEnd()];
   }
 
