@@ -48,6 +48,11 @@ const wakeAckMediaPrefix = 'wake_ack_media:';
 /// already reports a real call, because the ringtone interrupts us.
 const wakeCallStatePrefix = 'wake_call_state:';
 
+/// What the iOS audio session did when the alarm asked for it, forwarded main
+/// isolate -> service so it lands in the ride log rather than in NSLog, where
+/// a sideloaded build cannot read it.
+const wakeAudioNotePrefix = 'wake_audio:';
+
 /// Runs the ride inside the Android foreground service isolate so it survives
 /// screen lock and app backgrounding.
 class GeofenceTaskHandler extends TaskHandler {
@@ -178,6 +183,8 @@ class GeofenceTaskHandler extends TaskHandler {
         _chain?.onNativeCallState(
           message.substring(wakeCallStatePrefix.length) == 'true',
         );
+      case final String message when message.startsWith(wakeAudioNotePrefix):
+        _chain?.onNativeAudioNote(message.substring(wakeAudioNotePrefix.length));
       case windDownEndNowId:
         _chain?.windDownEndNow();
       case windDownExtendId:

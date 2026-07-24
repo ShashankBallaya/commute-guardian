@@ -85,16 +85,18 @@ import flutter_foreground_task
 
     channel.setMethodCallHandler { [weak self] call, result in
       switch call.method {
+      // The audio notes these two return travel back to Dart and into the ride
+      // log. That file is the only instrument a sideloaded iPhone gives us, and
+      // until 24 Jul a refused seizure was invisible in it: the log looked
+      // identical whether the alarm was sounding or silent.
       case "startSession":
-        self?.startAckSession()
-        result(nil)
+        result(self?.startAckSession() ?? nil)
       case "stopSession":
         self?.stopAckSession()
         result(nil)
       case "startTone":
         let volume = (call.arguments as? NSNumber)?.floatValue ?? 1.0
-        self?.startTone(volume: volume)
-        result(nil)
+        result(self?.startTone(volume: volume) ?? nil)
       case "stopTone":
         self?.stopTone()
         result(nil)
@@ -127,7 +129,12 @@ import flutter_foreground_task
   /// playing. Also the self-heal: Dart re-sends startTone on every service
   /// tick while a ladder is live, so a player an interruption killed comes
   /// back within a tick.
-  private func startTone(volume: Float) {
+  ///
+  /// Returns a note for the ride log when it actually (re)started the tone,
+  /// naming which session mode took, and nil when there was nothing to do. A
+  /// volume change on a healthy player is silent in the log on purpose: this
+  /// fires every ~5 s tick and would otherwise bury the ride.
+  private func startTone(volume: Float) -> String? {
     // Re-assert Now Playing ownership on every tick. flutter_tts activates the
     // shared session for each utterance (check-in, each rung), which can hand
     // remote-command routing back to whatever spoke last, so a double-tap
@@ -139,11 +146,11 @@ import flutter_foreground_task
     refreshNowPlaying()
     if let player = tonePlayer, player.isPlaying {
       player.volume = volume
-      return
+      return nil
     }
     guard let path = toneAssetPath else {
       NSLog("WakeTone: wake_alarm.wav not found in the bundle")
-      return
+      return "tone asset missing from the bundle"
     }
     // The player is not playing, so either it never started or something took
     // the session out from under us and iOS stopped it. Re-seize BEFORE
@@ -163,15 +170,17 @@ import flutter_foreground_task
     // Deliberately NOT done on the healthy path above: changing the category
     // of a live session can cut off audio that is already playing, including
     // our own TTS. Only the recovery path needs it.
-    reseizeSession()
+    let seized = seizeSession()
     do {
       let player = try AVAudioPlayer(contentsOf: URL(fileURLWithPath: path))
       player.numberOfLoops = -1
       player.volume = volume
       player.play()
       tonePlayer = player
+      return "tone (re)started, session \(seized)"
     } catch {
       NSLog("WakeTone: could not start the tone: \(error)")
+      return "tone failed to start (session \(seized)): \(describeAudioError(error))"
     }
   }
 
@@ -180,32 +189,89 @@ import flutter_foreground_task
     tonePlayer = nil
   }
 
-  /// Takes the audio session exclusively.
+  /// Takes the audio session for the alarm, exclusively if iOS allows it and
+  /// mixed over the rider's audio if it does not. Returns what happened, for
+  /// the ride log.
   ///
   /// Exclusive (non-mixing) playback is what earns remote-command routing:
   /// iOS gives Now Playing to the app playing PRIMARY audio, so a mixing
   /// session can never own the earphone tap. The rider's music is interrupted
   /// (paused) as a consequence, and stand-down hands it back.
   ///
+  /// BUT IT IS NOT ALWAYS OURS TO TAKE, and the 24 Jul bench is why this
+  /// escalates. A BACKGROUNDED app may not activate a NON-MIXABLE session
+  /// while another app is playing audio: iOS refuses with CannotInterruptOthers.
+  /// Mid-ladder the rider started Music with the phone in his hand, then stayed
+  /// in Music, and every re-seize was refused for 1 minute 57 seconds while the
+  /// ladder logged SEVEN rungs at full volume into total silence. It recovered
+  /// the instant the app came to the foreground, which is the tell. On a real
+  /// ride nobody foregrounds anything, because the rider is asleep, which is
+  /// the whole point of the alarm.
+  ///
+  /// So exclusivity is now best-effort and AUDIBILITY WINS. A ducking session
+  /// is mixable, which iOS does permit from the background, so the alarm sounds
+  /// OVER the rider's music instead of not at all. The cost is the earphone
+  /// tap: mixing forfeits Now Playing, so in that state the ack is the on-screen
+  /// button. A silent alarm is worth nothing; a loud one with a worse ack still
+  /// wakes the rider.
+  ///
   /// Idempotent, which is what lets the tone watchdog call it on the recovery
   /// path without having to know whether anything was actually lost: setting
   /// the category and activating a session we already hold are both no-ops.
-  private func reseizeSession() {
+  private func seizeSession() -> String {
     let session = AVAudioSession.sharedInstance()
     do {
       try session.setCategory(.playback, mode: .default, options: [])
       try session.setActive(true)
+      return "exclusive"
     } catch {
-      // Neutral prefix: this is called from the ack path AND from the tone
-      // watchdog's recovery path, and the log is read by grepping prefixes.
-      NSLog("WakeAudio: could not seize the audio session: \(error)")
+      let refusal = describeAudioError(error)
+      do {
+        // The same profile the announcement path uses, so this is a mode the
+        // app is already proven to be able to hold.
+        try session.setCategory(
+          .playback,
+          mode: .default,
+          options: [.mixWithOthers, .duckOthers]
+        )
+        try session.setActive(true)
+        return "ducked (exclusive refused: \(refusal))"
+      } catch {
+        // Nothing sounds. The one case where the alarm is genuinely lost, and
+        // now it says so in the ride log instead of only in NSLog, which a
+        // sideloaded build cannot show.
+        return "NONE (exclusive refused: \(refusal), "
+          + "ducked refused: \(describeAudioError(error)))"
+      }
     }
   }
 
-  private func startAckSession() {
-    guard ackTargets.isEmpty else { return }
+  /// Names the refusal codes this app can actually hit, because the number
+  /// alone sends the next reader to a search engine mid-diagnosis.
+  private func describeAudioError(_ error: Error) -> String {
+    let code = (error as NSError).code
+    switch code {
+    case 560557684:
+      // AVAudioSessionErrorCodeCannotInterruptOthers. Backgrounded, and
+      // something else is playing. The 24 Jul suspect.
+      return "CannotInterruptOthers (\(code))"
+    case 561015905:
+      // AVAudioSessionErrorCodeCannotStartPlaying.
+      return "CannotStartPlaying (\(code))"
+    default:
+      return "code \(code)"
+    }
+  }
 
-    reseizeSession()
+  /// Returns which session mode the ladder started under, for the ride log.
+  /// This is the one that decides whether the EARPHONE ack can work at all:
+  /// exclusive means we are the Now Playing owner and the tap reaches us,
+  /// ducked means the rider's music still owns the buttons and the tap will
+  /// skip a track, exactly as it did on the 22 Jul ride.
+  private func startAckSession() -> String? {
+    guard ackTargets.isEmpty else { return nil }
+
+    let seized = seizeSession()
 
     startKeepAlive()
 
@@ -233,6 +299,8 @@ import flutter_foreground_task
     // Posted after the commands are registered, so the card and the routing
     // target come up together.
     refreshNowPlaying()
+
+    return "ladder session \(seized)"
   }
 
   /// Posts (or re-posts) the Now Playing card that marks this app as the

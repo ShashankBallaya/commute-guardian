@@ -297,12 +297,42 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// controlling their music, not us.
   Future<void> _setMediaSession(bool active) async {
     try {
-      await _mediaAckChannel.invokeMethod(active ? 'startSession' : 'stopSession');
+      final note = await _mediaAckChannel.invokeMethod<String>(
+        active ? 'startSession' : 'stopSession',
+      );
+      _forwardAudioNote(note);
     } catch (error) {
       setState(() {
         _logs.insert(0, 'Media session ${active ? 'start' : 'stop'} failed: $error');
       });
     }
+  }
+
+  /// Drives the native ladder tone, and carries back what the audio session
+  /// did about it.
+  Future<void> _sendNativeTone(String command, double volume) async {
+    try {
+      final note = await _mediaAckChannel.invokeMethod<String>(command, volume);
+      _forwardAudioNote(note);
+    } catch (error) {
+      setState(() {
+        _logs.insert(0, 'Native tone $command failed: $error');
+      });
+    }
+  }
+
+  /// Puts an iOS audio-session note into the RIDE LOG, by handing it to the
+  /// service isolate that owns the file.
+  ///
+  /// The debug screen alone is not enough and the 21 Jul benches proved it: a
+  /// rider with the phone in a pocket sees nothing, so anything that matters
+  /// has to reach the file. Native returns null when there was nothing worth
+  /// recording, which is most ticks.
+  void _forwardAudioNote(String? note) {
+    if (note == null || note.isEmpty) return;
+    FlutterForegroundTask.sendDataToTask('$wakeAudioNotePrefix$note');
+    if (!mounted) return;
+    setState(() => _logs.insert(0, 'Audio session: $note'));
   }
 
   /// The chip's tap: ask for a fresh fix. A single 8s attempt at launch is a
@@ -539,14 +569,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
       final toneCommand = data['toneCommand'] as String?;
       if (toneCommand != null) {
         final toneVolume = (data['toneVolume'] as num?)?.toDouble() ?? 1.0;
-        _mediaAckChannel.invokeMethod(toneCommand, toneVolume).catchError(
-          (Object error) {
-            setState(() {
-              _logs.insert(0, 'Native tone $toneCommand failed: $error');
-            });
-            return null;
-          },
-        );
+        unawaited(_sendNativeTone(toneCommand, toneVolume));
       }
 
       if (data['rideEnded'] == true) {

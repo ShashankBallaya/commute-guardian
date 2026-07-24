@@ -639,6 +639,23 @@ class GeofenceChainService {
     );
   }
 
+  /// What the iOS audio session did when the alarm asked for it, arriving from
+  /// the main isolate the same way the CallKit state does.
+  ///
+  /// Records whether the alarm is actually SOUNDING, which no line in this log
+  /// could say before 24 Jul. A refused seizure went to NSLog, which a
+  /// sideloaded build never shows, so a ladder climbing in silence wrote
+  /// exactly the same lines as one the rider could hear: on 24 Jul seven rungs
+  /// at full volume were logged into nothing. "exclusive" also means the
+  /// earphone tap can reach us; "ducked" means the rider's music kept the
+  /// buttons and only the on-screen button will ack.
+  ///
+  /// iOS only. Android's tone runs through audioplayers, which reports its own
+  /// failures on the Dart side already.
+  void onNativeAudioNote(String note) {
+    _log('WAKE audio: $note.');
+  }
+
   /// Speaks [text], ducking other audio only for the duration of the speech.
   ///
   /// Calls are serialized on one chain, so a fix arriving mid-announcement
