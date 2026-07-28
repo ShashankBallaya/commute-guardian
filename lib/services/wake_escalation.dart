@@ -54,6 +54,7 @@ class WakeEscalation {
     required this.chain,
     required this.interchangeStationIds,
     required this.destinationStationId,
+    this.walkInterchangeStationIds = const {},
   });
 
   /// Build the engine from the journey it runs for. The critical stations are
@@ -66,11 +67,25 @@ class WakeEscalation {
           for (final interchange in journey.interchanges) interchange.stationId,
         ],
         destinationStationId: journey.destinationStationId,
+        walkInterchangeStationIds: {
+          for (final interchange in journey.interchanges)
+            if (interchange.walkToStationName != null) interchange.stationId,
+        },
       );
 
   final List<Station> chain;
   final List<String> interchangeStationIds;
   final String destinationStationId;
+
+  /// The interchanges this route reaches ON FOOT, by the station the rider
+  /// alights at. Both halves of a walk interchange sit on the chain (the
+  /// planner puts them there because the rider passes through each), so the
+  /// station immediately after such a target is its OTHER HALF, not a station
+  /// past it. At Dadar the two centres are 207 m apart behind 450 m fences, so
+  /// a rider standing on the Central platform is already well inside the
+  /// Western one: ceilinging there would hard-stop the alarm at the exact
+  /// moment the rider still has to get off and cross.
+  final Set<String> walkInterchangeStationIds;
 
   // Ladder timings from the locked design (decision 7), named so bench
   // tuning is one edit. Same values the W1 spike proved on hardware.
@@ -154,6 +169,18 @@ class WakeEscalation {
   Station get _target => chain[_targetIndex];
   bool get _targetIsDestination => _targets[_cursor] == destinationStationId;
 
+  /// Chain index of the station whose arrival hard-stops the current ladder:
+  /// the first station that genuinely means "you have gone too far". Normally
+  /// the next one along, but a walk interchange's own other half is skipped
+  /// (see [walkInterchangeStationIds]). Negative when there is no target, and
+  /// may run past the chain end, which both callers already bounds-check.
+  int get _ceilingIndex {
+    final targetIndex = _targetIndex;
+    if (targetIndex < 0) return -1;
+    return targetIndex +
+        (walkInterchangeStationIds.contains(_targets[_cursor]) ? 2 : 1);
+  }
+
   /// A station event from RideProgress. The check-in fires when the train
   /// reaches the station one before the critical one (pre-emptive trigger,
   /// locked decision 1).
@@ -181,10 +208,11 @@ class WakeEscalation {
 
     // Ceiling: one station past the critical one hard-stops the ladder,
     // acknowledged or not.
+    final ceilingIndex = _ceilingIndex;
     if (_ladderLive &&
-        targetIndex >= 0 &&
-        targetIndex + 1 < chain.length &&
-        announcement.stationId == chain[targetIndex + 1].id) {
+        ceilingIndex > 0 &&
+        ceilingIndex < chain.length &&
+        announcement.stationId == chain[ceilingIndex].id) {
       final toneWasPlaying = _rung >= 1;
       _standDown();
       return [
@@ -319,8 +347,9 @@ class WakeEscalation {
       _ladderLive = true;
       _rung = rungVolumes.length;
       _nextTransitionAt = now.add(rungInterval);
-      final ceilingIndex = _targetIndex + 1;
-      final pastCeiling = ceilingIndex < chain.length &&
+      final ceilingIndex = _ceilingIndex;
+      final pastCeiling = ceilingIndex > 0 &&
+          ceilingIndex < chain.length &&
           _passedDuringCall.contains(chain[ceilingIndex].id);
       return [
         Tone(rungVolumes.last),

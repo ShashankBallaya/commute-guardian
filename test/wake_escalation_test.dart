@@ -32,6 +32,17 @@ final _chain = <Station>[
   _s('airoli', 'Airoli', 19.1585231, 72.9994023, 400),
 ];
 
+/// The Dadar complex as the planner emits it for a Western -> Central ride
+/// (Churchgate -> Kalyan alights at Dadar Western and walks to Dadar Central).
+/// Real OSM coords: the two halves are 207 m apart, both behind 450 m fences.
+final _dadarChain = <Station>[
+  _s('prabhadevi', 'Prabhadevi', 19.00747, 72.83590, 350),
+  _s('dadar_western', 'Dadar', 19.01923, 72.84285, 450),
+  _s('dadar', 'Dadar', 19.01738, 72.84303, 450),
+  _s('matunga', 'Matunga', 19.02744, 72.85015, 350),
+  _s('sion', 'Sion', 19.04652, 72.86328, 350),
+];
+
 /// An arbitrary wall-clock anchor; the engine only ever compares instants it
 /// was handed, so the absolute value is meaningless.
 final _t0 = DateTime(2026, 7, 16, 18, 0, 0);
@@ -668,6 +679,63 @@ void main() {
       expect(actions[1], isA<HardStop>());
 
       expect(wake.onTick(_t0.add(const Duration(minutes: 5))), isEmpty);
+    });
+
+    test('a walk interchange does not ceiling on its own other half', () {
+      // Churchgate -> Kalyan: alight Dadar Western, cross the bridge, board
+      // Dadar Central. The planner puts BOTH halves on the chain, and the two
+      // centres are 207 m apart behind 450 m fences, so the rider is inside
+      // the Central fence while still standing on the Western platform.
+      // Ceilinging there would kill the alarm at the moment the rider still
+      // has a train to get off and a bridge to cross.
+      final wake = WakeEscalation(
+        chain: _dadarChain,
+        interchangeStationIds: const ['dadar_western'],
+        destinationStationId: 'sion',
+        walkInterchangeStationIds: const {'dadar_western'},
+      );
+
+      wake.onStationEvent(_arrival('prabhadevi'), _t0);
+      wake.onTick(_t0.add(const Duration(seconds: 25))); // rung 1
+      expect(wake.isLadderLive, isTrue);
+
+      // The other half of the same complex. NOT a station past the rider.
+      final atPartner = wake.onStationEvent(
+        _arrival('dadar'),
+        _t0.add(const Duration(seconds: 40)),
+      );
+      expect(atPartner, isEmpty);
+      expect(wake.isLadderLive, isTrue,
+          reason: 'the alarm must survive arrival at the walk partner');
+
+      // Matunga is the first station that genuinely means "gone too far".
+      final past = wake.onStationEvent(
+        _arrival('matunga'),
+        _t0.add(const Duration(minutes: 3)),
+      );
+      expect(past, hasLength(2));
+      expect(past[0], isA<StopTone>());
+      expect(past[1], isA<HardStop>());
+    });
+
+    test('an ordinary interchange still ceilings at the very next station', () {
+      // The same chain without the walk declaration: proves the skip is driven
+      // by walkInterchangeStationIds and is not a blanket loosening.
+      final wake = WakeEscalation(
+        chain: _dadarChain,
+        interchangeStationIds: const ['dadar_western'],
+        destinationStationId: 'sion',
+      );
+
+      wake.onStationEvent(_arrival('prabhadevi'), _t0);
+      wake.onTick(_t0.add(const Duration(seconds: 25)));
+
+      final atNext = wake.onStationEvent(
+        _arrival('dadar'),
+        _t0.add(const Duration(seconds: 40)),
+      );
+      expect(atNext, hasLength(2));
+      expect(atNext[1], isA<HardStop>());
     });
   });
 
