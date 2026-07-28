@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:commute_guardian/data/journey_history.dart';
+import 'package:commute_guardian/data/app_database.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/main.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
@@ -20,7 +20,7 @@ import 'support/fake_ride_service_client.dart';
 /// empty and disabled, and the whole screen would be untestable.
 Future<void> _pumpScreen(
   WidgetTester tester, {
-  JourneyHistoryDatabase? history,
+  AppDatabase? history,
   FakeRideServiceClient? service,
 }) async {
   final raw = File(StationRepository.assetPath).readAsStringSync();
@@ -49,8 +49,8 @@ Future<void> _pumpScreen(
         // create function and therefore the onDispose with it. Without this,
         // drift warns about a second instance of the database class, which is
         // its way of saying two connections could race on one file.
-        journeyHistoryDbProvider.overrideWith((ref) {
-          final db = history ?? JourneyHistoryDatabase.inMemory();
+        appDatabaseProvider.overrideWith((ref) {
+          final db = history ?? AppDatabase.inMemory();
           ref.onDispose(db.close);
           return db;
         }),
@@ -109,7 +109,7 @@ void main() {
   testWidgets('the history sheet lists a recorded ride, newest first', (
     tester,
   ) async {
-    final history = JourneyHistoryDatabase.inMemory();
+    final history = AppDatabase.inMemory();
     addTearDown(history.close);
     await history.record(
       originId: 'shahad',
@@ -133,7 +133,7 @@ void main() {
   testWidgets('the history sheet has an empty state, not a blank sheet', (
     tester,
   ) async {
-    final history = JourneyHistoryDatabase.inMemory();
+    final history = AppDatabase.inMemory();
     addTearDown(history.close);
 
     await _pumpScreen(tester, history: history);

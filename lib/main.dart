@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-import 'data/journey_history.dart';
+import 'data/app_database.dart';
 import 'models/journey.dart';
 import 'models/station.dart';
 import 'screens/destination_picker_screen.dart';
@@ -312,7 +312,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     // it, so the journey length is simply the chain.
     final stationCount = journey.chain.length;
     try {
-      await ref.read(journeyHistoryDbProvider).record(
+      await ref.read(appDatabaseProvider).record(
         originId: journey.originStationId,
         destinationId: journey.destinationStationId,
         originName: _name(journey.originStationId),

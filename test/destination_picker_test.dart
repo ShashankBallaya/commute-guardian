@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:commute_guardian/data/journey_history.dart';
+import 'package:commute_guardian/data/app_database.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/models/station.dart';
 import 'package:commute_guardian/screens/destination_picker_screen.dart';
@@ -28,7 +28,7 @@ void main() {
     List<(String id, String name)> history = const [],
   }) async {
     final picked = <Station>[];
-    final db = JourneyHistoryDatabase.inMemory();
+    final db = AppDatabase.inMemory();
     var minute = 0;
     for (final (id, name) in history) {
       await db.record(
@@ -48,7 +48,7 @@ void main() {
         overrides: [
           stationRepositoryProvider
               .overrideWith((ref) async => StationRepository.parse(stationsJson)),
-          journeyHistoryDbProvider.overrideWith((ref) {
+          appDatabaseProvider.overrideWith((ref) {
             ref.onDispose(db.close);
             return db;
           }),

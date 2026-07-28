@@ -1,10 +1,11 @@
-import 'package:commute_guardian/data/journey_history.dart';
+import 'package:commute_guardian/data/app_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  late JourneyHistoryDatabase db;
 
-  setUp(() => db = JourneyHistoryDatabase.inMemory());
+  late AppDatabase db;
+
+  setUp(() => db = AppDatabase.inMemory());
   tearDown(() => db.close());
 
   Future<void> ride(
@@ -101,5 +102,75 @@ void main() {
     final row = (await db.recent()).single;
     expect(row.batteryStartPct, isNull);
     expect(row.batteryEndPct, isNull);
+  });
+
+
+  group('saved routes', () {
+    test('a saved route keeps a label and a destination, and no origin', () async {
+      await db.saveRoute(
+        label: 'Home',
+        destinationStationId: 'kalyan',
+        destinationName: 'Kalyan',
+      );
+
+      final routes = await db.allSavedRoutes();
+      expect(routes, hasLength(1));
+      expect(routes.single.label, 'Home');
+      expect(routes.single.destinationStationId, 'kalyan');
+      // There is deliberately no origin column: the same "Home" starts from
+      // Dadar in the morning and Kalyan at night, so origin is detected live.
+      expect(
+        routes.single.toJson().keys,
+        isNot(contains('originStationId')),
+      );
+    });
+
+    test('newest first, which is the order Screen 1 shows them in', () async {
+      await db.saveRoute(
+        label: 'Home',
+        destinationStationId: 'kalyan',
+        destinationName: 'Kalyan',
+      );
+      await db.saveRoute(
+        label: 'Work',
+        destinationStationId: 'csmt',
+        destinationName: 'CSMT',
+      );
+
+      expect(
+        (await db.allSavedRoutes()).map((r) => r.label),
+        ['Work', 'Home'],
+      );
+    });
+
+    test('a route can be removed', () async {
+      await db.saveRoute(
+        label: 'Home',
+        destinationStationId: 'kalyan',
+        destinationName: 'Kalyan',
+      );
+
+      await db.deleteSavedRoute((await db.allSavedRoutes()).single.id);
+      expect(await db.allSavedRoutes(), isEmpty);
+    });
+  });
+
+  group('flags', () {
+    test('onboarding starts unseen and can be marked', () async {
+      expect(await db.hasSeenOnboarding(), isFalse);
+      await db.markOnboardingSeen();
+      expect(await db.hasSeenOnboarding(), isTrue);
+    });
+
+    test('setting the same flag twice updates rather than throwing', () async {
+      await db.setFlag('pulse_interval', '90');
+      await db.setFlag('pulse_interval', '120');
+
+      expect(await db.flag('pulse_interval'), '120');
+    });
+
+    test('an unset flag is null, not an error', () async {
+      expect(await db.flag('nothing_set_this'), isNull);
+    });
   });
 }

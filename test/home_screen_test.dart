@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:commute_guardian/data/journey_history.dart';
+import 'package:commute_guardian/data/app_database.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/screens/home_screen.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
@@ -22,10 +22,10 @@ void main() {
     stationsJson = File(StationRepository.assetPath).readAsStringSync();
   });
 
-  Future<JourneyHistoryDatabase> historyWith(
+  Future<AppDatabase> historyWith(
     List<(String id, String name)> destinations,
   ) async {
-    final db = JourneyHistoryDatabase.inMemory();
+    final db = AppDatabase.inMemory();
     var minute = 0;
     for (final (id, name) in destinations) {
       await db.record(
@@ -44,10 +44,10 @@ void main() {
 
   Future<List<String>> pumpHome(
     WidgetTester tester, {
-    JourneyHistoryDatabase? history,
+    AppDatabase? history,
   }) async {
     final started = <String>[];
-    final db = history ?? JourneyHistoryDatabase.inMemory();
+    final db = history ?? AppDatabase.inMemory();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
@@ -55,7 +55,7 @@ void main() {
               .overrideWith((ref) async => StationRepository.parse(stationsJson)),
           fixAcquirerProvider
               .overrideWithValue(() async => throw StateError('no GPS')),
-          journeyHistoryDbProvider.overrideWith((ref) {
+          appDatabaseProvider.overrideWith((ref) {
             ref.onDispose(db.close);
             return db;
           }),

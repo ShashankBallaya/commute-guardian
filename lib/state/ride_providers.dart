@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../data/journey_history.dart';
+import '../data/app_database.dart';
 import '../services/ride_service_client.dart';
 
 /// The running-ride half of the state model.
@@ -201,8 +201,8 @@ final rideAlertsProvider =
 /// connection. Worth stating because an earlier draft of
 /// docs/design/riverpod-adoption.md claimed the opposite and drew a design
 /// conclusion from it.
-final journeyHistoryDbProvider = Provider<JourneyHistoryDatabase>((ref) {
-  final db = JourneyHistoryDatabase.open();
+final appDatabaseProvider = Provider<AppDatabase>((ref) {
+  final db = AppDatabase.open();
   ref.onDispose(db.close);
   return db;
 });
@@ -216,7 +216,7 @@ final journeyHistoryDbProvider = Provider<JourneyHistoryDatabase>((ref) {
 /// permanent query subscription for a screen that is rarely on.
 final rideHistoryProvider =
     FutureProvider.autoDispose<List<JourneyRecord>>((ref) {
-  return ref.watch(journeyHistoryDbProvider).recent();
+  return ref.watch(appDatabaseProvider).recent();
 });
 
 /// Distinct destinations by most recent ride, at most three.
@@ -231,5 +231,23 @@ final rideHistoryProvider =
 /// hang on journeys COMPLETED, never on routes saved.
 final recentDestinationsProvider =
     FutureProvider.autoDispose<List<JourneyRecord>>((ref) {
-  return ref.watch(journeyHistoryDbProvider).recentDestinations();
+  return ref.watch(appDatabaseProvider).recentDestinations();
+});
+
+/// Routes the rider chose to keep, newest first.
+///
+/// Screen 1's third state hangs on this. autoDispose for the same reason as
+/// the history query: these screens are visited, not watched.
+final savedRoutesProvider =
+    FutureProvider.autoDispose<List<SavedRoute>>((ref) {
+  return ref.watch(appDatabaseProvider).allSavedRoutes();
+});
+
+/// Whether onboarding has been completed, which is what decides the app's
+/// entry screen.
+///
+/// NOT autoDispose: it is read at launch and again after onboarding finishes,
+/// and a rebuild in between must not re-query and flash the wrong screen.
+final onboardingSeenProvider = FutureProvider<bool>((ref) {
+  return ref.watch(appDatabaseProvider).hasSeenOnboarding();
 });
