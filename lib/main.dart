@@ -133,6 +133,9 @@ class RideDebugScreen extends ConsumerStatefulWidget {
 }
 
 class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
+  /// The raw event log. Scaffolding: it stays a widget field on purpose,
+  /// because no product screen will have it and the debug screen dies with
+  /// the Figma work.
   final List<String> _logs = [];
 
   /// Debug bench flag: Sarvam clip greets at Start (Android only). Handed to
@@ -190,8 +193,9 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     _openingSequence();
   }
 
-  /// Everything that has to wait for the station network, in the order it used
-  /// to run inside _loadNetwork.
+  /// Everything that has to wait for the station network, in order: restore a
+  /// ride that is already running, then fill the origin from GPS. The order
+  /// matters and is load bearing, see the note below.
   Future<void> _openingSequence() async {
     try {
       await ref.read(stationRepositoryProvider.future);

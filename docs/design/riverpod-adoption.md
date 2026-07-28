@@ -1,7 +1,17 @@
 # Riverpod adoption: architecture
 
-Status: proposed, awaiting owner sign-off. Branch: phase2-riverpod, cut from
-5781b8d. No implementation exists yet; this document is the design.
+Status: BUILT, steps 0 to 5 complete, 28 Jul 2026. Branch: phase2-riverpod,
+cut from 5781b8d.
+
+As built: 165 tests (was 140 before the migration), analyzer clean, all six
+real ride logs replay byte-identical. setState sites in main.dart went 30 to
+7, and the file 1649 lines to 1310. The surviving seven are the four this
+document said should stay (chip tip, two bench flags, search query) plus three
+debug-log inserts, all of them scaffolding that dies with the debug screen.
+Two claims in the original design turned
+out to be wrong and are corrected IN PLACE below rather than reworded, so the
+reasoning stays auditable: the service-side plugin ownership (step 1) and the
+isolate that writes journey history (step 4).
 
 The ride baseline on both phones is c9e5bf4. NOTHING from this branch may be
 installed on either phone until the Phase 1 verification ride has happened,

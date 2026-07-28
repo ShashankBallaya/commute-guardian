@@ -60,6 +60,41 @@ void main() {
         isTrue);
   });
 
+  test('no widget holds ride or journey state in a field', () {
+    // The migration's finishing line, kept as a test so it cannot quietly
+    // un-finish. These names all used to be fields on _RideDebugScreenState,
+    // and losing them with the widget is exactly what blanked the route when
+    // Android recreated the activity mid-ride on 15 Jul. They live in
+    // providers now (lib/state/), where a rebuilt screen re-reads them.
+    //
+    // Deliberately NOT a ban on setState. The screen still owns ephemeral
+    // things (the debug log, the chip tip, two bench flags, a search query),
+    // and the design says it should: their loss on process death costs the
+    // rider nothing.
+    const forbidden = [
+      '_isRunning',
+      '_wakeLadderLive',
+      '_windDownLive',
+      '_journey ',
+      '_planError',
+      '_originId',
+      '_destinationId',
+      '_gpsState',
+      '_nearStationName',
+      '_repo',
+      '_stations ',
+    ];
+
+    final source = File('lib/main.dart').readAsStringSync();
+    final found = forbidden.where(source.contains).toList();
+    expect(
+      found,
+      isEmpty,
+      reason: 'Ride and journey state belongs in lib/state/, not in a widget '
+          'field. See docs/design/riverpod-adoption.md.',
+    );
+  });
+
   test('the detector reads code and ignores prose', () {
     // Comments discuss the bridge constantly and must not trip the check;
     // the first draft of this test flagged two files for their doc comments.
