@@ -147,11 +147,20 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   /// greeting flag: per-Start, default off.
   bool _sarvamClips = false;
 
-  /// The ride currently being ridden, kept for the history record.
+  /// The journey handed to the service at Start, kept for the history record.
   /// [plannedJourneyProvider] cannot serve: the picker can replan it mid-ride
-  /// while the service keeps riding the chain it was handed at Start. This is
-  /// the Journey/Ride distinction in CONTEXT.md made concrete.
-  Journey? _activeRide;
+  /// while the service keeps riding the chain it was handed. This is the
+  /// Journey/Ride distinction in CONTEXT.md made concrete, which is also why
+  /// the field is named for the journey and not for the ride.
+  ///
+  /// Deliberately NOT in a provider, and deliberately absent from the guard
+  /// list in test/isolate_boundary_test.dart: together with [_rideStartedAt]
+  /// and [_rideStartBatteryPct] this is the history row being assembled, and
+  /// history recording has always been best-effort. A ride the OS kills
+  /// mid-way leaves no record, which was true before this migration and is
+  /// unchanged by it. Moving it into the store would be a real feature (a
+  /// history row that survives process death), not a refactor.
+  Journey? _startedJourney;
   DateTime? _rideStartedAt;
 
   /// Battery percentage at Start, held until the ride is recorded. In memory
@@ -313,7 +322,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     );
 
     if (started) {
-      _activeRide = journey;
+      _startedJourney = journey;
       _rideStartedAt = DateTime.now();
       _rideStartBatteryPct = await _batteryPct();
       // Liveness comes from the store, never from an assumption here.
@@ -340,16 +349,16 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   /// both. Best-effort: a ride the OS killed mid-way leaves no record, and a
   /// storage failure must never break the teardown path it rides on.
   Future<void> _recordRide() async {
-    final journey = _activeRide;
+    final journey = _startedJourney;
     final startedAt = _rideStartedAt;
     final startBattery = _rideStartBatteryPct;
-    _activeRide = null;
+    _startedJourney = null;
     _rideStartedAt = null;
     _rideStartBatteryPct = null;
     if (journey == null || startedAt == null) return;
     final reached = (await _service.readPersistedRide()).destinationReached;
     // The chain ends at the destination now; the overshoot pins live outside
-    // it, so the trip length is simply the chain.
+    // it, so the journey length is simply the chain.
     final stationCount = journey.chain.length;
     try {
       await ref.read(journeyHistoryDbProvider).record(
@@ -503,7 +512,8 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   }
 
   Future<void> _onRideEndedByService() async {
-    await ref.read(liveRideProvider.notifier).refresh();
+    // liveRideProvider refreshes itself from the same event, so this handler
+    // only does the parts the screen owns: the history row and the turnaround.
     await ref.read(rideAlertsProvider.notifier).standDown();
     await _recordRide();
     await _defaultOriginToRideEnd();

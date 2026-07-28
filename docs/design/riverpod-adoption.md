@@ -78,27 +78,35 @@ widget's setState.
 | stationRepositoryProvider | FutureProvider\<StationRepository\> | the parsed 127-station data, loaded once, kept alive | nothing |
 | rideServiceClientProvider | Provider\<RideServiceClient\> | the bridge facade (below) | nothing |
 | journeyDraftProvider | Notifier\<JourneyDraft\> | the picked origin and destination ids, nothing else | nothing |
-| plannedJourneyProvider | Provider\<Journey?\> | nothing (pure derivation) | journeyDraftProvider, stationRepositoryProvider |
+| plannedJourneyProvider | Provider\<PlannedJourney\> (AS BUILT; the design said Journey?, but the screen also has to render WHY a draft cannot be planned) | nothing (pure derivation) | journeyDraftProvider, stationRepositoryProvider |
 | liveRideProvider | AsyncNotifier\<LiveRide?\> | the projection of the running ride; null means no ride | rideServiceClientProvider |
-| nearestStationProvider | AsyncNotifier\<NearestStationState\> | the pre-ride "You're near" chip state, with a locate() retry | stationRepositoryProvider |
-| journeyHistoryDbProvider | Provider\<JourneyHistoryDb\> | the drift database handle | nothing |
+| nearestStationProvider | Notifier\<NearestStation\> (AS BUILT; the design said AsyncNotifier, but the state is synchronous and locate() is a method, so there is nothing to await) | the pre-ride "You're near" chip state, with a locate() retry | stationRepositoryProvider, fixAcquirerProvider |
+| journeyHistoryDbProvider | Provider\<JourneyHistoryDatabase\> | the drift database handle | nothing |
 | rideHistoryProvider | FutureProvider\<List\<JourneyRecord\>\> | the history rows, newest first | journeyHistoryDbProvider |
 
 Eight providers. If this number wants to triple during implementation,
 something is wrong; stop and re-read "what is not a provider".
 
-AS BUILT, steps 0 to 3 came to eleven, and the three extras are worth naming
-so the budget stays honest rather than quietly abandoned:
+AS BUILT the migration came to TWELVE, and they are all named here so the
+budget stays honest rather than quietly abandoned. A code review caught the
+first version of this paragraph saying eleven and omitting fixAcquirerProvider,
+which is precisely the quiet abandonment it was written to prevent:
 
 - stationsAlphabeticalProvider, a one-line derivation, so the pickers' sort
   does not run on every rebuild.
 - isRideRunningProvider, a one-line derivation over liveRideProvider, because
   half the screen asks only that question.
+- fixAcquirerProvider, a one-line test seam replacing the acquireFix
+  constructor parameter.
 - rideAlertsProvider, which is NOT a convenience. It exists because the ladder
   and wind-down flags are the one part of the running ride that the service
   does not persist, so they cannot live in LiveRide without breaking the
   recreation invariant that class is built on. Splitting them documents which
-  half of the state model recovers and which does not.
+  half of the state model recovers and which does not. It also performs the
+  media-session and native-tone side effects that the ladder state causes,
+  which the provider table's "Owns" column does not capture: they are
+  consequences of the alert, they were in the widget before, and a widget is
+  the wrong place for them.
 
 plannedJourneyProvider is the showcase of the Journey/Ride distinction: it is
 a synchronous pure function (JourneyPlanner.plan) of the draft and the
@@ -238,8 +246,15 @@ replay gate is the tripwire for accidental service-side edits.
   Add the recreation test: pump the app with a fake client whose store
   says a ride is live, assert the route renders with zero user actions.
   This is the step that kills the bug. Gate.
-- STEP 4: journeyHistoryDbProvider, rideHistoryProvider, the RideEnded
-  invalidation. Migrate the history sheet and the remaining debug-button
+  AS BUILT: _onReceiveTaskData was RENAMED to _onServiceEvent and narrowed,
+  not deleted. The screen still handles the three events it owns (the debug
+  log, the ride ending, and a fix for the chip); the ladder, wind-down and
+  tone arms moved to rideAlertsProvider. "Deleted" was the wrong word for
+  what was always going to be a narrowing.
+- STEP 4: journeyHistoryDbProvider, rideHistoryProvider. The RideEnded
+  invalidation named here was NOT built and is not needed: autoDispose makes
+  the query re-run every time the sheet opens, so there is nothing to
+  invalidate. See the correction in decision 2. Migrate the history sheet and the remaining debug-button
   sites (roughly 12). Gate.
 - STEP 5: sweep. Grep for setState referencing ride or journey state
   (should be zero), delete dead fields, final gate.

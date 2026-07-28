@@ -55,7 +55,18 @@ class LiveRide {
 /// answer the dead one had, with no widget involved and no user action.
 class LiveRideNotifier extends AsyncNotifier<LiveRide?> {
   @override
-  Future<LiveRide?> build() => _readFromStore();
+  Future<LiveRide?> build() {
+    // The store is the seed; the event stream is only the low-latency path.
+    // Without this subscription the projection would be correct on arrival and
+    // then frozen, and the service ending a ride on its own (wind-down
+    // auto-off) would leave the screen claiming a ride that stopped.
+    final subscription =
+        ref.watch(rideServiceClientProvider).events.listen((event) {
+      if (event is RideEndedByService) unawaited(refresh());
+    });
+    ref.onDispose(subscription.cancel);
+    return _readFromStore();
+  }
 
   Future<LiveRide?> _readFromStore() async {
     final client = ref.read(rideServiceClientProvider);

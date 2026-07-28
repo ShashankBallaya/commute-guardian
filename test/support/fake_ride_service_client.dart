@@ -9,10 +9,16 @@ import 'package:commute_guardian/services/ride_service_client.dart';
 /// rather than sent, events are PUSHED by the test rather than received, and
 /// the shared store is a couple of fields.
 ///
+/// IMPLEMENTS rather than extends, deliberately. It overrides every public
+/// member and inherits nothing, so subclassing bought only a second, never
+/// closed StreamController from the real client's constructor. Implementing
+/// also means the analyzer fails this file the moment the client grows a
+/// member, instead of silently inheriting a plugin call into the test suite.
+///
 /// The important one is [running] plus [originId] / [destinationId]: those are
 /// what a recreated process reads back, so setting them here is how a test
 /// says "the service was already running before this screen existed".
-class FakeRideServiceClient extends RideServiceClient {
+class FakeRideServiceClient implements RideServiceClient {
   FakeRideServiceClient({
     this.running = false,
     this.originId,
