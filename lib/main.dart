@@ -6,6 +6,7 @@ import 'package:fl_location/fl_location.dart' as fl;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'data/journey_history.dart';
@@ -16,7 +17,11 @@ import 'models/station.dart';
 
 void main() {
   FlutterForegroundTask.initCommunicationPort();
-  runApp(const CommuteGuardianDebugApp());
+  // ProviderScope holds the UI isolate's providers. It is deliberately absent
+  // from the service isolate (lib/foreground/geofence_task_handler.dart):
+  // providers do not cross isolates, and the ride's truth lives over there.
+  // See docs/design/riverpod-adoption.md.
+  runApp(const ProviderScope(child: CommuteGuardianDebugApp()));
 }
 
 /// The locked design system (Figma reviews, 05-09 Jul 2026, palette revised
