@@ -1,16 +1,15 @@
 import 'dart:async';
 
 import 'package:battery_plus/battery_plus.dart';
-import 'package:fl_location/fl_location.dart' as fl;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'data/journey_history.dart';
-import 'data/station_repository.dart';
 import 'models/journey.dart';
 import 'models/station.dart';
 import 'services/ride_service_client.dart';
+import 'state/journey_providers.dart';
 
 void main() {
   RideServiceClient.initCommunicationPort();
@@ -75,15 +74,12 @@ abstract final class Palette {
 }
 
 class CommuteGuardianDebugApp extends StatelessWidget {
-  const CommuteGuardianDebugApp({
-    super.key,
-    this.loadRepository,
-    this.acquireFix,
-    this.historyDatabase,
-  });
+  const CommuteGuardianDebugApp({super.key, this.historyDatabase});
 
-  final Future<StationRepository> Function()? loadRepository;
-  final Future<fl.Location> Function()? acquireFix;
+  /// Where journey history lives. Still a constructor parameter because
+  /// history has not been migrated yet (step 4 of
+  /// docs/design/riverpod-adoption.md); the station network and the location
+  /// fix are provider overrides now.
   final JourneyHistoryDatabase? historyDatabase;
 
   @override
@@ -125,11 +121,7 @@ class CommuteGuardianDebugApp extends StatelessWidget {
           ),
         ),
       ),
-      home: RideDebugScreen(
-        loadRepository: loadRepository,
-        acquireFix: acquireFix,
-        historyDatabase: historyDatabase,
-      ),
+      home: RideDebugScreen(historyDatabase: historyDatabase),
     );
   }
 }
@@ -138,23 +130,8 @@ class CommuteGuardianDebugApp extends StatelessWidget {
 /// approved Phase 2 design system (quiet status chip, glass cards, crimson
 /// journey CTA, actions in the thumb zone), but it is still the debug tool:
 /// the raw event log stays, which no product screen will have.
-class RideDebugScreen extends StatefulWidget {
-  const RideDebugScreen({
-    super.key,
-    this.loadRepository,
-    this.acquireFix,
-    this.historyDatabase,
-  });
-
-  /// How to get the station network. Overridable so a test can hand in a
-  /// repository read straight off disk: `rootBundle` does real I/O, which cannot
-  /// complete inside the fake-async zone widget tests pump in.
-  final Future<StationRepository> Function()? loadRepository;
-
-  /// How to get a one-shot fix. Overridable because the real plugin's channel
-  /// never answers in a widget test (it neither resolves nor throws), which
-  /// would pin the chip on "Locating..." forever there.
-  final Future<fl.Location> Function()? acquireFix;
+class RideDebugScreen extends ConsumerStatefulWidget {
+  const RideDebugScreen({super.key, this.historyDatabase});
 
   /// Where journey history lives. Overridable so tests hand in an in-memory
   /// database; the real app opens the on-device file lazily, so tests that
@@ -162,13 +139,10 @@ class RideDebugScreen extends StatefulWidget {
   final JourneyHistoryDatabase? historyDatabase;
 
   @override
-  State<RideDebugScreen> createState() => _RideDebugScreenState();
+  ConsumerState<RideDebugScreen> createState() => _RideDebugScreenState();
 }
 
-/// What the status chip currently knows about where the rider is.
-enum _GpsState { locating, located, unavailable }
-
-class _RideDebugScreenState extends State<RideDebugScreen> {
+class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   final List<String> _logs = [];
   bool _isRunning = false;
 
@@ -185,9 +159,10 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   late final JourneyHistoryDatabase _history =
       widget.historyDatabase ?? JourneyHistoryDatabase.open();
 
-  /// The ride currently being ridden, kept for the history record. [_journey]
-  /// cannot serve: the picker can replan it mid-ride while the service keeps
-  /// riding the chain it was handed at Start.
+  /// The ride currently being ridden, kept for the history record.
+  /// [plannedJourneyProvider] cannot serve: the picker can replan it mid-ride
+  /// while the service keeps riding the chain it was handed at Start. This is
+  /// the Journey/Ride distinction in CONTEXT.md made concrete.
   Journey? _activeRide;
   DateTime? _rideStartedAt;
 
@@ -200,17 +175,6 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// acknowledged. Drives the "I'm awake" button and the media session.
   bool _wakeLadderLive = false;
   bool _windDownLive = false;
-
-  StationRepository? _repo;
-  List<Station> _stations = const [];
-  String? _originId;
-  String? _destinationId;
-
-  /// Feeds the "You're near: X" chip. Distinct from the origin pick: the chip
-  /// always reports the latest fix, while the origin field is a one-shot
-  /// default the rider may override.
-  _GpsState _gpsState = _GpsState.locating;
-  String? _nearStationName;
 
   /// Whether the rider waved the "tap the chip to retry" tip away this
   /// session. The tip is contextual: it appears with the unavailable state,
@@ -230,11 +194,6 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   final TextEditingController _originField = TextEditingController();
   final TextEditingController _destinationField = TextEditingController();
 
-  /// The planned ride, or the reason it cannot be planned. Recomputed on every
-  /// pick, so Start is only ever offered for a route that actually works.
-  Journey? _journey;
-  String? _planError;
-
   /// The only door to the service isolate. Nothing else in this file may
   /// touch FlutterForegroundTask; test/isolate_boundary_test.dart enforces it.
   final RideServiceClient _service = RideServiceClient();
@@ -246,15 +205,36 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     _serviceEvents = _service.events.listen(_onServiceEvent);
     _service.start();
     _syncRunningState();
-    _loadNetwork();
+    _openingSequence();
+  }
+
+  /// Everything that has to wait for the station network, in the order it used
+  /// to run inside _loadNetwork.
+  Future<void> _openingSequence() async {
+    try {
+      await ref.read(stationRepositoryProvider.future);
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    // Best-effort and deliberately NOT awaited: the foreground-task channel
+    // never resolves under the widget-test binding (same trap as the location
+    // fix), and the GPS fill must not hang behind it. When it does resolve
+    // mid-ride, its explicit write wins over whatever the GPS fill guessed,
+    // because the fill never overwrites and the restore always writes.
+    unawaited(_restoreRunningRide());
+    await ref.read(nearestStationProvider.notifier).locate();
   }
 
   /// The chip's tap: ask for a fresh fix. A single 8s attempt at launch is a
   /// coin flip indoors on an old phone (14 Jul bench, twice), so the miss must
   /// not be a final verdict. No-op mid-ride: the service stream owns the chip.
   void _retryLocate() {
-    if (_isRunning || _gpsState == _GpsState.locating) return;
-    _defaultOriginToNearestStation();
+    if (_isRunning ||
+        ref.read(nearestStationProvider).state == GpsState.locating) {
+      return;
+    }
+    unawaited(ref.read(nearestStationProvider.notifier).locate());
   }
 
   @override
@@ -267,25 +247,6 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     super.dispose();
   }
 
-  Future<void> _loadNetwork() async {
-    final repo = await (widget.loadRepository ?? StationRepository.load)();
-    final stations = repo.stationsById.values.toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
-    if (!mounted) return;
-    setState(() {
-      _repo = repo;
-      _stations = stations;
-    });
-    // Best-effort and deliberately NOT awaited: the foreground-task channel
-    // never resolves under the widget-test binding (same trap as
-    // fl_location, see acquireFix), and the GPS fill must not hang behind
-    // it. When it does resolve mid-ride, its explicit setState wins over
-    // whatever the GPS fill guessed, because the fill never overwrites and
-    // the restore always writes.
-    unawaited(_restoreRunningRide());
-    await _defaultOriginToNearestStation();
-  }
-
   /// Rebuilds the pickers and route summary from the service store when the
   /// UI comes up with a ride already live. Android recreated the activity
   /// mid-ride on 15 Jul and the rebuilt screen showed a blank destination
@@ -296,135 +257,20 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     try {
       if (!await _service.isRunning()) return;
       final persisted = await _service.readPersistedRide();
-      final origin = _repo?.stationsById[persisted.originId];
-      final destination = _repo?.stationsById[persisted.destinationId];
+      final repo = ref.read(stationRepositoryProvider).valueOrNull;
+      final origin = repo?.stationsById[persisted.originId];
+      final destination = repo?.stationsById[persisted.destinationId];
       if (origin == null || destination == null || !mounted) return;
+      final draft = ref.read(journeyDraftProvider.notifier);
+      draft.setOrigin(origin.id);
+      draft.setDestination(destination.id);
       setState(() {
         _isRunning = true;
-        _originId = origin.id;
-        _originField.text = origin.name;
-        _destinationId = destination.id;
-        _destinationField.text = destination.name;
         _logs.insert(0, 'Restored the running ride from the service store.');
       });
-      _replan();
     } catch (_) {
       // No service plumbing (widget tests) or a store race: the normal
       // GPS origin fill owns the screen, exactly as before.
-    }
-  }
-
-  /// Worst fix we will name a station from. A fix vaguer than this says nothing
-  /// useful about which platform the rider is on.
-  static const _maxOriginAccuracyM = 500.0;
-
-  /// How far from a station the rider can be and still be plausibly setting off
-  /// from it. Generous on purpose (people open the app on the walk in), but it
-  /// rules out a fix that is not near the network at all.
-  static const _maxOriginDistanceM = 3000.0;
-
-  /// A ride starts where the rider is standing, so default the origin to the
-  /// nearest station rather than making them find it in a list of 127.
-  Future<void> _defaultOriginToNearestStation() async {
-    if (_repo == null) return;
-    // Shown while acquiring, so the chip never keeps claiming an old position
-    // during a slow fix (it sat on the pre-ride station through the whole
-    // post-ride acquisition on the 13 Jul bench).
-    _setGps(_GpsState.locating);
-
-    try {
-      final location = await (widget.acquireFix ?? _acquireFixLive)();
-      if (!mounted) return;
-      _applyOriginFix(location.latitude, location.longitude, location.accuracy);
-    } catch (_) {
-      // No fix in time. The picker is the fallback, so this is not an error.
-      _setGps(_GpsState.unavailable);
-    }
-  }
-
-  Future<fl.Location> _acquireFixLive() async {
-    if (!await fl.FlLocation.isLocationServicesEnabled) {
-      throw StateError('Location services are off.');
-    }
-    // Bounded: without a limit an indoor acquisition can wait forever.
-    return fl.FlLocation.getLocation(
-      accuracy: fl.LocationAccuracy.balanced,
-      timeLimit: const Duration(seconds: 8),
-    );
-  }
-
-  /// Names the nearest station from a fix: updates the chip, and fills the
-  /// origin when the rider has not picked one (a fix must never overwrite a
-  /// deliberate choice). The one gate for every fix source, live GPS or the
-  /// service stream. Returns whether the fix could name a station.
-  ///
-  /// Only from a fix worth trusting. The nearest station to a vague fix is a
-  /// guess, and a wrong guess here silently plans a ride the rider is not on,
-  /// which is worse than not guessing: leave the field empty and let them
-  /// pick. The thresholds are judgement calls rather than measurements.
-  bool _applyOriginFix(double lat, double lng, double accuracyM) {
-    final repo = _repo;
-    if (repo == null || !mounted) return false;
-    if (accuracyM > _maxOriginAccuracyM) {
-      _setGps(_GpsState.unavailable);
-      return false;
-    }
-
-    final nearest = repo.nearestStation(lat, lng);
-    if (repo.distanceToM(nearest, lat, lng) > _maxOriginDistanceM) {
-      // Position known but nowhere near the network. The chip has no station
-      // to name, and admitting that beats keeping a stale one on screen.
-      _setGps(_GpsState.unavailable);
-      return false;
-    }
-
-    _setGps(_GpsState.located, nearStation: nearest.name);
-    if (_originId == null) {
-      setState(() {
-        _originId = nearest.id;
-        _originField.text = nearest.name;
-      });
-      _replan();
-    }
-    return true;
-  }
-
-  void _setGps(_GpsState state, {String? nearStation}) {
-    if (!mounted) return;
-    setState(() {
-      _gpsState = state;
-      _nearStationName = nearStation;
-    });
-  }
-
-  void _replan() {
-    final repo = _repo;
-    final originId = _originId;
-    final destinationId = _destinationId;
-    if (repo == null || originId == null || destinationId == null) {
-      setState(() {
-        _journey = null;
-        _planError = null;
-      });
-      return;
-    }
-
-    try {
-      final journey = repo.planner.plan(
-        originId: originId,
-        destinationId: destinationId,
-      );
-      setState(() {
-        _journey = journey;
-        _planError = null;
-      });
-    } catch (error) {
-      setState(() {
-        _journey = null;
-        _planError = error is ArgumentError
-            ? '${error.message}'
-            : 'Cannot plan this ride.';
-      });
     }
   }
 
@@ -460,8 +306,8 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
           at: DateTime.now(),
         );
         // Keeps the chip live during the ride too; the origin cannot change
-        // mid-ride because it is already set (see _applyOriginFix).
-        _applyOriginFix(lat, lng, accuracyM);
+        // mid-ride because it is already set (see NearestStationNotifier).
+        ref.read(nearestStationProvider.notifier).applyFix(lat, lng, accuracyM);
     }
   }
 
@@ -477,7 +323,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   }
 
   Future<void> _start() async {
-    final journey = _journey;
+    final journey = ref.read(plannedJourneyProvider).journey;
     if (journey == null) return;
 
     await _requestPermissions();
@@ -579,17 +425,14 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   Future<void> _defaultOriginToRideEnd() async {
     final persisted = await _service.readPersistedRide();
     if (!mounted) return;
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
     final destination = persisted.destinationReached
-        ? _repo?.stationsById[persisted.destinationId]
+        ? repo?.stationsById[persisted.destinationId]
         : null;
 
-    setState(() {
-      _originId = destination?.id;
-      _originField.text = destination?.name ?? '';
-      _destinationId = null;
-      _destinationField.clear();
-    });
-    _replan();
+    ref.read(journeyDraftProvider.notifier).resetAfterRide(
+          originId: destination?.id,
+        );
 
     // Chip (and origin, when the ride ended somewhere unproven) from a real
     // fix. The service's last streamed fix is seconds old and free, so prefer
@@ -599,10 +442,11 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     final fresh =
         fix != null &&
         DateTime.now().difference(fix.at) < const Duration(minutes: 3);
-    if (fresh && _applyOriginFix(fix.lat, fix.lng, fix.accuracyM)) {
+    final nearest = ref.read(nearestStationProvider.notifier);
+    if (fresh && nearest.applyFix(fix.lat, fix.lng, fix.accuracyM)) {
       return;
     }
-    await _defaultOriginToNearestStation();
+    await nearest.locate();
   }
 
   void _testTts() => _service.testTts();
@@ -703,7 +547,9 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   }
 
   String _name(String stationId) =>
-      _repo?.stationsById[stationId]?.name ?? stationId;
+      ref.read(stationRepositoryProvider).valueOrNull?.stationsById[stationId]
+          ?.name ??
+      stationId;
 
   void _holdToEndHint() {
     ScaffoldMessenger.of(
@@ -711,8 +557,34 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     ).showSnackBar(const SnackBar(content: Text('Hold to end the journey.')));
   }
 
+  /// Keeps the two text fields showing whatever the draft says.
+  ///
+  /// The controllers stay widget-owned (they are controllers, not state), so
+  /// this is the seam between them and the provider. It fires for every route
+  /// into the draft: the rider picking, the GPS fill, the mid-ride restore and
+  /// the post-ride turnaround, which is why none of those touch .text any
+  /// more.
+  void _syncFieldsToDraft(JourneyDraft? previous, JourneyDraft next) {
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
+    String nameOf(String? id) =>
+        id == null ? '' : repo?.stationsById[id]?.name ?? '';
+    if (previous?.originId != next.originId) {
+      _originField.text = nameOf(next.originId);
+    }
+    if (previous?.destinationId != next.destinationId) {
+      _destinationField.text = nameOf(next.destinationId);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    ref.listen<JourneyDraft>(journeyDraftProvider, _syncFieldsToDraft);
+
+    final stations = ref.watch(stationsAlphabeticalProvider);
+    final nearest = ref.watch(nearestStationProvider);
+    final planned = ref.watch(plannedJourneyProvider);
+    final draft = ref.read(journeyDraftProvider.notifier);
+
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -721,11 +593,11 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _StatusChip(
-                state: _gpsState,
-                stationName: _nearStationName,
+                state: nearest.state,
+                stationName: nearest.stationName,
                 onTap: _retryLocate,
               ),
-              if (_gpsState == _GpsState.unavailable &&
+              if (nearest.state == GpsState.unavailable &&
                   !_isRunning &&
                   !_chipTipDismissed) ...[
                 const SizedBox(height: 12),
@@ -742,32 +614,26 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
                   children: [
                     _StationPicker(
                       label: 'Origin',
-                      stations: _stations,
+                      stations: stations,
                       controller: _originField,
                       // Changing the ride mid-ride would leave the running service on
                       // the old one, which is a lie the log would not show.
                       enabled: !_isRunning,
-                      onChanged: (id) {
-                        setState(() => _originId = id);
-                        _replan();
-                      },
+                      onChanged: draft.setOrigin,
                     ),
                     const SizedBox(height: 12),
                     _StationPicker(
                       label: 'Destination',
-                      stations: _stations,
+                      stations: stations,
                       controller: _destinationField,
                       enabled: !_isRunning,
-                      onChanged: (id) {
-                        setState(() => _destinationId = id);
-                        _replan();
-                      },
+                      onChanged: draft.setDestination,
                     ),
                   ],
                 ),
               ),
               const SizedBox(height: 12),
-              _JourneySummary(journey: _journey, error: _planError),
+              _JourneySummary(journey: planned.journey, error: planned.error),
               const SizedBox(height: 12),
               Expanded(child: _DebugLog(logs: _logs)),
               const SizedBox(height: 12),
@@ -933,7 +799,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
               const SizedBox(height: 12),
               _JourneyCta(
                 isRunning: _isRunning,
-                canStart: _journey != null,
+                canStart: planned.journey != null,
                 onStart: _start,
                 onEnd: _stop,
                 onEndTap: _holdToEndHint,
@@ -996,7 +862,7 @@ class _StatusChip extends StatelessWidget {
     required this.onTap,
   });
 
-  final _GpsState state;
+  final GpsState state;
   final String? stationName;
 
   /// A tap asks for a fresh fix; the copy says so when a fix is what's
@@ -1006,9 +872,9 @@ class _StatusChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (dotColor, label, station) = switch (state) {
-      _GpsState.locating => (Palette.dotAmber, 'Locating...', null),
-      _GpsState.located => (Palette.dotGreen, "You're near: ", stationName),
-      _GpsState.unavailable => (
+      GpsState.locating => (Palette.dotAmber, 'Locating...', null),
+      GpsState.located => (Palette.dotGreen, "You're near: ", stationName),
+      GpsState.unavailable => (
         Palette.textDim(0.25),
         'Location unavailable. Tap to retry',
         null,
@@ -1037,7 +903,7 @@ class _StatusChip extends StatelessWidget {
               decoration: BoxDecoration(
                 color: dotColor,
                 shape: BoxShape.circle,
-                boxShadow: state == _GpsState.located
+                boxShadow: state == GpsState.located
                     ? [
                         BoxShadow(
                           color: Palette.dotGreen.withValues(alpha: 0.4),

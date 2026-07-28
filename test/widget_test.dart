@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:commute_guardian/data/journey_history.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/main.dart';
+import 'package:commute_guardian/state/journey_providers.dart';
 
 /// Brings the screen up with the real station network loaded.
 ///
@@ -19,18 +20,20 @@ Future<void> _pumpScreen(
   JourneyHistoryDatabase? history,
 }) async {
   final raw = File(StationRepository.assetPath).readAsStringSync();
-  // The single ProviderScope for every widget test. Provider overrides land
-  // here as the migration proceeds, so no individual test has to know that
-  // Riverpod exists (docs/design/riverpod-adoption.md).
+  // The single ProviderScope for every widget test. Overrides land here, so no
+  // individual test has to know that Riverpod exists
+  // (docs/design/riverpod-adoption.md).
   await tester.pumpWidget(
     ProviderScope(
-      child: CommuteGuardianDebugApp(
-        loadRepository: () async => StationRepository.parse(raw),
+      overrides: [
+        stationRepositoryProvider
+            .overrideWith((ref) async => StationRepository.parse(raw)),
         // Fails like an indoor timeout does. The real plugin cannot answer in
         // the fake-async zone; without this the chip hangs on "Locating...".
-        acquireFix: () async => throw StateError('no GPS under test'),
-        historyDatabase: history,
-      ),
+        fixAcquirerProvider
+            .overrideWithValue(() async => throw StateError('no GPS under test')),
+      ],
+      child: CommuteGuardianDebugApp(historyDatabase: history),
     ),
   );
   await tester.pumpAndSettle();
