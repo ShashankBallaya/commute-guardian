@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'data/journey_history.dart';
 import 'models/journey.dart';
 import 'models/station.dart';
+import 'screens/destination_picker_screen.dart';
 import 'screens/home_screen.dart';
 import 'services/ride_service_client.dart';
 import 'state/journey_providers.dart';
@@ -405,9 +406,27 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
             Navigator.of(context).pop();
             unawaited(_start());
           },
-          // Screen 2 does not exist yet, so New journey returns to the picker
-          // that does: the debug screen's own two fields.
-          onNew: () => Navigator.of(context).pop(),
+          onNew: _pickDestination,
+        ),
+      ),
+    );
+  }
+
+  /// Screen 2. A pick sets the destination and starts the ride: origin is
+  /// never picked, it is detected live from GPS. There is no Preparing screen
+  /// yet, so a pick goes straight to a running ride.
+  Future<void> _pickDestination() async {
+    final navigator = Navigator.of(context);
+    await navigator.push<void>(
+      MaterialPageRoute(
+        builder: (_) => DestinationPickerScreen(
+          onPicked: (station) {
+            ref.read(journeyDraftProvider.notifier).setDestination(station.id);
+            // Pop the picker and Screen 1 together, back to the debug screen
+            // that owns the ride.
+            navigator.popUntil((route) => route.isFirst);
+            unawaited(_start());
+          },
         ),
       ),
     );
