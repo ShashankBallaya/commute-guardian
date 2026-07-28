@@ -8,9 +8,12 @@ import 'package:permission_handler/permission_handler.dart';
 import 'data/journey_history.dart';
 import 'models/journey.dart';
 import 'models/station.dart';
+import 'screens/home_screen.dart';
 import 'services/ride_service_client.dart';
 import 'state/journey_providers.dart';
 import 'state/ride_providers.dart';
+import 'theme/palette.dart';
+import 'widgets/status_chip.dart';
 
 void main() {
   RideServiceClient.initCommunicationPort();
@@ -19,59 +22,6 @@ void main() {
   // providers do not cross isolates, and the ride's truth lives over there.
   // See docs/design/riverpod-adoption.md.
   runApp(const ProviderScope(child: CommuteGuardianDebugApp()));
-}
-
-/// The locked design system (Figma reviews, 05-09 Jul 2026, palette revised
-/// 16 Jul 2026): dark navy ground, translucent navy glass surfaces, white text.
-/// The burgundy surfaces and cream text of the earlier reviews are retired.
-/// Crimson fill is reserved for the one action that starts or ends a journey;
-/// nothing else may use it. The green dot means live/tracking, amber means
-/// acquiring.
-abstract final class Palette {
-  /// The scaffold ground.
-  static const ground = Color(0xFF0F1722);
-
-  /// A deeper ground, for wells recessed into [ground].
-  static const groundDeep = Color(0xFF0D141D);
-
-  /// The glass surface fill (172335 at 20%). Nearly invisible alone: over
-  /// [ground] it composites to within a few points of the ground itself, so it
-  /// only reads as a card alongside [hairline] and [shadow]. Prefer
-  /// [glassCard] over reaching for this directly.
-  static const surface = Color(0x33172335);
-
-  /// [surface] pre-composited over [ground], for surfaces that must stay opaque
-  /// because they float over arbitrary content (sheets, snackbars).
-  static const surfaceSolid = Color(0xFF111926);
-
-  static const hairline = Color(0x14FEFEFE);
-  static const shadow = Color(0x33000000);
-
-  static const text = Color(0xFFFEFEFE);
-  static const dotGreen = Color(0xFF3AB16C);
-  static const dotAmber = Color(0xFFD9A03D);
-
-  /// dotGreen at 20%, the soft green wash: the selected segment of the Screen 4
-  /// wake toggle. Not the live-dot glow, which is locked at 40%.
-  static const greenSoft = Color(0x333AB16C);
-
-  /// Figma gives the CTA as 83111A at 60% over [ground]. This is that composite,
-  /// kept opaque so the fill cannot shift when content scrolls beneath it.
-  static const crimson = Color(0xFF55131D);
-
-  static Color textDim(double opacity) => text.withValues(alpha: opacity);
-
-  /// Fill, hairline border and shadow together: a glass card that is right by
-  /// construction. No blur, it has nothing to bite on a flat ground (see the
-  /// glassmorphism note in the design system).
-  static BoxDecoration glassCard({double radius = 20}) => BoxDecoration(
-    color: surface,
-    borderRadius: BorderRadius.circular(radius),
-    border: Border.all(color: hairline),
-    boxShadow: const [
-      BoxShadow(color: shadow, blurRadius: 24, offset: Offset(0, 8)),
-    ],
-  );
 }
 
 class CommuteGuardianDebugApp extends StatelessWidget {
@@ -443,6 +393,26 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   /// The recent-journeys sheet. Same modal-sheet pattern as the station
   /// picker; opaque surface per the design rule for content that floats over
   /// live UI. Reads fresh from the database on every open.
+  /// Opens Screen 1 over the debug screen so it can be judged on a device.
+  /// Starting from a card sets the destination and starts the ride: origin is
+  /// never picked, it is detected live from GPS.
+  Future<void> _previewHome() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => HomeScreen(
+          onStartTo: (destinationId) {
+            ref.read(journeyDraftProvider.notifier).setDestination(destinationId);
+            Navigator.of(context).pop();
+            unawaited(_start());
+          },
+          // Screen 2 does not exist yet, so New journey returns to the picker
+          // that does: the debug screen's own two fields.
+          onNew: () => Navigator.of(context).pop(),
+        ),
+      ),
+    );
+  }
+
   Future<void> _showHistory() async {
     // autoDispose means this re-queries on every open, which is the behaviour
     // the sheet already promised, now enforced by the provider's lifetime.
@@ -569,7 +539,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _StatusChip(
+              StatusChip(
                 state: nearest.state,
                 stationName: nearest.stationName,
                 onTap: _retryLocate,
@@ -733,6 +703,25 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                           onPressed: _showHistory,
                         ),
                       ),
+                      const SizedBox(width: 14),
+                      // Preview of the real Screen 1 while it is being built.
+                      // The debug screen stays the app's home until Screen 1
+                      // is approved on a device, so nothing half-finished can
+                      // block a bench or a ride.
+                      SizedBox(
+                        width: 22,
+                        child: IconButton(
+                          key: const Key('home_preview_button'),
+                          padding: EdgeInsets.zero,
+                          iconSize: 18,
+                          tooltip: 'Preview Screen 1',
+                          icon: Icon(
+                            Icons.home_outlined,
+                            color: Palette.textDim(0.6),
+                          ),
+                          onPressed: _previewHome,
+                        ),
+                      ),
                       const Spacer(),
                       // Debug bench flag (Android only): Sarvam clip greets
                       // at Start, TTS still speaks the route line. Applied at
@@ -832,86 +821,6 @@ class _TestButton extends StatelessWidget {
 
 /// The quiet status chip: glass surface, never loud, the dot alone carries
 /// the GPS state (green = fixed, amber = acquiring, dim = unavailable).
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({
-    required this.state,
-    required this.stationName,
-    required this.onTap,
-  });
-
-  final GpsState state;
-  final String? stationName;
-
-  /// A tap asks for a fresh fix; the copy says so when a fix is what's
-  /// missing. The owner of the callback decides when a tap is meaningful.
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final (dotColor, label, station) = switch (state) {
-      GpsState.locating => (Palette.dotAmber, 'Locating...', null),
-      GpsState.located => (Palette.dotGreen, "You're near: ", stationName),
-      GpsState.unavailable => (
-        Palette.textDim(0.25),
-        'Location unavailable. Tap to retry',
-        null,
-      ),
-    };
-
-    return GestureDetector(
-      key: const Key('status_chip'),
-      onTap: onTap,
-      child: _chipBody(dotColor, label, station),
-    );
-  }
-
-  Widget _chipBody(Color dotColor, String label, String? station) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        decoration: Palette.glassCard(radius: 28),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: dotColor,
-                shape: BoxShape.circle,
-                boxShadow: state == GpsState.located
-                    ? [
-                        BoxShadow(
-                          color: Palette.dotGreen.withValues(alpha: 0.4),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
-                      ]
-                    : null,
-              ),
-            ),
-            const SizedBox(width: 10),
-            Text.rich(
-              TextSpan(
-                text: label,
-                children: [
-                  if (station != null)
-                    TextSpan(
-                      text: station,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                ],
-              ),
-              style: TextStyle(fontSize: 15, color: Palette.textDim(0.9)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// Contextual tip that appears WITH the unavailable state: it teaches the
 /// chip's tap exactly when a new user needs it, and leaves on its own the
 /// moment a fix lands. Quiet like everything that is not the journey CTA.

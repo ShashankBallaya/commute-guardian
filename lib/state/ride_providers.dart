@@ -218,3 +218,18 @@ final rideHistoryProvider =
     FutureProvider.autoDispose<List<JourneyRecord>>((ref) {
   return ref.watch(journeyHistoryDbProvider).recent();
 });
+
+/// Distinct destinations by most recent ride, at most three.
+///
+/// This is what fills Screen 1's cards for a rider who never saves a route,
+/// which is the whole point of the home screen's middle state: a non-saver
+/// keeps the two-tap start forever. A destination someone rides daily appears
+/// once, not once per ride.
+///
+/// An EMPTY list means no journey has ever completed, which is exactly the
+/// first-run signal Screen 1 keys its empty state to. Screen 1's three states
+/// hang on journeys COMPLETED, never on routes saved.
+final recentDestinationsProvider =
+    FutureProvider.autoDispose<List<JourneyRecord>>((ref) {
+  return ref.watch(journeyHistoryDbProvider).recentDestinations();
+});
