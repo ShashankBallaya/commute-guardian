@@ -77,6 +77,19 @@ widget's setState.
 Eight providers. If this number wants to triple during implementation,
 something is wrong; stop and re-read "what is not a provider".
 
+AS BUILT, steps 0 to 3 came to eleven, and the three extras are worth naming
+so the budget stays honest rather than quietly abandoned:
+
+- stationsAlphabeticalProvider, a one-line derivation, so the pickers' sort
+  does not run on every rebuild.
+- isRideRunningProvider, a one-line derivation over liveRideProvider, because
+  half the screen asks only that question.
+- rideAlertsProvider, which is NOT a convenience. It exists because the ladder
+  and wind-down flags are the one part of the running ride that the service
+  does not persist, so they cannot live in LiveRide without breaking the
+  recreation invariant that class is built on. Splitting them documents which
+  half of the state model recovers and which does not.
+
 plannedJourneyProvider is the showcase of the Journey/Ride distinction: it is
 a synchronous pure function (JourneyPlanner.plan) of the draft and the
 repository, so it needs no Notifier, no persistence and no recreation logic.

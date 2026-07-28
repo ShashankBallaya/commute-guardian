@@ -10,6 +10,7 @@ import 'models/journey.dart';
 import 'models/station.dart';
 import 'services/ride_service_client.dart';
 import 'state/journey_providers.dart';
+import 'state/ride_providers.dart';
 
 void main() {
   RideServiceClient.initCommunicationPort();
@@ -144,7 +145,6 @@ class RideDebugScreen extends ConsumerStatefulWidget {
 
 class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   final List<String> _logs = [];
-  bool _isRunning = false;
 
   /// Debug bench flag: Sarvam clip greets at Start (Android only). Handed to
   /// the service through the store at Start; default off keeps Start stock.
@@ -171,11 +171,6 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   /// is consistent: history recording has always been best-effort.
   int? _rideStartBatteryPct;
 
-  /// Whether the service's wake ladder is currently asking to be
-  /// acknowledged. Drives the "I'm awake" button and the media session.
-  bool _wakeLadderLive = false;
-  bool _windDownLive = false;
-
   /// Whether the rider waved the "tap the chip to retry" tip away this
   /// session. The tip is contextual: it appears with the unavailable state,
   /// which is exactly when a new user needs to learn the chip is tappable,
@@ -194,17 +189,19 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   final TextEditingController _originField = TextEditingController();
   final TextEditingController _destinationField = TextEditingController();
 
-  /// The only door to the service isolate. Nothing else in this file may
-  /// touch FlutterForegroundTask; test/isolate_boundary_test.dart enforces it.
-  final RideServiceClient _service = RideServiceClient();
+  /// The only door to the service isolate, owned by a provider so it outlives
+  /// this screen. Nothing else in this file may touch FlutterForegroundTask;
+  /// test/isolate_boundary_test.dart enforces it.
+  RideServiceClient get _service => ref.read(rideServiceClientProvider);
   late final StreamSubscription<ServiceEvent> _serviceEvents;
 
   @override
   void initState() {
     super.initState();
     _serviceEvents = _service.events.listen(_onServiceEvent);
-    _service.start();
-    _syncRunningState();
+    // Forces the alerts notifier to exist before the first frame, so a ladder
+    // event arriving between launch and the first build is not missed.
+    ref.read(rideAlertsProvider);
     _openingSequence();
   }
 
@@ -230,7 +227,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   /// coin flip indoors on an old phone (14 Jul bench, twice), so the miss must
   /// not be a final verdict. No-op mid-ride: the service stream owns the chip.
   void _retryLocate() {
-    if (_isRunning ||
+    if (ref.read(isRideRunningProvider) ||
         ref.read(nearestStationProvider).state == GpsState.locating) {
       return;
     }
@@ -239,8 +236,10 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
 
   @override
   void dispose() {
+    // The client itself is NOT disposed here: it belongs to a provider that
+    // outlives this screen, which is what stops an activity recreation from
+    // tearing the bridge down and putting it back up.
     unawaited(_serviceEvents.cancel());
-    _service.dispose();
     _originField.dispose();
     _destinationField.dispose();
     unawaited(_history.close());
@@ -254,48 +253,33 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   /// store has owned the truth about the running ride all along (it is what
   /// the service itself read at start), the UI just never asked it.
   Future<void> _restoreRunningRide() async {
-    try {
-      if (!await _service.isRunning()) return;
-      final persisted = await _service.readPersistedRide();
-      final repo = ref.read(stationRepositoryProvider).valueOrNull;
-      final origin = repo?.stationsById[persisted.originId];
-      final destination = repo?.stationsById[persisted.destinationId];
-      if (origin == null || destination == null || !mounted) return;
-      final draft = ref.read(journeyDraftProvider.notifier);
-      draft.setOrigin(origin.id);
-      draft.setDestination(destination.id);
-      setState(() {
-        _isRunning = true;
-        _logs.insert(0, 'Restored the running ride from the service store.');
-      });
-    } catch (_) {
-      // No service plumbing (widget tests) or a store race: the normal
-      // GPS origin fill owns the screen, exactly as before.
-    }
-  }
-
-  Future<void> _syncRunningState() async {
-    final running = await _service.isRunning();
-    if (mounted) {
-      setState(() => _isRunning = running);
-    }
+    final ride = await ref.read(liveRideProvider.future);
+    if (ride == null || !mounted) return;
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
+    final origin = repo?.stationsById[ride.originId];
+    final destination = repo?.stationsById[ride.destinationId];
+    if (origin == null || destination == null) return;
+    final draft = ref.read(journeyDraftProvider.notifier);
+    draft.setOrigin(origin.id);
+    draft.setDestination(destination.id);
+    setState(() {
+      _logs.insert(0, 'Restored the running ride from the service store.');
+    });
   }
 
   /// One event from the other side of the isolate boundary, already parsed
-  /// (lib/services/ride_service_client.dart). The widget's job is only to
-  /// render it; nothing here knows the wire format.
+  /// (lib/services/ride_service_client.dart). Only what the SCREEN owns lands
+  /// here; the ladder, wind-down and tone events belong to
+  /// [rideAlertsProvider] and never reach this method.
   void _onServiceEvent(ServiceEvent event) {
     if (!mounted) return;
     switch (event) {
       case ServiceLogged(:final message):
         setState(() => _logs.insert(0, message));
-      case WakeLadderChanged(:final live):
-        setState(() => _wakeLadderLive = live);
-        unawaited(_service.setMediaSession(live));
-      case WindDownChanged(:final live):
-        setState(() => _windDownLive = live);
-      case ToneCommanded(:final command, :final volume):
-        unawaited(_service.sendNativeTone(command, volume));
+      case WakeLadderChanged():
+      case WindDownChanged():
+      case ToneCommanded():
+        break;
       case RideEndedByService():
         unawaited(_onRideEndedByService());
       case ServiceFix(:final lat, :final lng, :final accuracyM):
@@ -342,7 +326,8 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
       _activeRide = journey;
       _rideStartedAt = DateTime.now();
       _rideStartBatteryPct = await _batteryPct();
-      setState(() => _isRunning = true);
+      // Liveness comes from the store, never from an assumption here.
+      await ref.read(liveRideProvider.notifier).refresh();
     }
   }
 
@@ -396,16 +381,8 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
 
   Future<void> _stop() async {
     await _service.stopRide();
-    setState(() {
-      _isRunning = false;
-      _windDownLive = false;
-    });
-    // The dying service isolate also announces this, but a teardown race must
-    // not leave a phantom "I'm awake" button or a claimed media session.
-    if (_wakeLadderLive) {
-      setState(() => _wakeLadderLive = false);
-      await _service.setMediaSession(false);
-    }
+    await ref.read(liveRideProvider.notifier).refresh();
+    await ref.read(rideAlertsProvider.notifier).standDown();
     await _recordRide();
     await _defaultOriginToRideEnd();
   }
@@ -534,14 +511,8 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   }
 
   Future<void> _onRideEndedByService() async {
-    setState(() {
-      _isRunning = false;
-      _windDownLive = false;
-    });
-    if (_wakeLadderLive) {
-      setState(() => _wakeLadderLive = false);
-      await _service.setMediaSession(false);
-    }
+    await ref.read(liveRideProvider.notifier).refresh();
+    await ref.read(rideAlertsProvider.notifier).standDown();
     await _recordRide();
     await _defaultOriginToRideEnd();
   }
@@ -584,6 +555,10 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     final nearest = ref.watch(nearestStationProvider);
     final planned = ref.watch(plannedJourneyProvider);
     final draft = ref.read(journeyDraftProvider.notifier);
+    // Liveness and alerts come from the store and the event stream, never from
+    // this widget's memory, which is what makes recreation a non-event.
+    final isRunning = ref.watch(isRideRunningProvider);
+    final alerts = ref.watch(rideAlertsProvider);
 
     return Scaffold(
       body: SafeArea(
@@ -598,7 +573,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                 onTap: _retryLocate,
               ),
               if (nearest.state == GpsState.unavailable &&
-                  !_isRunning &&
+                  !isRunning &&
                   !_chipTipDismissed) ...[
                 const SizedBox(height: 12),
                 _ChipTipBanner(
@@ -618,7 +593,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                       controller: _originField,
                       // Changing the ride mid-ride would leave the running service on
                       // the old one, which is a lie the log would not show.
-                      enabled: !_isRunning,
+                      enabled: !isRunning,
                       onChanged: draft.setOrigin,
                     ),
                     const SizedBox(height: 12),
@@ -626,7 +601,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                       label: 'Destination',
                       stations: stations,
                       controller: _destinationField,
-                      enabled: !_isRunning,
+                      enabled: !isRunning,
                       onChanged: draft.setDestination,
                     ),
                   ],
@@ -637,7 +612,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
               const SizedBox(height: 12),
               Expanded(child: _DebugLog(logs: _logs)),
               const SizedBox(height: 12),
-              if (_wakeLadderLive)
+              if (alerts.wakeLadderLive)
                 // The manual dismiss, and the guaranteed ack fallback when
                 // the earphone tap does not route to us. White fill: loud
                 // enough to find half-asleep, and crimson stays reserved for
@@ -671,13 +646,13 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                     Expanded(
                       child: _TestButton(
                         label: 'Announce',
-                        onPressed: _isRunning ? _testTts : null,
+                        onPressed: isRunning ? _testTts : null,
                         buttonKey: const Key('announce_during_ladder'),
                       ),
                     ),
                   ],
                 )
-              else if (_windDownLive)
+              else if (alerts.windDownLive)
                 // Mirrors the notification's wind-down actions for when the
                 // phone is already in hand. White like the ack button;
                 // crimson stays reserved for starting or ending a journey.
@@ -716,26 +691,26 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                     Expanded(
                       child: _TestButton(
                         label: 'Announce',
-                        onPressed: _isRunning ? _testTts : null,
+                        onPressed: isRunning ? _testTts : null,
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: _TestButton(
                         label: 'Wake alert',
-                        onPressed: _isRunning ? _testWakeAlert : null,
+                        onPressed: isRunning ? _testWakeAlert : null,
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: _TestButton(
                         label: 'Wind-down',
-                        onPressed: _isRunning ? _testWindDown : null,
+                        onPressed: isRunning ? _testWindDown : null,
                       ),
                     ),
                   ],
                 ),
-              if (!_isRunning)
+              if (!isRunning)
                 SizedBox(
                   height: 22,
                   child: Row(
@@ -798,7 +773,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                 ),
               const SizedBox(height: 12),
               _JourneyCta(
-                isRunning: _isRunning,
+                isRunning: isRunning,
                 canStart: planned.journey != null,
                 onStart: _start,
                 onEnd: _stop,

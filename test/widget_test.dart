@@ -8,6 +8,9 @@ import 'package:commute_guardian/data/journey_history.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/main.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
+import 'package:commute_guardian/state/ride_providers.dart';
+
+import 'support/fake_ride_service_client.dart';
 
 /// Brings the screen up with the real station network loaded.
 ///
@@ -18,6 +21,7 @@ import 'package:commute_guardian/state/journey_providers.dart';
 Future<void> _pumpScreen(
   WidgetTester tester, {
   JourneyHistoryDatabase? history,
+  FakeRideServiceClient? service,
 }) async {
   final raw = File(StationRepository.assetPath).readAsStringSync();
   // The single ProviderScope for every widget test. Overrides land here, so no
@@ -32,20 +36,29 @@ Future<void> _pumpScreen(
         // the fake-async zone; without this the chip hangs on "Locating...".
         fixAcquirerProvider
             .overrideWithValue(() async => throw StateError('no GPS under test')),
+        // No isolate under test, so no plugin channels either.
+        rideServiceClientProvider
+            .overrideWithValue(service ?? FakeRideServiceClient()),
       ],
       child: CommuteGuardianDebugApp(historyDatabase: history),
     ),
   );
   await tester.pumpAndSettle();
 
-  final origin = tester.widget<TextField>(
-    find.widgetWithText(TextField, 'Origin'),
-  );
-  expect(
-    origin.enabled,
-    isTrue,
-    reason: 'station data never loaded, so the pickers are disabled',
-  );
+  // Sanity check that the station data actually arrived, since almost every
+  // test below is meaningless without it. Skipped when a ride is already
+  // running: the pickers are then disabled ON PURPOSE, because changing the
+  // ride mid-ride would leave the service on the old one.
+  if (!(service?.running ?? false)) {
+    final origin = tester.widget<TextField>(
+      find.widgetWithText(TextField, 'Origin'),
+    );
+    expect(
+      origin.enabled,
+      isTrue,
+      reason: 'station data never loaded, so the pickers are disabled',
+    );
+  }
 }
 
 /// Picks [station] in the [label] picker: the field opens a search sheet, and
@@ -245,6 +258,62 @@ void main() {
     expect(
       find.textContaining('Tap to retry', findRichText: true),
       findsOneWidget,
+    );
+  });
+
+  testWidgets(
+      'a screen born mid-ride shows the running ride, with no user action', (
+    tester,
+  ) async {
+    // THE 15 JUL BUG, as a test. Android killed and recreated the activity
+    // mid-ride, and the rebuilt screen came up with a blank destination and no
+    // route while End journey was correctly offered: the widget's state died
+    // with it and nothing re-read the ride. This pumps a screen that has NEVER
+    // seen the ride start, exactly as a recreated process has not.
+    //
+    // Nothing below taps anything. That is the assertion.
+    await _pumpScreen(
+      tester,
+      service: FakeRideServiceClient(
+        running: true,
+        originId: 'kalyan',
+        destinationId: 'thane',
+      ),
+    );
+
+    // The pickers show the ride the service is running.
+    expect(
+      tester.widget<TextField>(find.widgetWithText(TextField, 'Origin')).controller?.text,
+      'Kalyan',
+    );
+    expect(
+      tester
+          .widget<TextField>(find.widgetWithText(TextField, 'Destination'))
+          .controller
+          ?.text,
+      'Thane',
+    );
+
+    // The route came back too, which is the half that was blank on 15 Jul.
+    expect(find.textContaining('8 stations'), findsOneWidget);
+
+    // And the screen knows a ride is live: End is offered, Start is not.
+    expect(find.text('End journey'), findsOneWidget);
+    expect(find.text('Start Travel Mode'), findsNothing);
+  });
+
+  testWidgets('a screen born with no ride running offers Start, not End', (
+    tester,
+  ) async {
+    // The other half of the same contract: liveness is read from the store, so
+    // it must be able to come back false as well as true. Without this the
+    // recreation test above would pass against a provider hardcoded to "live".
+    await _pumpScreen(tester, service: FakeRideServiceClient(running: false));
+
+    expect(find.text('End journey'), findsNothing);
+    expect(
+      tester.widget<TextField>(find.widgetWithText(TextField, 'Origin')).controller?.text,
+      isEmpty,
     );
   });
 }
