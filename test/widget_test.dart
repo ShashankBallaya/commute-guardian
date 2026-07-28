@@ -109,46 +109,6 @@ void main() {
     expect(start.onPressed, isNull);
   });
 
-  testWidgets('the history sheet lists a recorded ride, newest first', (
-    tester,
-  ) async {
-    final history = AppDatabase.inMemory();
-    addTearDown(history.close);
-    await history.record(
-      originId: 'shahad',
-      destinationId: 'kalyan',
-      originName: 'Shahad',
-      destinationName: 'Kalyan',
-      startedAt: DateTime(2026, 7, 17, 21, 10),
-      endedAt: DateTime(2026, 7, 17, 21, 52),
-      reachedDestination: true,
-      stationCount: 2,
-    );
-
-    await _pumpScreen(tester, history: history);
-    await tester.tap(find.byKey(const Key('history_button')));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Shahad → Kalyan'), findsOneWidget);
-    expect(find.text('17 Jul 21:52 • 2 stations • reached'), findsOneWidget);
-  });
-
-  testWidgets('the history sheet has an empty state, not a blank sheet', (
-    tester,
-  ) async {
-    final history = AppDatabase.inMemory();
-    addTearDown(history.close);
-
-    await _pumpScreen(tester, history: history);
-    await tester.tap(find.byKey(const Key('history_button')));
-    await tester.pumpAndSettle();
-
-    expect(
-      find.text('No journeys yet. Ride one and it will appear here.'),
-      findsOneWidget,
-    );
-  });
-
   testWidgets('the Sarvam greeting bench flag exists and defaults OFF', (
     tester,
   ) async {

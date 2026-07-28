@@ -5,11 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-import 'data/app_database.dart';
 import 'models/journey.dart';
 import 'models/station.dart';
 import 'screens/destination_picker_screen.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
 import 'services/ride_service_client.dart';
 import 'state/journey_providers.dart';
@@ -392,9 +392,6 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   /// The service ended the ride itself (wind-down auto-off or its End now
   /// button). Same after-ride path as a manual stop, minus stopping the
   /// service, which is already going down.
-  /// The recent-journeys sheet. Same modal-sheet pattern as the station
-  /// picker; opaque surface per the design rule for content that floats over
-  /// live UI. Reads fresh from the database on every open.
   /// Opens Screen 1 over the debug screen so it can be judged on a device.
   /// Starting from a card sets the destination and starts the ride: origin is
   /// never picked, it is detected live from GPS.
@@ -423,8 +420,6 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
         builder: (_) => DestinationPickerScreen(
           onPicked: (station) {
             ref.read(journeyDraftProvider.notifier).setDestination(station.id);
-            // Pop the picker and Screen 1 together, back to the debug screen
-            // that owns the ride.
             navigator.popUntil((route) => route.isFirst);
             unawaited(_start());
           },
@@ -433,72 +428,11 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     );
   }
 
+  /// Screen 7. Replaces the debug bottom sheet this screen used to carry.
   Future<void> _showHistory() async {
-    // autoDispose means this re-queries on every open, which is the behaviour
-    // the sheet already promised, now enforced by the provider's lifetime.
-    final rides = await ref.read(rideHistoryProvider.future);
-    if (!mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Palette.surfaceSolid,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: rides.isEmpty
-            ? Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(
-                  'No journeys yet. Ride one and it will appear here.',
-                  style: TextStyle(color: Palette.textDim(0.6)),
-                ),
-              )
-            : ListView.builder(
-                shrinkWrap: true,
-                itemCount: rides.length,
-                itemBuilder: (context, index) {
-                  final ride = rides[index];
-                  return ListTile(
-                    dense: true,
-                    title: Text(
-                      '${ride.originName} → ${ride.destinationName}',
-                      style: const TextStyle(color: Palette.text),
-                    ),
-                    subtitle: Text(
-                      '${_historyTimestamp(ride.endedAt)} • '
-                      '${ride.stationCount} stations • '
-                      '${ride.reachedDestination ? 'reached' : 'ended early'}'
-                      '${_batterySummary(ride)}',
-                      style: TextStyle(color: Palette.textDim(0.5)),
-                    ),
-                  );
-                },
-              ),
-      ),
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => const HistoryScreen()),
     );
-  }
-
-  /// "17 Jul 21:52" without pulling in intl for a debug row.
-  /// " • 84% → 71% (13%)" when both readings exist, otherwise nothing. The
-  /// DROP is the number worth reading; the endpoints are there so a suspicious
-  /// figure can be sanity-checked against a charge mid-ride.
-  static String _batterySummary(JourneyRecord ride) {
-    final start = ride.batteryStartPct;
-    final end = ride.batteryEndPct;
-    if (start == null || end == null) return '';
-    final drop = start - end;
-    final cost = drop > 0 ? ' ($drop%)' : '';
-    return ' • $start% → $end%$cost';
-  }
-
-  static String _historyTimestamp(DateTime t) {
-    const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-    ];
-    final hh = t.hour.toString().padLeft(2, '0');
-    final mm = t.minute.toString().padLeft(2, '0');
-    return '${t.day} ${months[t.month - 1]} $hh:$mm';
   }
 
   Future<void> _onRideEndedByService() async {
