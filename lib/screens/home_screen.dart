@@ -7,6 +7,7 @@ import '../data/journey_history.dart';
 import '../state/journey_providers.dart';
 import '../state/ride_providers.dart';
 import '../theme/palette.dart';
+import '../widgets/mini_rail.dart';
 import '../widgets/status_chip.dart';
 
 /// Screen 1, Home. The screen a rider opens, and on a good day the only one
@@ -121,7 +122,7 @@ class _FirstRun extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _MiniRail(),
+        const MiniRail(stops: 5),
         const SizedBox(height: 28),
         Text(
           "Doze off. We'll wake you before your stop.",
@@ -283,50 +284,6 @@ class _CrimsonCta extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// The locked motif: dim dots on a hairline with a glowing green dot at the
-/// head, a train on a line. Free-floating dots are banned here, they read as a
-/// carousel indicator.
-class _MiniRail extends StatelessWidget {
-  const _MiniRail();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 14,
-      child: Row(
-        children: [
-          for (var i = 0; i < 4; i++) ...[
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: Palette.textDim(0.18),
-                shape: BoxShape.circle,
-              ),
-            ),
-            Expanded(child: Container(height: 1, color: Palette.textDim(0.12))),
-          ],
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              color: Palette.dotGreen,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Palette.dotGreen.withValues(alpha: 0.4),
-                  blurRadius: 8,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
