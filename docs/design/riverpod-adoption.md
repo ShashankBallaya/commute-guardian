@@ -23,13 +23,22 @@ arrival, settings, history).
 
 Not in scope, deliberately:
 
-- The service isolate. lib/foreground/geofence_task_handler.dart is already
-  the single service-side owner of the bridge (it sends typed map payloads
-  such as {'wakeLadderLive': live}), and geofence_chain_service.dart is the
+- The service isolate. lib/foreground/geofence_task_handler.dart owns the
+  bridge itself (it sends typed map payloads such as {'wakeLadderLive': live}
+  and reads the saveData keys), and geofence_chain_service.dart is the
   field-proven core. The only permitted change there is ADDITIVE: new
   sendDataToMain payloads and new saveData keys as the Active Journey screen
   needs them. No log string changes (tool/replay_ride.dart parses them), no
   restructuring.
+
+  CORRECTED DURING STEP 1: an earlier draft of this document called the task
+  handler the single service-side file touching the plugin. It is not.
+  geofence_chain_service.dart also calls
+  FlutterForegroundTask.isIgnoringBatteryOptimizations, to log the permission
+  picture at ride start. That is not bridge traffic and it is legitimate,
+  because that file runs in the service isolate. The invariant the boundary
+  test actually enforces is therefore one-sided: the UI ISOLATE has exactly
+  one door (RideServiceClient); service-isolate files use the plugin freely.
 - The engines (ride_progress, wake_escalation, wind_down, journey_planner).
   Pure Dart, no Riverpod imports, tests untouched. They are the only code in
   this project proven on a train.

@@ -1,22 +1,19 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:battery_plus/battery_plus.dart';
 import 'package:fl_location/fl_location.dart' as fl;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'data/journey_history.dart';
 import 'data/station_repository.dart';
-import 'foreground/geofence_task_handler.dart';
 import 'models/journey.dart';
 import 'models/station.dart';
+import 'services/ride_service_client.dart';
 
 void main() {
-  FlutterForegroundTask.initCommunicationPort();
+  RideServiceClient.initCommunicationPort();
   // ProviderScope holds the UI isolate's providers. It is deliberately absent
   // from the service isolate (lib/foreground/geofence_task_handler.dart):
   // providers do not cross isolates, and the ride's truth lives over there.
@@ -171,17 +168,6 @@ class RideDebugScreen extends StatefulWidget {
 /// What the status chip currently knows about where the rider is.
 enum _GpsState { locating, located, unavailable }
 
-/// Carries the wake ladder's earphone-tap acknowledgment. Native side: a
-/// MediaSessionCompat in MainActivity (Android) and MPRemoteCommandCenter in
-/// the AppDelegate (iOS), activated only while a ladder is live so this app
-/// owns media buttons exactly when a tap means "I'm awake" and never longer.
-/// Lives in the UI isolate because that is the engine the native side is
-/// attached to; the ack is forwarded to the service isolate over the same
-/// seam the test buttons use. Best-effort by design: if the OS has killed the
-/// backgrounded activity the tap is lost, and the escalation plus the manual
-/// dismiss remain the guaranteed fallback.
-const _mediaAckChannel = MethodChannel('commute_guardian/media_ack');
-
 class _RideDebugScreenState extends State<RideDebugScreen> {
   final List<String> _logs = [];
   bool _isRunning = false;
@@ -249,95 +235,18 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   Journey? _journey;
   String? _planError;
 
+  /// The only door to the service isolate. Nothing else in this file may
+  /// touch FlutterForegroundTask; test/isolate_boundary_test.dart enforces it.
+  final RideServiceClient _service = RideServiceClient();
+  late final StreamSubscription<ServiceEvent> _serviceEvents;
+
   @override
   void initState() {
     super.initState();
-    FlutterForegroundTask.addTaskDataCallback(_onReceiveTaskData);
-    _mediaAckChannel.setMethodCallHandler(_onMediaAck);
-    _initService();
+    _serviceEvents = _service.events.listen(_onServiceEvent);
+    _service.start();
     _syncRunningState();
     _loadNetwork();
-  }
-
-  /// A media button arrived from the native session while a ladder was live:
-  /// the earphone tap. Forward it to the service isolate, where the ladder
-  /// runs.
-  Future<dynamic> _onMediaAck(MethodCall call) async {
-    if (call.method == 'ack') {
-      // iOS forwards which remote command fired (the double-tap maps
-      // to different ones across earbuds); Android sends none. It travels
-      // WITH the ack so the service writes it to the ride log: the 21 Jul
-      // bench proved the on-screen list alone is not evidence, because a
-      // rider watching the road never sees it.
-      final via = call.arguments is String ? call.arguments as String : '';
-      FlutterForegroundTask.sendDataToTask('$wakeAckMediaPrefix$via');
-      setState(() {
-        _logs.insert(
-          0,
-          'Media button received${via.isEmpty ? '' : ' via $via'}, '
-          'ack forwarded to service.',
-        );
-      });
-    }
-    if (call.method == 'callState') {
-      // iOS only, from CXCallObserver. The audio session cannot see a call
-      // that arrives while we are silent (23 Jul bench: a real answered call
-      // logged nothing at all), so this is the only signal decision 8 has on
-      // iPhone outside our own announcements.
-      final inCall = call.arguments == true;
-      FlutterForegroundTask.sendDataToTask('$wakeCallStatePrefix$inCall');
-      setState(() {
-        _logs.insert(
-          0,
-          'Native call state: ${inCall ? 'on a call' : 'call ended'}, '
-          'forwarded to service.',
-        );
-      });
-    }
-    return null;
-  }
-
-  /// Claims (or releases) media-button routing natively. Held only while a
-  /// ladder is live: outside that window the rider's earphone taps must keep
-  /// controlling their music, not us.
-  Future<void> _setMediaSession(bool active) async {
-    try {
-      final note = await _mediaAckChannel.invokeMethod<String>(
-        active ? 'startSession' : 'stopSession',
-      );
-      _forwardAudioNote(note);
-    } catch (error) {
-      setState(() {
-        _logs.insert(0, 'Media session ${active ? 'start' : 'stop'} failed: $error');
-      });
-    }
-  }
-
-  /// Drives the native ladder tone, and carries back what the audio session
-  /// did about it.
-  Future<void> _sendNativeTone(String command, double volume) async {
-    try {
-      final note = await _mediaAckChannel.invokeMethod<String>(command, volume);
-      _forwardAudioNote(note);
-    } catch (error) {
-      setState(() {
-        _logs.insert(0, 'Native tone $command failed: $error');
-      });
-    }
-  }
-
-  /// Puts an iOS audio-session note into the RIDE LOG, by handing it to the
-  /// service isolate that owns the file.
-  ///
-  /// The debug screen alone is not enough and the 21 Jul benches proved it: a
-  /// rider with the phone in a pocket sees nothing, so anything that matters
-  /// has to reach the file. Native returns null when there was nothing worth
-  /// recording, which is most ticks.
-  void _forwardAudioNote(String? note) {
-    if (note == null || note.isEmpty) return;
-    FlutterForegroundTask.sendDataToTask('$wakeAudioNotePrefix$note');
-    if (!mounted) return;
-    setState(() => _logs.insert(0, 'Audio session: $note'));
   }
 
   /// The chip's tap: ask for a fresh fix. A single 8s attempt at launch is a
@@ -350,7 +259,8 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
 
   @override
   void dispose() {
-    FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
+    unawaited(_serviceEvents.cancel());
+    _service.dispose();
     _originField.dispose();
     _destinationField.dispose();
     unawaited(_history.close());
@@ -384,13 +294,10 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// the service itself read at start), the UI just never asked it.
   Future<void> _restoreRunningRide() async {
     try {
-      if (!await FlutterForegroundTask.isRunningService) return;
-      final originId =
-          await FlutterForegroundTask.getData<String>(key: originIdKey);
-      final destinationId =
-          await FlutterForegroundTask.getData<String>(key: destinationIdKey);
-      final origin = _repo?.stationsById[originId];
-      final destination = _repo?.stationsById[destinationId];
+      if (!await _service.isRunning()) return;
+      final persisted = await _service.readPersistedRide();
+      final origin = _repo?.stationsById[persisted.originId];
+      final destination = _repo?.stationsById[persisted.destinationId];
       if (origin == null || destination == null || !mounted) return;
       setState(() {
         _isRunning = true;
@@ -522,69 +429,30 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   }
 
   Future<void> _syncRunningState() async {
-    final running = await FlutterForegroundTask.isRunningService;
+    final running = await _service.isRunning();
     if (mounted) {
       setState(() => _isRunning = running);
     }
   }
 
-  void _initService() {
-    FlutterForegroundTask.init(
-      androidNotificationOptions: AndroidNotificationOptions(
-        channelId: 'geofence_chain',
-        channelName: 'Travel Mode',
-        channelDescription: 'Announces stations while Travel Mode is active.',
-        onlyAlertOnce: true,
-      ),
-      iosNotificationOptions: const IOSNotificationOptions(
-        showNotification: false,
-        playSound: false,
-      ),
-      foregroundTaskOptions: ForegroundTaskOptions(
-        eventAction: ForegroundTaskEventAction.repeat(5000),
-        autoRunOnBoot: false,
-        allowWakeLock: true,
-        allowWifiLock: false,
-      ),
-    );
-  }
-
-  void _onReceiveTaskData(Object data) {
-    if (data is Map<String, dynamic>) {
-      final message = data['message'] as String?;
-      if (message != null) {
-        setState(() {
-          _logs.insert(0, message);
-        });
-      }
-
-      final ladderLive = data['wakeLadderLive'] as bool?;
-      if (ladderLive != null) {
-        setState(() => _wakeLadderLive = ladderLive);
-        _setMediaSession(ladderLive);
-      }
-
-      final windDownLive = data['windDownLive'] as bool?;
-      if (windDownLive != null) {
-        setState(() => _windDownLive = windDownLive);
-      }
-
-      // iOS ladder tone, played natively in AppDelegate (audioplayers'
-      // loop dies under the seized session). Sent only on iOS builds.
-      final toneCommand = data['toneCommand'] as String?;
-      if (toneCommand != null) {
-        final toneVolume = (data['toneVolume'] as num?)?.toDouble() ?? 1.0;
-        unawaited(_sendNativeTone(toneCommand, toneVolume));
-      }
-
-      if (data['rideEnded'] == true) {
-        _onRideEndedByService();
-      }
-
-      final lat = (data['fixLat'] as num?)?.toDouble();
-      final lng = (data['fixLng'] as num?)?.toDouble();
-      final accuracyM = (data['fixAccuracyM'] as num?)?.toDouble();
-      if (lat != null && lng != null && accuracyM != null) {
+  /// One event from the other side of the isolate boundary, already parsed
+  /// (lib/services/ride_service_client.dart). The widget's job is only to
+  /// render it; nothing here knows the wire format.
+  void _onServiceEvent(ServiceEvent event) {
+    if (!mounted) return;
+    switch (event) {
+      case ServiceLogged(:final message):
+        setState(() => _logs.insert(0, message));
+      case WakeLadderChanged(:final live):
+        setState(() => _wakeLadderLive = live);
+        unawaited(_service.setMediaSession(live));
+      case WindDownChanged(:final live):
+        setState(() => _windDownLive = live);
+      case ToneCommanded(:final command, :final volume):
+        unawaited(_service.sendNativeTone(command, volume));
+      case RideEndedByService():
+        unawaited(_onRideEndedByService());
+      case ServiceFix(:final lat, :final lng, :final accuracyM):
         _lastServiceFix = (
           lat: lat,
           lng: lng,
@@ -594,7 +462,6 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
         // Keeps the chip live during the ride too; the origin cannot change
         // mid-ride because it is already set (see _applyOriginFix).
         _applyOriginFix(lat, lng, accuracyM);
-      }
     }
   }
 
@@ -606,10 +473,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
       await Permission.locationAlways.request();
     }
 
-    if (Platform.isAndroid &&
-        !await FlutterForegroundTask.isIgnoringBatteryOptimizations) {
-      await FlutterForegroundTask.requestIgnoreBatteryOptimization();
-    }
+    await _service.requestBatteryOptimizationExemption();
   }
 
   Future<void> _start() async {
@@ -618,41 +482,17 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
 
     await _requestPermissions();
 
-    // The service isolate has its own heap and cannot read this screen's state,
-    // so hand the ride over through the shared store it can read on start.
-    await FlutterForegroundTask.saveData(
-      key: originIdKey,
-      value: journey.originStationId,
-    );
-    await FlutterForegroundTask.saveData(
-      key: destinationIdKey,
-      value: journey.destinationStationId,
-    );
-    // Armed false here, set true by the service when the destination arrival
-    // actually speaks. Gates the turnaround default in _defaultOriginToRideEnd.
-    await FlutterForegroundTask.saveData(
-      key: destinationReachedKey,
-      value: false,
-    );
-    await FlutterForegroundTask.saveData(
-      key: sarvamGreetingKey,
-      value: _sarvamGreeting,
-    );
-    await FlutterForegroundTask.saveData(
-      key: sarvamClipsKey,
-      value: _sarvamClips,
-    );
-
-    final result = await FlutterForegroundTask.startService(
-      serviceId: 1,
-      notificationTitle: 'Travel Mode active',
+    final started = await _service.startRide(
+      originStationId: journey.originStationId,
+      destinationStationId: journey.destinationStationId,
       notificationText:
           '${_name(journey.originStationId)} to '
           '${_name(journey.destinationStationId)}',
-      callback: geofenceTaskStartCallback,
+      sarvamGreeting: _sarvamGreeting,
+      sarvamClips: _sarvamClips,
     );
 
-    if (result is ServiceRequestSuccess) {
+    if (started) {
       _activeRide = journey;
       _rideStartedAt = DateTime.now();
       _rideStartBatteryPct = await _batteryPct();
@@ -686,9 +526,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     _rideStartedAt = null;
     _rideStartBatteryPct = null;
     if (journey == null || startedAt == null) return;
-    final reached =
-        await FlutterForegroundTask.getData<bool>(key: destinationReachedKey) ??
-        false;
+    final reached = (await _service.readPersistedRide()).destinationReached;
     // The chain ends at the destination now; the overshoot pins live outside
     // it, so the trip length is simply the chain.
     final stationCount = journey.chain.length;
@@ -711,7 +549,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   }
 
   Future<void> _stop() async {
-    await FlutterForegroundTask.stopService();
+    await _service.stopRide();
     setState(() {
       _isRunning = false;
       _windDownLive = false;
@@ -720,7 +558,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     // not leave a phantom "I'm awake" button or a claimed media session.
     if (_wakeLadderLive) {
       setState(() => _wakeLadderLive = false);
-      await _setMediaSession(false);
+      await _service.setMediaSession(false);
     }
     await _recordRide();
     await _defaultOriginToRideEnd();
@@ -739,14 +577,11 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
   /// falls back to the GPS fill instead, and either way the status chip is
   /// re-asked from a real fix, never assumed from the ride.
   Future<void> _defaultOriginToRideEnd() async {
-    final reached =
-        await FlutterForegroundTask.getData<bool>(key: destinationReachedKey) ??
-        false;
-    final destinationId = await FlutterForegroundTask.getData<String>(
-      key: destinationIdKey,
-    );
+    final persisted = await _service.readPersistedRide();
     if (!mounted) return;
-    final destination = reached ? _repo?.stationsById[destinationId] : null;
+    final destination = persisted.destinationReached
+        ? _repo?.stationsById[persisted.destinationId]
+        : null;
 
     setState(() {
       _originId = destination?.id;
@@ -770,29 +605,17 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     await _defaultOriginToNearestStation();
   }
 
-  void _testTts() {
-    FlutterForegroundTask.sendDataToTask('test_tts');
-  }
+  void _testTts() => _service.testTts();
 
-  void _testWakeAlert() {
-    FlutterForegroundTask.sendDataToTask('test_wake_alert');
-  }
+  void _testWakeAlert() => _service.testWakeAlert();
 
-  void _testWindDown() {
-    FlutterForegroundTask.sendDataToTask('test_wind_down');
-  }
+  void _testWindDown() => _service.testWindDown();
 
-  void _wakeAck() {
-    FlutterForegroundTask.sendDataToTask(wakeAckButtonId);
-  }
+  void _wakeAck() => _service.ackWakeFromButton();
 
-  void _windDownEndNow() {
-    FlutterForegroundTask.sendDataToTask(windDownEndNowId);
-  }
+  void _windDownEndNow() => _service.windDownEndNow();
 
-  void _windDownExtend() {
-    FlutterForegroundTask.sendDataToTask(windDownExtendId);
-  }
+  void _windDownExtend() => _service.windDownExtend();
 
   /// The service ended the ride itself (wind-down auto-off or its End now
   /// button). Same after-ride path as a manual stop, minus stopping the
@@ -873,7 +696,7 @@ class _RideDebugScreenState extends State<RideDebugScreen> {
     });
     if (_wakeLadderLive) {
       setState(() => _wakeLadderLive = false);
-      await _setMediaSession(false);
+      await _service.setMediaSession(false);
     }
     await _recordRide();
     await _defaultOriginToRideEnd();
