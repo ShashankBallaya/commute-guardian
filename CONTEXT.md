@@ -4,6 +4,19 @@ Commuter companion for suburban rail riders (Mumbai local first). One Travel Mod
 
 ## Language
 
+### Ride
+
+**Journey**:
+The planned route between an origin and a destination: the station chain, the interchanges it requires, and the overshoot pins. Fully derivable from the station data at any time; it carries no progress.
+_Avoid_: trip
+
+**Ride**:
+One execution of a journey, from Start Travel Mode to journey end. Its progress exists only while it runs and cannot be recomputed, only reported; a ride can outlive its journey (an overshoot carries the rider past the end of the chain).
+_Avoid_: session, trip
+
+**Travel Mode**:
+The rider-facing name for a live ride. Used in copy and screen states, not as a code identifier.
+
 ### Announcement audio
 
 **Announcement**:
