@@ -70,15 +70,35 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               MiniRail(stops: _stops, current: _step),
-              const Spacer(),
-              switch (_step) {
-                0 => _welcome(),
-                1 => _disclosure(),
-                2 => _background(),
-                3 => _notifications(),
-                4 => _battery(),
-                _ => _ready(),
-              },
+              // Bottom-anchored while the copy is short, SCROLLABLE when it is
+              // not. The disclosure screen is long by law rather than by
+              // choice (Play requires what, why and that it is background), and
+              // on the 3T a fixed spacer pushed it 81 pixels off the bottom,
+              // taking the skip button with it.
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) => SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints:
+                          BoxConstraints(minHeight: constraints.maxHeight),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          switch (_step) {
+                            0 => _welcome(),
+                            1 => _disclosure(),
+                            2 => _background(),
+                            3 => _notifications(),
+                            4 => _battery(),
+                            _ => _ready(),
+                          },
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),

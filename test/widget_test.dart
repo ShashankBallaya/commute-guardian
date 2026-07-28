@@ -54,6 +54,9 @@ Future<void> _pumpScreen(
           ref.onDispose(db.close);
           return db;
         }),
+        // These tests are about the ride screen, so they start past
+        // onboarding. The gate itself is tested in onboarding_test.dart.
+        onboardingSeenProvider.overrideWith((ref) async => true),
       ],
       child: const CommuteGuardianDebugApp(),
     ),

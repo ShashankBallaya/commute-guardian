@@ -9,6 +9,7 @@ import 'data/app_database.dart';
 import 'models/journey.dart';
 import 'models/station.dart';
 import 'screens/destination_picker_screen.dart';
+import 'screens/onboarding_screen.dart';
 import 'screens/home_screen.dart';
 import 'services/ride_service_client.dart';
 import 'state/journey_providers.dart';
@@ -67,7 +68,7 @@ class CommuteGuardianDebugApp extends StatelessWidget {
           ),
         ),
       ),
-      home: const RideDebugScreen(),
+      home: const _EntryGate(),
     );
   }
 }
@@ -1243,6 +1244,42 @@ class _JourneyCta extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Decides which screen the app opens on.
+///
+/// Onboarding is not a nicety: without background location this app stops
+/// watching the moment the screen goes off, and Android will not grant that
+/// from a dialog. So a rider who has not been walked through it gets walked
+/// through it, once.
+///
+/// The flag lives in the app database, which means A REINSTALL SHOWS
+/// ONBOARDING AGAIN. That is correct rather than annoying: a reinstall also
+/// wipes the permission grants onboarding exists to explain (observed on the
+/// 3T, 16 Jul).
+class _EntryGate extends ConsumerWidget {
+  const _EntryGate();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final seen = ref.watch(onboardingSeenProvider);
+    return seen.when(
+      // A blank frame for one database read, rather than flashing the wrong
+      // screen and correcting itself.
+      loading: () => const Scaffold(body: SizedBox.shrink()),
+      // If the flag cannot be read, show the app rather than trapping the
+      // rider in onboarding they may have already done.
+      error: (_, _) => const RideDebugScreen(),
+      data: (done) => done
+          ? const RideDebugScreen()
+          : OnboardingScreen(
+              onDone: () async {
+                await ref.read(appDatabaseProvider).markOnboardingSeen();
+                ref.invalidate(onboardingSeenProvider);
+              },
+            ),
     );
   }
 }

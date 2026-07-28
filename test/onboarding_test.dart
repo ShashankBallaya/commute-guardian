@@ -1,8 +1,17 @@
+import 'dart:io';
+
+import 'package:commute_guardian/data/app_database.dart';
+import 'package:commute_guardian/data/station_repository.dart';
+import 'package:commute_guardian/main.dart';
 import 'package:commute_guardian/screens/onboarding_screen.dart';
+import 'package:commute_guardian/state/journey_providers.dart';
+import 'package:commute_guardian/state/ride_providers.dart';
 import 'package:commute_guardian/services/permissions_gateway.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/fake_ride_service_client.dart';
 
 /// Onboarding, six screens.
 ///
@@ -54,6 +63,8 @@ class _FakePermissions implements PermissionsGateway {
 }
 
 void main() {
+  _entryGateTests();
+
   Future<(_FakePermissions, List<String>)> pump(
     WidgetTester tester, {
     bool android = true,
@@ -150,6 +161,32 @@ void main() {
     expect(permissions.asked, ['whileInUse', 'openSettings', 'notifications']);
   });
 
+  testWidgets('no step overflows a real phone screen', (tester) async {
+    // The 3T's own resolution at its device pixel ratio. A fixed spacer put
+    // the disclosure 81 pixels off the bottom here and took the skip button
+    // with it, which no test at the default 800x600 surface noticed.
+    tester.view.physicalSize = const Size(1080, 1920);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+
+    final (_, _) = await pump(tester);
+    for (var step = 0; step < 6; step++) {
+      // An overflow paints an error and, in a test, throws. Reaching the end
+      // of the loop IS the assertion.
+      expect(tester.takeException(), isNull, reason: 'step $step overflowed');
+      if (step < 5) {
+        // Scroll it into reach first. The disclosure is taller than this
+        // screen by design, and tapping at a coordinate the button is not at
+        // would make this test pass without proving anything.
+        final action = find.byKey(const Key('onboarding_action'));
+        await tester.ensureVisible(action);
+        await tester.pumpAndSettle();
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+      }
+    }
+  });
+
   testWidgets('iOS skips the battery screen rather than promising nothing', (
     tester,
   ) async {
@@ -165,5 +202,75 @@ void main() {
 
     await act(tester);
     expect(done, ['done']);
+  });
+}
+
+/// The entry gate. What a rider sees when they open the app, which is the
+/// whole point of having built onboarding.
+void _entryGateTests() {
+  Future<AppDatabase> pumpApp(
+    WidgetTester tester, {
+    required bool seen,
+  }) async {
+    final db = AppDatabase.inMemory();
+    addTearDown(db.close);
+    if (seen) await db.markOnboardingSeen();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWith((ref) => db),
+          permissionsGatewayProvider.overrideWithValue(_FakePermissions()),
+          stationRepositoryProvider.overrideWith(
+            (ref) async => StationRepository.parse(
+              File(StationRepository.assetPath).readAsStringSync(),
+            ),
+          ),
+          fixAcquirerProvider
+              .overrideWithValue(() async => throw StateError('no GPS')),
+          rideServiceClientProvider.overrideWithValue(FakeRideServiceClient()),
+        ],
+        child: const CommuteGuardianDebugApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return db;
+  }
+
+  testWidgets('a first-time rider lands in onboarding, not the app', (
+    tester,
+  ) async {
+    await pumpApp(tester, seen: false);
+    expect(find.byKey(const Key('onboarding_welcome')), findsOneWidget);
+  });
+
+  testWidgets('a rider who has done it lands in the app', (tester) async {
+    await pumpApp(tester, seen: true);
+    expect(find.byKey(const Key('onboarding_welcome')), findsNothing);
+    expect(find.text('Pick an origin and a destination.'), findsOneWidget);
+  });
+
+  testWidgets('finishing onboarding records it and does not ask again', (
+    tester,
+  ) async {
+    final db = await pumpApp(tester, seen: false);
+    expect(await db.hasSeenOnboarding(), isFalse);
+
+    // Walk the whole flow: welcome, then skip the four permission screens,
+    // then the ready screen's action.
+    await tester.tap(find.byKey(const Key('onboarding_action')));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 4; i++) {
+      await tester.tap(find.byKey(const Key('onboarding_skip')));
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(find.byKey(const Key('onboarding_action')));
+    await tester.pumpAndSettle();
+
+    // The flag is written, and the gate has already moved on without a
+    // restart.
+    expect(await db.hasSeenOnboarding(), isTrue);
+    expect(find.byKey(const Key('onboarding_ready')), findsNothing);
+    expect(find.text('Pick an origin and a destination.'), findsOneWidget);
   });
 }
