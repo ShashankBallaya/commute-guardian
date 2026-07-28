@@ -75,13 +75,7 @@ abstract final class Palette {
 }
 
 class CommuteGuardianDebugApp extends StatelessWidget {
-  const CommuteGuardianDebugApp({super.key, this.historyDatabase});
-
-  /// Where journey history lives. Still a constructor parameter because
-  /// history has not been migrated yet (step 4 of
-  /// docs/design/riverpod-adoption.md); the station network and the location
-  /// fix are provider overrides now.
-  final JourneyHistoryDatabase? historyDatabase;
+  const CommuteGuardianDebugApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -122,7 +116,7 @@ class CommuteGuardianDebugApp extends StatelessWidget {
           ),
         ),
       ),
-      home: RideDebugScreen(historyDatabase: historyDatabase),
+      home: const RideDebugScreen(),
     );
   }
 }
@@ -132,12 +126,7 @@ class CommuteGuardianDebugApp extends StatelessWidget {
 /// journey CTA, actions in the thumb zone), but it is still the debug tool:
 /// the raw event log stays, which no product screen will have.
 class RideDebugScreen extends ConsumerStatefulWidget {
-  const RideDebugScreen({super.key, this.historyDatabase});
-
-  /// Where journey history lives. Overridable so tests hand in an in-memory
-  /// database; the real app opens the on-device file lazily, so tests that
-  /// never touch history never hit the path_provider channel either.
-  final JourneyHistoryDatabase? historyDatabase;
+  const RideDebugScreen({super.key});
 
   @override
   ConsumerState<RideDebugScreen> createState() => _RideDebugScreenState();
@@ -154,10 +143,6 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   /// clips from the pushed pack (Android only). Same lifecycle as the
   /// greeting flag: per-Start, default off.
   bool _sarvamClips = false;
-
-  /// Journey history store; the injected test database or the on-device file.
-  late final JourneyHistoryDatabase _history =
-      widget.historyDatabase ?? JourneyHistoryDatabase.open();
 
   /// The ride currently being ridden, kept for the history record.
   /// [plannedJourneyProvider] cannot serve: the picker can replan it mid-ride
@@ -242,7 +227,8 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     unawaited(_serviceEvents.cancel());
     _originField.dispose();
     _destinationField.dispose();
-    unawaited(_history.close());
+    // The history database is not closed here either: like the service client
+    // it belongs to a provider, so it survives a screen going away.
     super.dispose();
   }
 
@@ -362,7 +348,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     // it, so the trip length is simply the chain.
     final stationCount = journey.chain.length;
     try {
-      await _history.record(
+      await ref.read(journeyHistoryDbProvider).record(
         originId: journey.originStationId,
         destinationId: journey.destinationStationId,
         originName: _name(journey.originStationId),
@@ -445,7 +431,9 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   /// picker; opaque surface per the design rule for content that floats over
   /// live UI. Reads fresh from the database on every open.
   Future<void> _showHistory() async {
-    final rides = await _history.recent();
+    // autoDispose means this re-queries on every open, which is the behaviour
+    // the sheet already promised, now enforced by the provider's lifetime.
+    final rides = await ref.read(rideHistoryProvider.future);
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,

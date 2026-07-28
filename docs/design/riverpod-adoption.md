@@ -158,13 +158,33 @@ Which keys exist is decided screen by screen at implementation time.
    learning Dart; this is also the agreed /teach lesson slot). Revisit only
    if the provider count grows past twenty.
 
-2. HISTORY IS A FutureProvider WITH INVALIDATION, NEVER drift.watch(). The
-   trap: history rows are WRITTEN IN THE SERVICE ISOLATE over a different
-   database connection. Drift stream queries only notify for writes through
-   their own connection, so a watch()-based StreamProvider would compile,
-   pass tests, and silently never update in production. Instead
-   rideHistoryProvider re-queries on demand and liveRideProvider invalidates
-   it when a RideEnded event arrives. Staleness is explicit and bounded.
+2. HISTORY IS A FutureProvider.autoDispose. No drift.watch(), and no
+   invalidation wiring either.
+
+   CORRECTED IN STEP 4, and the correction matters more than the decision.
+   This entry originally read "NEVER drift.watch()" and justified it by
+   claiming history rows are WRITTEN IN THE SERVICE ISOLATE over a different
+   database connection, so a stream query could never see them. THAT IS
+   FALSE. Only lib/main.dart ever opens, reads or writes this database; the
+   service isolate does not touch it. Rides are recorded from the screen's
+   own teardown path, on the same connection a stream would use, so
+   drift.watch() would in fact have worked. The design was right by accident
+   and for the wrong reason, which is worse than being wrong, because the
+   next person would have believed the reason.
+
+   The real reason, now that the fact is straight: the history sheet is a
+   MODAL, so it wants a query on open, not a subscription for the life of
+   the app. autoDispose gives exactly that. The provider lives while the
+   sheet is open and re-runs the query the next time it opens, which is the
+   "reads fresh from the database on every open" behaviour the sheet already
+   documented for itself. Nothing to invalidate, nothing to forget, and no
+   permanent query subscription for a screen that is rarely on.
+
+   Watch for this in TESTS: override journeyHistoryDbProvider with
+   overrideWith, never overrideWithValue. The latter builds the database
+   eagerly for every test and skips the create function, so the onDispose
+   that closes it never runs, and drift starts warning about a second
+   instance of the database class racing on one file.
 
 3. "A RIDE IS LIVE" IS A STORE FACT, NOT A WIDGET FACT. Liveness is the
    plugin's is-running state plus the persisted keys, read in build().

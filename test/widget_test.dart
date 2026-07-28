@@ -39,8 +39,23 @@ Future<void> _pumpScreen(
         // No isolate under test, so no plugin channels either.
         rideServiceClientProvider
             .overrideWithValue(service ?? FakeRideServiceClient()),
+        // Always in-memory: the real factory needs path_provider, which no
+        // widget test can answer.
+        //
+        // overrideWith, not overrideWithValue, and both halves matter. Lazy,
+        // so a test that never opens history never builds a database (the
+        // screen used to get that from a `late final` field). And closed on
+        // teardown, which overrideWithValue cannot do because it skips the
+        // create function and therefore the onDispose with it. Without this,
+        // drift warns about a second instance of the database class, which is
+        // its way of saying two connections could race on one file.
+        journeyHistoryDbProvider.overrideWith((ref) {
+          final db = history ?? JourneyHistoryDatabase.inMemory();
+          ref.onDispose(db.close);
+          return db;
+        }),
       ],
-      child: CommuteGuardianDebugApp(historyDatabase: history),
+      child: const CommuteGuardianDebugApp(),
     ),
   );
   await tester.pumpAndSettle();

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/journey_history.dart';
 import '../services/ride_service_client.dart';
 
 /// The running-ride half of the state model.
@@ -173,3 +174,36 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
 
 final rideAlertsProvider =
     NotifierProvider<RideAlertsNotifier, RideAlerts>(RideAlertsNotifier.new);
+
+// ---------------------------------------------------------------------------
+// Finished rides
+// ---------------------------------------------------------------------------
+
+/// The on-device journey history.
+///
+/// Opened lazily: the real factory needs path_provider, so a screen that never
+/// looks at history never touches that channel. Tests override this with an
+/// in-memory database.
+///
+/// UI ISOLATE ONLY. The service isolate does not open this file and never
+/// writes a row; rides are recorded from the screen's teardown path, on this
+/// connection. Worth stating because an earlier draft of
+/// docs/design/riverpod-adoption.md claimed the opposite and drew a design
+/// conclusion from it.
+final journeyHistoryDbProvider = Provider<JourneyHistoryDatabase>((ref) {
+  final db = JourneyHistoryDatabase.open();
+  ref.onDispose(db.close);
+  return db;
+});
+
+/// Finished rides, newest first.
+///
+/// autoDispose is the whole design: the history sheet is a modal, so this
+/// lives exactly as long as the sheet is open and re-runs the query the next
+/// time it opens. That is the "reads fresh on every open" behaviour the sheet
+/// already had, with nothing left to remember. No invalidation wiring, and no
+/// permanent query subscription for a screen that is rarely on.
+final rideHistoryProvider =
+    FutureProvider.autoDispose<List<JourneyRecord>>((ref) {
+  return ref.watch(journeyHistoryDbProvider).recent();
+});
