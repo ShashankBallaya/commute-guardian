@@ -14,10 +14,12 @@ import 'screens/home_screen.dart';
 import 'screens/preparing_flow.dart';
 import 'screens/preparing_screen.dart';
 import 'screens/travel_mode_screen.dart';
+import 'screens/wake_alert_screen.dart';
 import 'services/ride_service_client.dart';
 import 'state/journey_providers.dart';
 import 'state/ride_providers.dart';
 import 'theme/palette.dart';
+import 'widgets/slide_to_start.dart';
 import 'widgets/status_chip.dart';
 
 void main() {
@@ -93,6 +95,13 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   /// the Figma work.
   final List<String> _logs = [];
 
+  /// Screen 4's wake control. Held here so it survives the screen being popped
+  /// and re-pushed within a ride.
+  ///
+  /// NOTHING CONSUMES IT YET. The wake ladder still fires on its locked rules,
+  /// and this must not quietly become a second way to change leadTimeS.
+  WakeChoice _wakeChoice = WakeChoice.lastTwoStations;
+
   /// Debug bench flag: Sarvam clip greets at Start (Android only). Handed to
   /// the service through the store at Start; default off keeps Start stock.
   bool _sarvamGreeting = false;
@@ -102,26 +111,19 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   /// greeting flag: per-Start, default off.
   bool _sarvamClips = false;
 
-  /// The journey handed to the service at Start, kept for the history record.
+  /// The journey handed to the service at Start, as a FAST PATH only.
   /// [plannedJourneyProvider] cannot serve: the picker can replan it mid-ride
   /// while the service keeps riding the chain it was handed. This is the
   /// Journey/Ride distinction in CONTEXT.md made concrete, which is also why
   /// the field is named for the journey and not for the ride.
   ///
-  /// Deliberately NOT in a provider, and deliberately absent from the guard
-  /// list in test/isolate_boundary_test.dart: together with [_rideStartedAt]
-  /// and [_rideStartBatteryPct] this is the history row being assembled, and
-  /// history recording has always been best-effort. A ride the OS kills
-  /// mid-way leaves no record, which was true before this migration and is
-  /// unchanged by it. Moving it into the store would be a real feature (a
-  /// history row that survives process death), not a refactor.
+  /// NO LONGER LOAD-BEARING, as of 29 Jul 2026. The history row's real source
+  /// is the shared store, and _recordRide replans from the ids the service was
+  /// handed when this field is empty. That is what makes a journey survive the
+  /// app being swiped out of recents with its record intact: the service
+  /// restarts itself a second later, so the ride went on while its record used
+  /// to die with the widget.
   Journey? _startedJourney;
-  DateTime? _rideStartedAt;
-
-  /// Battery percentage at Start, held until the ride is recorded. In memory
-  /// like [_rideStartedAt] and lost the same way if the activity dies, which
-  /// is consistent: history recording has always been best-effort.
-  int? _rideStartBatteryPct;
 
   /// Whether the rider waved the "tap the chip to retry" tip away this
   /// session. The tip is contextual: it appears with the unavailable state,
@@ -268,6 +270,10 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
 
     await _requestPermissions();
 
+    // Read BEFORE the service starts, so the reading belongs to the ride rather
+    // than to whatever the battery had already lost to starting it.
+    final startBattery = await _batteryPct();
+
     final started = await _service.startRide(
       originStationId: journey.originStationId,
       destinationStationId: journey.destinationStationId,
@@ -276,12 +282,14 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
           '${_name(journey.destinationStationId)}',
       sarvamGreeting: _sarvamGreeting,
       sarvamClips: _sarvamClips,
+      startedAt: DateTime.now(),
+      startBatteryPct: startBattery,
     );
 
     if (started) {
+      // The store now owns the history row's seed (see startRide). This field
+      // stays only as the fast path for a ride recorded in the same process.
       _startedJourney = journey;
-      _rideStartedAt = DateTime.now();
-      _rideStartBatteryPct = await _batteryPct();
       // Liveness comes from the store, never from an assumption here.
       await ref.read(liveRideProvider.notifier).refresh();
     }
@@ -303,35 +311,69 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   }
 
   /// Writes the finished ride into history, manual End and service auto-off
-  /// both. Best-effort: a ride the OS killed mid-way leaves no record, and a
-  /// storage failure must never break the teardown path it rides on.
+  /// both.
+  ///
+  /// EVERY FIELD COMES FROM THE STORE, not from widget state. These used to be
+  /// three fields on this screen, which meant a journey that outlived its UI
+  /// completed correctly and then never appeared in History. Swiping the app
+  /// out of recents does exactly that: it does NOT stop the ride (the service
+  /// restarts itself a second later, see ForegroundService.onTaskRemoved), so
+  /// the ride survived and its record did not.
+  ///
+  /// Still best-effort in one narrower sense: a storage failure must never
+  /// break the teardown path it rides on.
   Future<void> _recordRide() async {
-    final journey = _startedJourney;
-    final startedAt = _rideStartedAt;
-    final startBattery = _rideStartBatteryPct;
+    final persisted = await _service.readPersistedRide();
+    final startedAt = persisted.startedAt;
+    final originId = persisted.originId;
+    final destinationId = persisted.destinationId;
     _startedJourney = null;
-    _rideStartedAt = null;
-    _rideStartBatteryPct = null;
-    if (journey == null || startedAt == null) return;
-    final reached = (await _service.readPersistedRide()).destinationReached;
-    // The chain ends at the destination now; the overshoot pins live outside
-    // it, so the journey length is simply the chain.
-    final stationCount = journey.chain.length;
+    if (startedAt == null || originId == null || destinationId == null) return;
+
+    // Re-planned from the ids THE SERVICE WAS HANDED, never from the live
+    // draft: the picker can replan mid-ride while the service keeps riding the
+    // chain it was given. Same reason _startedJourney existed.
+    final journey = _startedJourney ?? _planStored(originId, destinationId);
+    if (journey == null) {
+      setState(() => _logs.insert(0, 'History skipped: cannot replan the ride'));
+      await _service.clearRideRecordSeed();
+      return;
+    }
+
     try {
       await ref.read(appDatabaseProvider).record(
-        originId: journey.originStationId,
-        destinationId: journey.destinationStationId,
-        originName: _name(journey.originStationId),
-        destinationName: _name(journey.destinationStationId),
+        originId: originId,
+        destinationId: destinationId,
+        originName: _name(originId),
+        destinationName: _name(destinationId),
         startedAt: startedAt,
         endedAt: DateTime.now(),
-        reachedDestination: reached,
-        stationCount: stationCount,
-        batteryStartPct: startBattery,
+        reachedDestination: persisted.destinationReached,
+        // The chain ends at the destination now; the overshoot pins live
+        // outside it, so the journey length is simply the chain.
+        stationCount: journey.chain.length,
+        batteryStartPct: persisted.startBatteryPct,
         batteryEndPct: await _batteryPct(),
       );
     } catch (error) {
       setState(() => _logs.insert(0, 'History record failed: $error'));
+    }
+    // Cleared whether or not the write landed, so a later teardown cannot
+    // resurrect a journey that has already been dealt with.
+    await _service.clearRideRecordSeed();
+  }
+
+  /// The journey the service is riding, replanned from the stored ids.
+  Journey? _planStored(String originId, String destinationId) {
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
+    if (repo == null) return null;
+    try {
+      return repo.planner.plan(
+        originId: originId,
+        destinationId: destinationId,
+      );
+    } catch (_) {
+      return null;
     }
   }
 
@@ -448,6 +490,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
 
     if (report.clear) {
       await _start();
+      await _showTravelMode();
       return;
     }
 
@@ -462,6 +505,54 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     );
     if (!mounted || proceed != true) return;
     await _start();
+    await _showTravelMode();
+  }
+
+  /// Screen 4, for a ride that is actually running.
+  ///
+  /// Opened only when the service really started: liveRideProvider is the
+  /// truth, never an assumption here, for the same reason _start refuses to
+  /// claim a ride the store does not report.
+  ///
+  /// It POPS ITSELF when the ride ends, whether the rider held End journey or
+  /// the service wound down on its own. Without that, a rider whose ride
+  /// auto-ended would be left looking at a countdown for a journey that had
+  /// stopped, which is the exact failure the liveRideProvider subscription was
+  /// added to prevent on the debug screen.
+  Future<void> _showTravelMode() async {
+    if (!mounted) return;
+    if (ref.read(liveRideProvider).valueOrNull == null) return;
+    final journey = ref.read(plannedJourneyProvider).journey;
+    if (journey == null) return;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (routeContext) => Consumer(
+          builder: (context, ref, _) {
+            final live = ref.watch(liveRideProvider).valueOrNull;
+            if (live == null) {
+              // The ride is over. Leave on the next frame: popping during a
+              // build is not allowed.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (routeContext.mounted) Navigator.of(routeContext).maybePop();
+              });
+            }
+            return TravelModeScreen(
+              journey: journey,
+              reachedIndex: live?.reachedIndex ?? -1,
+              wakeChoice: _wakeChoice,
+              onWakeChoiceChanged: (next) => setState(() => _wakeChoice = next),
+              onEndJourney: () async {
+                await _stop();
+                if (routeContext.mounted) {
+                  Navigator.of(routeContext).maybePop();
+                }
+              },
+            );
+          },
+        ),
+      ),
+    );
   }
 
   /// Screen 4, as a preview. Uses the real planner and a mid-chain position, so
@@ -488,6 +579,27 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
             onWakeChoiceChanged: (next) => setLocal(() => choice = next),
             onEndJourney: () => Navigator.of(context).maybePop(),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// The wake alert, as a preview.
+  ///
+  /// NOT WIRED. The live alert path is the ride-proven one on this screen (the
+  /// "I'm awake" button beside Announce) and it is the single most
+  /// safety-critical control in the app, so replacing it is its own decision.
+  Future<void> _previewWakeAlert() async {
+    final draft = ref.read(journeyDraftProvider);
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => WakeAlertScreen(
+          destinationName:
+              repo?.stationsById[draft.destinationId]?.name ?? 'Kalyan',
+          lastPassedLine: 'Thakurli passed 19:49',
+          onAcknowledge: () => Navigator.of(context).maybePop(),
         ),
       ),
     );
@@ -934,6 +1046,21 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                             color: Palette.textDim(0.6),
                           ),
                           onPressed: _previewTravelMode,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      SizedBox(
+                        width: 22,
+                        child: IconButton(
+                          key: const Key('wake_alert_preview_button'),
+                          padding: EdgeInsets.zero,
+                          iconSize: 18,
+                          tooltip: 'Preview the wake alert',
+                          icon: Icon(
+                            Icons.notifications_active_outlined,
+                            color: Palette.textDim(0.6),
+                          ),
+                          onPressed: _previewWakeAlert,
                         ),
                       ),
                       const Spacer(),
@@ -1397,21 +1524,13 @@ class _JourneyCta extends StatelessWidget {
     );
 
     if (!isRunning) {
-      return ElevatedButton(
-        onPressed: canStart ? onStart : null,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Palette.crimson,
-          foregroundColor: Palette.text,
-          disabledBackgroundColor: Palette.surfaceSolid,
-          disabledForegroundColor: Palette.textDim(0.35),
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          shape: shape,
-          elevation: 0,
-        ),
-        child: const Text(
-          'Start journey',
-          style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-        ),
+      // Slide, not tap. Both ends of a ride are deliberate gestures now, and
+      // deliberately different ones: slide to begin, hold to stop, so a
+      // half-asleep rider cannot do one while meaning the other.
+      return SlideToStart(
+        label: 'Slide to start',
+        enabled: canStart,
+        onStart: onStart,
       );
     }
 

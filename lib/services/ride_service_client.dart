@@ -82,7 +82,17 @@ class PersistedRide {
     required this.destinationId,
     required this.destinationReached,
     this.reachedIndex = -1,
+    this.startedAt,
+    this.startBatteryPct,
   });
+
+  /// When the ride started, or null if no ride is running. The history row is
+  /// assembled from here rather than from widget state, so swiping the app out
+  /// of recents does not cost the journey its record.
+  final DateTime? startedAt;
+
+  /// Battery at ride start, or null when the platform would not say.
+  final int? startBatteryPct;
 
   final String? originId;
   final String? destinationId;
@@ -339,7 +349,29 @@ class RideServiceClient {
               key: reachedIndexKey,
             ) ??
             -1,
+        startedAt: _dateFromMillis(
+          await FlutterForegroundTask.getData<int>(key: rideStartedAtKey),
+        ),
+        startBatteryPct: _batteryFromStore(
+          await FlutterForegroundTask.getData<int>(key: rideStartBatteryKey),
+        ),
       );
+
+  static DateTime? _dateFromMillis(int? millis) =>
+      millis == null || millis <= 0
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(millis);
+
+  /// -1 is the store's way of saying the platform would not give a reading.
+  static int? _batteryFromStore(int? pct) =>
+      pct == null || pct < 0 ? null : pct;
+
+  /// Clears the history row's seed once the row is written, so a later read
+  /// cannot resurrect a journey that has already been recorded.
+  Future<void> clearRideRecordSeed() async {
+    await FlutterForegroundTask.saveData(key: rideStartedAtKey, value: 0);
+    await FlutterForegroundTask.saveData(key: rideStartBatteryKey, value: -1);
+  }
 
   Future<void> requestBatteryOptimizationExemption() async {
     if (Platform.isAndroid &&
@@ -359,6 +391,8 @@ class RideServiceClient {
     required String notificationText,
     required bool sarvamGreeting,
     required bool sarvamClips,
+    required DateTime startedAt,
+    int? startBatteryPct,
   }) async {
     await FlutterForegroundTask.saveData(
       key: originIdKey,
@@ -373,6 +407,17 @@ class RideServiceClient {
     await FlutterForegroundTask.saveData(
       key: destinationReachedKey,
       value: false,
+    );
+    // The history row's seed, stored beside the ride rather than held in a
+    // widget, so a journey survives the app being swiped out of recents with
+    // its record intact. -1 means "the platform would not say".
+    await FlutterForegroundTask.saveData(
+      key: rideStartedAtKey,
+      value: startedAt.millisecondsSinceEpoch,
+    );
+    await FlutterForegroundTask.saveData(
+      key: rideStartBatteryKey,
+      value: startBatteryPct ?? -1,
     );
     await FlutterForegroundTask.saveData(
       key: sarvamGreetingKey,

@@ -24,12 +24,19 @@ class FakeRideServiceClient implements RideServiceClient {
     this.originId,
     this.destinationId,
     this.destinationReached = false,
+    this.startedAt,
+    this.startBatteryPct,
   });
 
   bool running;
   String? originId;
   String? destinationId;
   bool destinationReached;
+
+  /// The history row's seed, which lives in the real store so a ride swiped out
+  /// of recents keeps its record.
+  DateTime? startedAt;
+  int? startBatteryPct;
 
   /// Every command the screen sent, in order, for assertions.
   final List<String> commands = [];
@@ -56,7 +63,16 @@ class FakeRideServiceClient implements RideServiceClient {
         originId: originId,
         destinationId: destinationId,
         destinationReached: destinationReached,
+        startedAt: startedAt,
+        startBatteryPct: startBatteryPct,
       );
+
+  @override
+  Future<void> clearRideRecordSeed() async {
+    commands.add('clearRideRecordSeed');
+    startedAt = null;
+    startBatteryPct = null;
+  }
 
   @override
   Future<bool> startRide({
@@ -65,11 +81,15 @@ class FakeRideServiceClient implements RideServiceClient {
     required String notificationText,
     required bool sarvamGreeting,
     required bool sarvamClips,
+    required DateTime startedAt,
+    int? startBatteryPct,
   }) async {
     commands.add('startRide:$originStationId->$destinationStationId');
     running = true;
     originId = originStationId;
     destinationId = destinationStationId;
+    this.startedAt = startedAt;
+    this.startBatteryPct = startBatteryPct;
     return true;
   }
 

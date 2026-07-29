@@ -34,6 +34,16 @@ const destinationReachedKey = 'destination_reached';
 /// action, the way the destination already survives that.
 const reachedIndexKey = 'reached_index';
 
+/// When the ride started, epoch millis, and the battery it started on.
+///
+/// THE HISTORY ROW'S SEED. These used to be widget fields, so swiping the app
+/// out of recents (which does NOT stop the ride: the service restarts itself a
+/// second later) completed a journey that then never appeared in History. The
+/// ride survived and its record did not. They live beside the ride now, for the
+/// same reason the destination does.
+const rideStartedAtKey = 'ride_started_at';
+const rideStartBatteryKey = 'ride_start_battery';
+
 /// Wind-down action ids, shared by the notification buttons and the debug
 /// screen's sendDataToTask messages.
 const windDownEndNowId = 'wind_down_end_now';

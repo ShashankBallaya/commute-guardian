@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:commute_guardian/data/app_database.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/main.dart';
+import 'package:commute_guardian/widgets/slide_to_start.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
 
@@ -102,11 +103,11 @@ void main() {
     expect(find.text('Pick an origin and a destination.'), findsOneWidget);
 
     // Starting the service with no journey would run a ride nobody chose. The
-    // button stays dead until JourneyPlanner has actually planned one.
-    final start = tester.widget<ElevatedButton>(
-      find.widgetWithText(ElevatedButton, 'Start journey'),
-    );
-    expect(start.onPressed, isNull);
+    // track stays dead until JourneyPlanner has actually planned one, and a
+    // dead track does not move at all: a slider that travels and then snaps
+    // back says "broken" where a still one says "not yet".
+    final start = tester.widget<SlideToStart>(find.byType(SlideToStart));
+    expect(start.enabled, isFalse);
   });
 
   testWidgets('the Sarvam greeting bench flag exists and defaults OFF', (
@@ -135,10 +136,8 @@ void main() {
     expect(find.textContaining('Kalyan → Thakurli'), findsOneWidget);
     expect(find.textContaining('No change of train.'), findsOneWidget);
 
-    final start = tester.widget<ElevatedButton>(
-      find.widgetWithText(ElevatedButton, 'Start journey'),
-    );
-    expect(start.onPressed, isNotNull);
+    final start = tester.widget<SlideToStart>(find.byType(SlideToStart));
+    expect(start.enabled, isTrue);
   });
 
   testWidgets('the open search sheet says which end it is setting', (
@@ -278,6 +277,52 @@ void main() {
     // And the screen knows a ride is live: End is offered, Start is not.
     expect(find.text('End journey'), findsOneWidget);
     expect(find.text('Start Travel Mode'), findsNothing);
+  });
+
+  testWidgets('a ride whose UI died still gets its history row', (
+    tester,
+  ) async {
+    // SWIPING THE APP OUT OF RECENTS DOES NOT STOP THE RIDE. The foreground
+    // service restarts itself about a second later (no stopWithTask flag, so
+    // ForegroundService.onTaskRemoved sets a restart alarm), and the journey
+    // carries on watching for the stop. Until 29 Jul the history row was three
+    // widget fields, so the ride survived and its RECORD did not: the rider
+    // was woken correctly and the journey then never appeared in History.
+    //
+    // This pumps a screen that never saw the ride start, exactly as a recreated
+    // process has not, and ends the ride from there.
+    final startedAt = DateTime(2026, 7, 29, 18, 30);
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+      startedAt: startedAt,
+      startBatteryPct: 82,
+    );
+    final db = AppDatabase.inMemory();
+    addTearDown(db.close);
+    await _pumpScreen(tester, service: service, history: db);
+
+    // Hold, not tap: End journey is hold-to-confirm here too.
+    await tester.longPress(find.text('End journey'));
+    // Past the battery read's 2 s timeout: battery_plus never answers under the
+    // test binding, and the record waits on it.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    final rides = await db.recent();
+    expect(rides, hasLength(1), reason: 'the journey must be recorded');
+    expect(rides.single.originName, 'Kalyan');
+    expect(rides.single.destinationName, 'Thane');
+    expect(rides.single.startedAt, startedAt);
+    expect(rides.single.batteryStartPct, 82);
+    expect(
+      rides.single.stationCount,
+      greaterThan(1),
+      reason: 'replanned from the ids the service was handed',
+    );
+    // The seed is cleared so a later teardown cannot write the ride twice.
+    expect(service.commands, contains('clearRideRecordSeed'));
   });
 
   testWidgets('a screen born with no ride running offers Start, not End', (
