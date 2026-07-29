@@ -5,6 +5,7 @@ import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/screens/home_screen.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
+import 'package:commute_guardian/widgets/pressable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -115,6 +116,40 @@ void main() {
     // The whole card is the target and it starts a ride. There is deliberately
     // no second control on the row: every card is a live trigger.
     expect(started, ['thane']);
+  });
+
+  testWidgets('every tappable surface answers the press', (tester) async {
+    // Tapping a card STARTS A JOURNEY, and starting one does database and GPS
+    // work, so the gap between the tap and any visible response is long enough
+    // for a rider to wonder whether it registered. Each of these was a bare
+    // GestureDetector until 29 Jul 2026.
+    await pumpHome(
+      tester,
+      history: await historyWith([('thane', 'Thane')]),
+    );
+
+    for (final key in ['destination_card_thane', 'new_journey', 'status_chip']) {
+      expect(
+        find.ancestor(
+          of: find.byKey(Key(key)),
+          matching: find.byType(Pressable),
+        ).evaluate().isNotEmpty ||
+            tester.widget(find.byKey(Key(key))) is Pressable,
+        isTrue,
+        reason: '$key must give press feedback',
+      );
+    }
+  });
+
+  testWidgets('the first-run CTA answers the press too', (tester) async {
+    await pumpHome(tester, history: await historyWith([]));
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('start_first_journey')),
+        matching: find.byType(Pressable),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a daily destination appears once, not once per ride', (

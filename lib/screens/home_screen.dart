@@ -8,6 +8,7 @@ import '../state/journey_providers.dart';
 import '../state/ride_providers.dart';
 import '../theme/palette.dart';
 import '../widgets/mini_rail.dart';
+import '../widgets/pressable.dart';
 import '../widgets/status_chip.dart';
 
 /// Screen 1, Home. The screen a rider opens, and on a good day the only one
@@ -202,7 +203,7 @@ class _DestinationCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Pressable(
       key: Key('destination_card_${ride.destinationId}'),
       onTap: onTap,
       child: Container(
@@ -237,7 +238,7 @@ class _NewJourneyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Pressable(
       key: const Key('new_journey'),
       onTap: onTap,
       child: Container(
@@ -266,7 +267,7 @@ class _CrimsonCta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Pressable(
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(

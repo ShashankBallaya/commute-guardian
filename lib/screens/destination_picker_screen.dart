@@ -6,6 +6,7 @@ import '../models/station.dart';
 import '../state/journey_providers.dart';
 import '../state/ride_providers.dart';
 import '../theme/palette.dart';
+import '../widgets/pressable.dart';
 
 /// Screen 2, New journey. The DESTINATION picker, and only that.
 ///
@@ -327,9 +328,8 @@ class _StationRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return PressableRow(
       key: Key('station_row_${station.id}'),
-      behavior: HitTestBehavior.opaque,
       onTap: () => onPicked(station),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 11),

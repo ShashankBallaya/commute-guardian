@@ -6,6 +6,7 @@ import 'package:commute_guardian/models/station.dart';
 import 'package:commute_guardian/screens/destination_picker_screen.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
+import 'package:commute_guardian/widgets/pressable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -145,6 +146,33 @@ void main() {
     // The whole row is the trigger and nothing else lives on it, which is why
     // the save star was removed.
     expect(picked.map((s) => s.id), ['kalyan']);
+  });
+
+  testWidgets('a row answers the press before the ride starts', (tester) async {
+    // The highest-stakes tap on this screen: it picks the destination AND the
+    // caller starts the ride. It was a bare GestureDetector until 29 Jul 2026,
+    // so it gave the rider nothing back. A row tints rather than scaling: a
+    // scale would pull it away from the card edges it is aligned to.
+    await pumpPicker(tester);
+    await type(tester, 'Kyn');
+
+    final row = find.byKey(const Key('station_row_kalyan'));
+    expect(tester.widget(row), isA<PressableRow>());
+
+    Color rowTint() {
+      final box = tester.widget<AnimatedContainer>(
+        find.descendant(of: row, matching: find.byType(AnimatedContainer)),
+      );
+      return (box.decoration! as BoxDecoration).color!;
+    }
+
+    expect(rowTint().a, 0.0);
+    final press = await tester.startGesture(tester.getCenter(row));
+    // Past kPressTimeout: onTapDown is not reported before then.
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(rowTint().a, greaterThan(0.0));
+    await press.up();
+    await tester.pumpAndSettle();
   });
 
   testWidgets("the resting list leads with the rider's own line", (

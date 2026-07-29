@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../state/journey_providers.dart';
 import '../theme/palette.dart';
+import 'pressable.dart';
 
 /// "You're near: Dadar", the quiet live chip at the top of every pre-ride
 /// screen.
@@ -40,56 +41,60 @@ class StatusChip extends StatelessWidget {
         ),
     };
 
-    return GestureDetector(
-      key: const Key('status_chip'),
-      onTap: onTap,
-      child: _chipBody(dotColor, label, station),
+    // The Align sits OUTSIDE the press target on purpose. The chip hugs its
+    // content and the Align stretches full width, so scaling the Align would
+    // scale that full-width box and slide the chip toward the centre instead
+    // of scaling it where it sits.
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Pressable(
+        key: const Key('status_chip'),
+        onTap: onTap,
+        child: _chipBody(dotColor, label, station),
+      ),
     );
   }
 
   Widget _chipBody(Color dotColor, String label, String? station) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        decoration: Palette.glassCard(radius: 28),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                color: dotColor,
-                shape: BoxShape.circle,
-                // The glow is the "live/tracking now" signal, locked at 40%.
-                boxShadow: state == GpsState.located
-                    ? [
-                        BoxShadow(
-                          color: Palette.dotGreen.withValues(alpha: 0.4),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
-                      ]
-                    : null,
-              ),
+    return Container(
+      decoration: Palette.glassCard(radius: 28),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: dotColor,
+              shape: BoxShape.circle,
+              // The glow is the "live/tracking now" signal, locked at 40%.
+              boxShadow: state == GpsState.located
+                  ? [
+                      BoxShadow(
+                        color: Palette.dotGreen.withValues(alpha: 0.4),
+                        blurRadius: 8,
+                        spreadRadius: 2,
+                      ),
+                    ]
+                  : null,
             ),
-            const SizedBox(width: 10),
-            Text.rich(
-              TextSpan(
-                text: label,
-                children: [
-                  if (station != null)
-                    TextSpan(
-                      text: station,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                ],
-              ),
-              style: TextStyle(fontSize: 15, color: Palette.textDim(0.9)),
+          ),
+          const SizedBox(width: 10),
+          Text.rich(
+            TextSpan(
+              text: label,
+              children: [
+                if (station != null)
+                  TextSpan(
+                    text: station,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+              ],
             ),
-          ],
-        ),
+            style: TextStyle(fontSize: 15, color: Palette.textDim(0.9)),
+          ),
+        ],
       ),
     );
   }
