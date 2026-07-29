@@ -107,7 +107,9 @@ void main() {
     expect(r.choices, [WakeChoice.onlyDestination]);
   });
 
-  testWidgets('a tap never ends the journey, only a hold does', (tester) async {
+  testWidgets('a tap never ends the journey, only a full hold does', (
+    tester,
+  ) async {
     // The rider is asleep with the phone in a pocket. An accidental brush must
     // not end the ride that is watching for their stop.
     final r = await pump(tester, reachedIndex: 2);
@@ -116,9 +118,44 @@ void main() {
     await tester.pumpAndSettle();
     expect(r.ends, isEmpty, reason: 'a tap is not a confirmation');
 
+    // A FLUTTER LONG PRESS IS NOT ENOUGH, and that is the fix this pins. It
+    // lands at ~500 ms while the fill runs for 1200 ms, so the journey used to
+    // end when the bar was about 40 percent across: the screen promised one
+    // thing and the button did another.
     await tester.longPress(find.byKey(const Key('end_journey')));
     await tester.pumpAndSettle();
+    expect(
+      r.ends,
+      isEmpty,
+      reason: 'releasing before the fill completes must not end the ride',
+    );
+
+    // Held for the whole fill.
+    final hold = await tester.startGesture(
+      tester.getCenter(find.byKey(const Key('end_journey'))),
+    );
+    await tester.pump(const Duration(milliseconds: 1300));
+    await hold.up();
+    await tester.pumpAndSettle();
     expect(r.ends, hasLength(1));
+  });
+
+  testWidgets('letting go part way cancels, and nothing is confirmed later', (
+    tester,
+  ) async {
+    // A rider who starts the hold and changes their mind must not have the ride
+    // end on them a second later.
+    final r = await pump(tester, reachedIndex: 2);
+
+    final hold = await tester.startGesture(
+      tester.getCenter(find.byKey(const Key('end_journey'))),
+    );
+    await tester.pump(const Duration(milliseconds: 700));
+    await hold.up();
+    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pumpAndSettle();
+
+    expect(r.ends, isEmpty);
   });
 
   testWidgets('it fits a 3T, which the 390pt frame does not prove', (

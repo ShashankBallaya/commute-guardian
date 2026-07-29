@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/journey.dart';
 import '../models/station.dart';
 import '../theme/palette.dart';
+import '../theme/type_scale.dart';
 import '../widgets/pressable.dart';
 
 /// Screen 4, Travel Mode. The app's home for the whole journey.
@@ -19,6 +22,17 @@ import '../widgets/pressable.dart';
 /// shipped as a fabricated time, because a wrong arrival time on this screen is
 /// worse than no arrival time: the whole product is a promise about when to
 /// wake up. [etaLine] is the seam it will land on.
+///
+/// MOTION, and mostly the absence of it. This screen is OPEN IN A POCKET for
+/// the length of a journey, and its battery draw is already over the handover's
+/// budget at 9 to 10 percent an hour. So exactly one thing animates: the
+/// remaining-station count, because a change there is the actual news and
+/// happens every few minutes. Two things were deliberately NOT animated:
+///   - The "you are here" dot does NOT pulse. A continuous animation on a
+///     screen held for 45+ minutes is the one shape this app cannot afford, and
+///     the glow already says "live" without costing a frame.
+///   - The station list does NOT stagger in. Stagger is an entrance effect, and
+///     this list is not entering; it is a place the rider keeps coming back to.
 class TravelModeScreen extends StatelessWidget {
   const TravelModeScreen({
     super.key,
@@ -140,13 +154,34 @@ class _Header extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    '$stationsRemaining',
-                    style: const TextStyle(
-                      fontSize: 46,
-                      height: 1,
-                      fontWeight: FontWeight.w700,
-                      color: Palette.dotGreen,
+                  // THE ONE ANIMATED THING ON THIS SCREEN, and the only one
+                  // that earns it: the count changing IS the news, roughly once
+                  // every few minutes. It rises as it fades, so the direction
+                  // of travel reads without being read. Everything else here is
+                  // static on purpose (see the class comment).
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: const Cubic(0.23, 1, 0.32, 1),
+                    switchOutCurve: const Cubic(0.23, 1, 0.32, 1),
+                    transitionBuilder: (child, animation) => FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween(
+                          begin: const Offset(0, 0.35),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
+                      ),
+                    ),
+                    child: Text(
+                      '$stationsRemaining',
+                      key: ValueKey(stationsRemaining),
+                      style: const TextStyle(
+                        fontSize: TypeScale.hero,
+                        height: 1,
+                        fontWeight: FontWeight.w700,
+                        color: Palette.dotGreen,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -161,7 +196,7 @@ class _Header extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 15,
+                          fontSize: TypeScale.body,
                           color: Palette.textDim(0.75),
                         ),
                       ),
@@ -173,7 +208,7 @@ class _Header extends StatelessWidget {
               Text(
                 destinationName,
                 style: const TextStyle(
-                  fontSize: 21,
+                  fontSize: TypeScale.title,
                   fontWeight: FontWeight.w700,
                   color: Palette.text,
                 ),
@@ -182,7 +217,7 @@ class _Header extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   etaLine!,
-                  style: TextStyle(fontSize: 15, color: Palette.textDim(0.6)),
+                  style: TextStyle(fontSize: TypeScale.body, color: Palette.textDim(0.6)),
                 ),
               ],
             ],
@@ -210,7 +245,7 @@ class _ShieldBadge extends StatelessWidget {
           Text(
             'Wake-up\nmode active',
             style: TextStyle(
-              fontSize: 12.5,
+              fontSize: TypeScale.caption,
               height: 1.25,
               color: Palette.textDim(0.85),
             ),
@@ -276,8 +311,18 @@ class _ChainCard extends StatelessWidget {
     return Container(
       decoration: Palette.glassCard(radius: 20),
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
+      // The bottom edge FADES rather than cutting a row in half. On the 3T a
+      // hard clip against the card border read as a broken row instead of as
+      // more content below, which is the difference between a screen that looks
+      // wrong and one that looks scrollable.
+      child: ShaderMask(
+        shaderCallback: (rect) => const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.white, Colors.white, Colors.transparent],
+          stops: [0, 0.88, 1],
+        ).createShader(rect),
+        blendMode: BlendMode.dstIn,
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -317,7 +362,7 @@ class _ChainRow extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                fontSize: 15,
+                fontSize: TypeScale.body,
                 fontWeight:
                     kind == _RowKind.here ? FontWeight.w700 : FontWeight.w400,
                 color: dimmed ? Palette.textDim(0.5) : Palette.text,
@@ -406,7 +451,7 @@ class _WakeCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: TypeScale.body,
                     fontWeight: FontWeight.w700,
                     color: Palette.text,
                   ),
@@ -415,7 +460,7 @@ class _WakeCard extends StatelessWidget {
                   'before my stop',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 13, color: Palette.textDim(0.7)),
+                  style: TextStyle(fontSize: TypeScale.label, color: Palette.textDim(0.7)),
                 ),
               ],
             ),
@@ -482,31 +527,38 @@ class _WakeToggle extends StatelessWidget {
     return Pressable(
       key: key,
       onTap: onTap,
-      child: Container(
-        // greenSoft is the locked wash for a selected segment.
+      child: AnimatedContainer(
+        // A select-class control, so it sits in the 150 to 250 ms band. The
+        // wash used to snap, which made a deliberate choice feel like a
+        // rendering glitch. greenSoft is the locked wash for a selected
+        // segment.
+        duration: const Duration(milliseconds: 180),
+        curve: const Cubic(0.23, 1, 0.32, 1),
         decoration: BoxDecoration(
-          color: selected ? Palette.greenSoft : null,
+          color: selected ? Palette.greenSoft : Palette.greenSoft.withValues(alpha: 0),
           borderRadius: BorderRadius.circular(11),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              top,
+            AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 180),
               style: TextStyle(
-                fontSize: 14,
+                fontSize: TypeScale.label,
                 color: selected ? Palette.dotGreen : Palette.text,
               ),
+              child: Text(top),
             ),
-            Text(
-              bottom,
+            AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 180),
               style: TextStyle(
-                fontSize: 11.5,
+                fontSize: TypeScale.caption,
                 color: selected
                     ? Palette.dotGreen.withValues(alpha: 0.85)
                     : Palette.textDim(0.7),
               ),
+              child: Text(bottom),
             ),
           ],
         ),
@@ -533,10 +585,34 @@ class _EndJourneyButtonState extends State<_EndJourneyButton> {
   static const _holdDuration = Duration(milliseconds: 1200);
 
   bool _held = false;
+  Timer? _holdTimer;
 
+  /// THE FILL AND THE CONFIRMATION MUST BE THE SAME EVENT.
+  ///
+  /// This used to fire on GestureDetector.onLongPress, which lands at Flutter's
+  /// ~500 ms long-press threshold while the fill animates over 1200 ms. The
+  /// journey therefore ended when the bar was about 40 percent across: the
+  /// screen promised one thing and the button did another, on the one control
+  /// that can stop a rider being woken. The timer runs for exactly the fill's
+  /// duration, so what the rider watches IS what they are waiting for.
   void _setHeld(bool held) {
     if (_held == held) return;
     setState(() => _held = held);
+
+    _holdTimer?.cancel();
+    if (held) {
+      _holdTimer = Timer(_holdDuration, () {
+        if (!mounted) return;
+        setState(() => _held = false);
+        widget.onConfirmed();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -549,10 +625,6 @@ class _EndJourneyButtonState extends State<_EndJourneyButton> {
       onTapDown: (_) => _setHeld(true),
       onTapUp: (_) => _setHeld(false),
       onTapCancel: () => _setHeld(false),
-      onLongPress: () {
-        _setHeld(false);
-        widget.onConfirmed();
-      },
       child: Stack(
         children: [
           Container(
@@ -589,7 +661,7 @@ class _EndJourneyButtonState extends State<_EndJourneyButton> {
                   const Text(
                     'End journey',
                     style: TextStyle(
-                      fontSize: 19,
+                      fontSize: TypeScale.heading,
                       fontWeight: FontWeight.w700,
                       color: Palette.text,
                     ),
@@ -597,7 +669,7 @@ class _EndJourneyButtonState extends State<_EndJourneyButton> {
                   Text(
                     'hold to confirm',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: TypeScale.caption,
                       color: Palette.textDim(0.8),
                     ),
                   ),
