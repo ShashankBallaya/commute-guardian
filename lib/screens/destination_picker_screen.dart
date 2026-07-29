@@ -6,6 +6,7 @@ import '../models/station.dart';
 import '../state/journey_providers.dart';
 import '../state/ride_providers.dart';
 import '../theme/palette.dart';
+import '../theme/type_scale.dart';
 import '../widgets/pressable.dart';
 
 /// Screen 2, New journey. The DESTINATION picker, and only that.
@@ -122,7 +123,7 @@ class _Header extends StatelessWidget {
         const Text(
           'New journey',
           style: TextStyle(
-            fontSize: 19,
+            fontSize: TypeScale.heading,
             fontWeight: FontWeight.w600,
             color: Palette.text,
           ),
@@ -158,12 +159,12 @@ class _SearchField extends StatelessWidget {
               onChanged: onChanged,
               autofocus: true,
               cursorColor: Palette.dotGreen,
-              style: const TextStyle(fontSize: 19, color: Palette.text),
+              style: const TextStyle(fontSize: TypeScale.bodyLarge, color: Palette.text),
               decoration: InputDecoration(
                 // The screen only ever sets the destination, so the hint says
                 // so. "Search station" never told the rider which end.
                 hintText: 'Where to?',
-                hintStyle: TextStyle(fontSize: 19, color: Palette.textDim(0.5)),
+                hintStyle: TextStyle(fontSize: TypeScale.bodyLarge, color: Palette.textDim(0.5)),
                 filled: false,
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
@@ -270,7 +271,7 @@ class _Results extends StatelessWidget {
         padding: const EdgeInsets.only(top: 8),
         child: Text(
           'No station by that name.',
-          style: TextStyle(fontSize: 15, color: Palette.textDim(0.5)),
+          style: TextStyle(fontSize: TypeScale.body, color: Palette.textDim(0.5)),
         ),
       );
     }
@@ -304,7 +305,7 @@ class _StationCard extends StatelessWidget {
             Text(
               eyebrow!,
               style: TextStyle(
-                fontSize: 13,
+                fontSize: TypeScale.caption,
                 letterSpacing: 0.4,
                 color: Palette.textDim(0.45),
               ),
@@ -340,7 +341,7 @@ class _StationRow extends StatelessWidget {
             Expanded(
               child: Text(
                 station.name,
-                style: const TextStyle(fontSize: 19, color: Palette.text),
+                style: const TextStyle(fontSize: TypeScale.bodyLarge, color: Palette.text),
               ),
             ),
             // The code is on the platform boards, and it is what separates
@@ -348,7 +349,7 @@ class _StationRow extends StatelessWidget {
             Text(
               station.code,
               style: TextStyle(
-                fontSize: 12,
+                fontSize: TypeScale.caption,
                 fontFeatures: const [FontFeature.tabularFigures()],
                 color: Palette.textDim(0.45),
               ),

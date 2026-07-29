@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/app_database.dart';
 import '../state/ride_providers.dart';
 import '../theme/palette.dart';
+import '../theme/type_scale.dart';
 
 /// Screen 7, History. Every ride this phone has recorded, newest first.
 ///
@@ -49,7 +50,7 @@ class HistoryScreen extends ConsumerWidget {
                   const Text(
                     'History',
                     style: TextStyle(
-                      fontSize: 19,
+                      fontSize: TypeScale.heading,
                       fontWeight: FontWeight.w600,
                       color: Palette.text,
                     ),
@@ -96,7 +97,7 @@ class _Empty extends StatelessWidget {
       padding: const EdgeInsets.only(top: 24),
       child: Text(
         message,
-        style: TextStyle(fontSize: 15, color: Palette.textDim(0.55)),
+        style: TextStyle(fontSize: TypeScale.label, color: Palette.textDim(0.55)),
       ),
     );
   }
@@ -133,7 +134,7 @@ class _RideRow extends StatelessWidget {
                     ],
                   ),
                   style: const TextStyle(
-                    fontSize: 17,
+                    fontSize: TypeScale.bodyLarge,
                     fontWeight: FontWeight.w700,
                     color: Palette.text,
                   ),
@@ -144,7 +145,7 @@ class _RideRow extends StatelessWidget {
               // be read down rather than across.
               Text(
                 durationLabel(ride.startedAt, ride.endedAt),
-                style: TextStyle(fontSize: 15, color: Palette.textDim(0.55)),
+                style: TextStyle(fontSize: TypeScale.label, color: Palette.textDim(0.55)),
               ),
             ],
           ),
@@ -172,7 +173,7 @@ class _RideRow extends StatelessWidget {
                 ),
               ],
             ),
-            style: TextStyle(fontSize: 13, color: Palette.textDim(0.45)),
+            style: TextStyle(fontSize: TypeScale.caption, color: Palette.textDim(0.45)),
           ),
         ],
       ),

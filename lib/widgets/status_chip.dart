@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../state/journey_providers.dart';
 import '../theme/palette.dart';
+import '../theme/type_scale.dart';
 import 'pressable.dart';
 
 /// "You're near: Dadar", the quiet live chip at the top of every pre-ride
@@ -92,7 +93,7 @@ class StatusChip extends StatelessWidget {
                   ),
               ],
             ),
-            style: TextStyle(fontSize: 15, color: Palette.textDim(0.9)),
+            style: TextStyle(fontSize: TypeScale.body, color: Palette.textDim(0.9)),
           ),
         ],
       ),

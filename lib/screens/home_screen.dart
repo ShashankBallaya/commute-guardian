@@ -7,6 +7,7 @@ import '../data/app_database.dart';
 import '../state/journey_providers.dart';
 import '../state/ride_providers.dart';
 import '../theme/palette.dart';
+import '../theme/type_scale.dart';
 import '../widgets/mini_rail.dart';
 import '../widgets/pressable.dart';
 import '../widgets/status_chip.dart';
@@ -128,7 +129,7 @@ class _FirstRun extends StatelessWidget {
         Text(
           "Doze off. We'll wake you before your stop.",
           style: TextStyle(
-            fontSize: 26,
+            fontSize: TypeScale.display,
             height: 1.25,
             fontWeight: FontWeight.w700,
             color: Palette.text,
@@ -138,7 +139,7 @@ class _FirstRun extends StatelessWidget {
         Text(
           'Save a route at the end of your first journey and it will be one '
           'tap from here.',
-          style: TextStyle(fontSize: 14, height: 1.4, color: Palette.textDim(0.55)),
+          style: TextStyle(fontSize: TypeScale.label, height: 1.4, color: Palette.textDim(0.55)),
         ),
         const SizedBox(height: 28),
         _CrimsonCta(
@@ -171,7 +172,7 @@ class _Recents extends StatelessWidget {
         Text(
           'Recent',
           style: TextStyle(
-            fontSize: 13,
+            fontSize: TypeScale.caption,
             letterSpacing: 0.4,
             color: Palette.textDim(0.45),
           ),
@@ -215,7 +216,7 @@ class _DestinationCard extends StatelessWidget {
               child: Text(
                 ride.destinationName,
                 style: const TextStyle(
-                  fontSize: 22,
+                  fontSize: TypeScale.title,
                   fontWeight: FontWeight.w700,
                   color: Palette.text,
                 ),
@@ -248,7 +249,7 @@ class _NewJourneyButton extends StatelessWidget {
           child: Text(
             'New journey',
             style: TextStyle(
-              fontSize: 16,
+              fontSize: TypeScale.bodyLarge,
               fontWeight: FontWeight.w600,
               color: Palette.textDim(0.85),
             ),
@@ -279,7 +280,7 @@ class _CrimsonCta extends StatelessWidget {
           child: Text(
             label,
             style: const TextStyle(
-              fontSize: 18,
+              fontSize: TypeScale.heading,
               fontWeight: FontWeight.w700,
               color: Palette.text,
             ),

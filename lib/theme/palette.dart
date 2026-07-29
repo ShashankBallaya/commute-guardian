@@ -28,6 +28,18 @@ abstract final class Palette {
   /// because they float over arbitrary content (sheets, snackbars).
   static const surfaceSolid = Color(0xFF111926);
 
+  /// The glass card fill, and the value the WIREFRAME FRAMES actually draw.
+  ///
+  /// The wireframe disagrees with itself, found 29 Jul 2026. Its token board
+  /// documents the glass as `#172335 @ 20%` (solid #111926) and its rendered
+  /// phone frames use `rgba(23,35,53,.35)`, which composites over [ground] to
+  /// #121B29. Every frame the owner has designed against is the lighter one, so
+  /// that is the one the app follows; the token board is the stale half.
+  ///
+  /// Opaque for the same reason [glassCard] stopped using [surface]: a
+  /// translucent fill lets the card's own drop shadow bleed through it.
+  static const surfaceGlass = Color(0xFF121B29);
+
   static const hairline = Color(0x14FEFEFE);
   static const shadow = Color(0x33000000);
 
@@ -48,8 +60,20 @@ abstract final class Palette {
   /// Fill, hairline border and shadow together: a glass card that is right by
   /// construction. No blur, it has nothing to bite on a flat ground (see the
   /// glassmorphism note in the design system).
+  ///
+  /// THE FILL IS OPAQUE, and it has to be. Measured off the 3T on 29 Jul 2026:
+  /// with the translucent [surface] the card's own drop shadow showed THROUGH
+  /// its own fill, and the shadow darkened more than the fill lightened. Card
+  /// interiors came out at #0F1521 against a #0F1722 ground, so every glass
+  /// surface in the app was rendering DARKER than the background it was meant
+  /// to sit above. The lift was not weak, it was inverted.
+  ///
+  /// [surfaceSolid] is [surface] already composited over [ground], so this is
+  /// the colour the design always intended (#111926); making it opaque changes
+  /// nothing about the intent and only stops the shadow bleeding through. The
+  /// ground is flat, so there is never anything behind a card worth seeing.
   static BoxDecoration glassCard({double radius = 20}) => BoxDecoration(
-        color: surface,
+        color: surfaceGlass,
         borderRadius: BorderRadius.circular(radius),
         border: Border.all(color: hairline),
         boxShadow: const [

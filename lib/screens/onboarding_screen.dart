@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/permissions_gateway.dart';
 import '../state/ride_providers.dart';
 import '../theme/palette.dart';
+import '../theme/type_scale.dart';
 import '../widgets/mini_rail.dart';
 
 final permissionsGatewayProvider =
@@ -240,7 +241,7 @@ class _Panel extends StatelessWidget {
                 Text(
                   heading,
                   style: const TextStyle(
-                    fontSize: 22,
+                    fontSize: TypeScale.title,
                     height: 1.25,
                     fontWeight: FontWeight.w700,
                     color: Palette.text,
@@ -250,7 +251,7 @@ class _Panel extends StatelessWidget {
                 Text(
                   body,
                   style: TextStyle(
-                    fontSize: 16,
+                    fontSize: TypeScale.bodyLarge,
                     height: 1.45,
                     color: Palette.textDim(0.6),
                   ),
@@ -276,7 +277,7 @@ class _Panel extends StatelessWidget {
                 child: Text(
                   action,
                   style: const TextStyle(
-                    fontSize: 18,
+                    fontSize: TypeScale.heading,
                     fontWeight: FontWeight.w700,
                     color: Palette.ground,
                   ),
@@ -289,7 +290,7 @@ class _Panel extends StatelessWidget {
             Center(
               child: Text(
                 caption!,
-                style: TextStyle(fontSize: 13, color: Palette.textDim(0.5)),
+                style: TextStyle(fontSize: TypeScale.caption, color: Palette.textDim(0.5)),
               ),
             ),
           ],
@@ -300,7 +301,7 @@ class _Panel extends StatelessWidget {
               onPressed: onQuiet,
               child: Text(
                 quiet!,
-                style: TextStyle(fontSize: 15, color: Palette.textDim(0.55)),
+                style: TextStyle(fontSize: TypeScale.body, color: Palette.textDim(0.55)),
               ),
             ),
           ],

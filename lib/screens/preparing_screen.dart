@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/palette.dart';
+import '../theme/type_scale.dart';
 import '../widgets/pressable.dart';
 
 /// Screen 3, Preparing. The moment the rider hands the ride over to their
@@ -84,7 +85,7 @@ class PreparingScreen extends StatelessWidget {
           const Text(
             'Getting ready',
             style: TextStyle(
-              fontSize: 19,
+              fontSize: TypeScale.heading,
               fontWeight: FontWeight.w600,
               color: Palette.text,
             ),
@@ -166,7 +167,7 @@ class CannotLocateScreen extends StatelessWidget {
             "We can't find you yet",
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 20,
+              fontSize: TypeScale.heading,
               fontWeight: FontWeight.w700,
               color: Palette.text,
             ),
@@ -177,7 +178,7 @@ class CannotLocateScreen extends StatelessWidget {
             "station by hand and we'll take it from there.",
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: TypeScale.label,
               height: 1.45,
               color: Palette.textDim(0.55),
             ),
@@ -264,7 +265,7 @@ class BackgroundLocationScreen extends StatelessWidget {
             "We can't wake you with the screen off",
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 20,
+              fontSize: TypeScale.heading,
               fontWeight: FontWeight.w700,
               color: Palette.text,
             ),
@@ -291,7 +292,7 @@ class BackgroundLocationScreen extends StatelessWidget {
             ),
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: TypeScale.label,
               height: 1.45,
               color: Palette.textDim(0.55),
             ),
@@ -381,7 +382,7 @@ class PreflightScreen extends StatelessWidget {
           Text(
             headlineFor(_warningCount),
             style: const TextStyle(
-              fontSize: 20,
+              fontSize: TypeScale.heading,
               fontWeight: FontWeight.w700,
               color: Palette.text,
             ),
@@ -488,7 +489,7 @@ class _WideButton extends StatelessWidget {
           child: Text(
             label,
             style: TextStyle(
-              fontSize: 15,
+              fontSize: TypeScale.body,
               fontWeight: FontWeight.w600,
               color: filled ? Palette.ground : Palette.textDim(0.85),
             ),
@@ -521,7 +522,7 @@ class _PlainButton extends StatelessWidget {
         child: Center(
           child: Text(
             label,
-            style: TextStyle(fontSize: 15, color: Palette.textDim(0.5)),
+            style: TextStyle(fontSize: TypeScale.body, color: Palette.textDim(0.5)),
           ),
         ),
       ),
@@ -586,7 +587,7 @@ class _Promise extends StatelessWidget {
             ],
           ),
           style: const TextStyle(
-            fontSize: 22,
+            fontSize: TypeScale.title,
             fontWeight: FontWeight.w700,
             color: Palette.text,
           ),
@@ -594,7 +595,7 @@ class _Promise extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           "We'll wake you up before $destinationName.",
-          style: TextStyle(fontSize: 14, color: Palette.textDim(0.62)),
+          style: TextStyle(fontSize: TypeScale.label, color: Palette.textDim(0.62)),
         ),
       ],
     );
@@ -688,7 +689,7 @@ class _StepRow extends StatelessWidget {
               Text(
                 step.label,
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: TypeScale.label,
                   fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
                   color: Palette.textDim(labelOpacity),
                 ),
@@ -698,7 +699,7 @@ class _StepRow extends StatelessWidget {
                 Text(
                   step.detail!,
                   style: TextStyle(
-                    fontSize: 12.5,
+                    fontSize: TypeScale.caption,
                     color: Palette.textDim(0.45),
                   ),
                 ),
