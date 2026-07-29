@@ -149,8 +149,29 @@ class _RideRow extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          Text(
-            metaLine(ride),
+          Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: metaLine(ride)),
+                // The outcome LEAVES THE BULLET RUN on purpose. Seen stacked
+                // seven deep on a real phone, it read as a fourth equal fact
+                // in the dimmest text on the screen, which inverts the
+                // hierarchy: this is the only field that says whether the app
+                // did its job. A gap separates it from the homogeneous facts,
+                // and only the EXCEPTION is brightened. A reached ride stays
+                // quiet, because a rider scanning for the ride that went wrong
+                // should not have to read past the ones that went right.
+                const TextSpan(text: '   '),
+                TextSpan(
+                  text: outcomeLabel(ride),
+                  style: TextStyle(
+                    color: Palette.textDim(
+                      ride.reachedDestination ? 0.45 : 0.7,
+                    ),
+                  ),
+                ),
+              ],
+            ),
             style: TextStyle(fontSize: 13, color: Palette.textDim(0.45)),
           ),
         ],
@@ -161,15 +182,23 @@ class _RideRow extends StatelessWidget {
 
 /// "4 min", or "1 h 12 min" once a ride runs past the hour, which the Kasara
 /// and Karjat legs do comfortably.
+///
+/// Anything under a minute is NAMED rather than floored. `inMinutes` truncates,
+/// so a bench run or a journey the rider cancels on the platform used to render
+/// as "0 min", which reads on a real screen as a field that failed to load
+/// rather than as a very short ride.
 String durationLabel(DateTime startedAt, DateTime endedAt) {
   final minutes = endedAt.difference(startedAt).inMinutes;
+  if (minutes == 0) return 'under a minute';
   if (minutes < 60) return '$minutes min';
   final hours = minutes ~/ 60;
   final rest = minutes % 60;
   return rest == 0 ? '$hours h' : '$hours h $rest min';
 }
 
-/// "Thu 23 Jul • 14:55 • 2 stations • ended early".
+/// "Thu 23 Jul • 14:55 • 2 stations". The outcome is NOT part of this; it is
+/// rendered separately by [_RideRow] so it can carry its own emphasis. See
+/// [outcomeLabel].
 ///
 /// Bullet separators and no dashes, per the copy rule. The time is when the
 /// ride ENDED, which is what the debug sheet has always shown and what the
@@ -185,6 +214,10 @@ String metaLine(JourneyRecord ride) {
   final hh = t.hour.toString().padLeft(2, '0');
   final mm = t.minute.toString().padLeft(2, '0');
   final stations = ride.stationCount == 1 ? '1 station' : '${ride.stationCount} stations';
-  final outcome = ride.reachedDestination ? 'reached' : 'ended early';
-  return '$day ${t.day} ${months[t.month - 1]} • $hh:$mm • $stations • $outcome';
+  return '$day ${t.day} ${months[t.month - 1]} • $hh:$mm • $stations';
 }
+
+/// Whether the ride got there. Kept as its own function because it is the only
+/// field on this screen that judges the app rather than describing the ride.
+String outcomeLabel(JourneyRecord ride) =>
+    ride.reachedDestination ? 'reached' : 'ended early';

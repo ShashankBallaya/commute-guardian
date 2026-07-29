@@ -64,10 +64,64 @@ void main() {
     expect(find.textContaining('Thane'), findsOneWidget);
     expect(find.text('49 min'), findsOneWidget);
     // "reached" is the only field that says whether the app did its job, which
-    // is why it survived the cut that dropped the battery readings.
+    // is why it survived the cut that dropped the battery readings. It sits
+    // OUTSIDE the bullet run so it can carry its own emphasis.
     expect(
-      find.text('Wed 22 Jul • 19:24 • 8 stations • reached'),
+      find.textContaining('Wed 22 Jul • 19:24 • 8 stations', findRichText: true),
       findsOneWidget,
+    );
+    expect(find.textContaining('reached', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('a reached ride stays quiet and an early end does not', (
+    tester,
+  ) async {
+    // The exception is what gets the brightness. A rider scanning for the ride
+    // that went wrong should not have to read past the ones that went right.
+    await pumpHistory(tester, rides: [
+      (
+        from: 'Thane',
+        to: 'Kalyan',
+        start: DateTime(2026, 7, 22, 18, 35),
+        end: DateTime(2026, 7, 22, 19, 24),
+        stations: 8,
+        reached: true,
+      ),
+      (
+        from: 'Shahad',
+        to: 'Ambivli',
+        start: DateTime(2026, 7, 23, 14, 51),
+        end: DateTime(2026, 7, 23, 14, 55),
+        stations: 2,
+        reached: false,
+      ),
+    ]);
+
+    Color? outcomeColour(String label) {
+      for (final t in tester.widgetList<Text>(find.byType(Text))) {
+        final root = t.textSpan;
+        if (root == null) continue;
+        Color? found;
+        root.visitChildren((span) {
+          if (span is TextSpan && span.text == label) {
+            found = span.style?.color;
+            return false;
+          }
+          return true;
+        });
+        if (found != null) return found;
+      }
+      return null;
+    }
+
+    final reached = outcomeColour('reached');
+    final endedEarly = outcomeColour('ended early');
+    expect(reached, isNotNull);
+    expect(endedEarly, isNotNull);
+    expect(
+      endedEarly!.a,
+      greaterThan(reached!.a),
+      reason: 'the ride that failed must be the brighter of the two',
     );
   });
 
@@ -84,10 +138,34 @@ void main() {
     ]);
 
     expect(
-      find.text('Thu 23 Jul • 14:55 • 2 stations • ended early'),
+      find.textContaining('Thu 23 Jul • 14:55 • 2 stations', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('ended early', findRichText: true),
       findsOneWidget,
     );
     expect(find.text('4 min'), findsOneWidget);
+  });
+
+  testWidgets('a ride under a minute is named, not floored to zero', (
+    tester,
+  ) async {
+    // Seen on the 3T on 29 Jul: three bench runs all rendered "0 min", which
+    // reads as a field that failed to load rather than a very short ride. A
+    // rider who starts a journey and cancels on the platform gets this too.
+    await pumpHistory(tester, rides: [
+      (
+        from: 'Shahad',
+        to: 'Kalyan',
+        start: DateTime(2026, 7, 28, 22, 1, 5),
+        end: DateTime(2026, 7, 28, 22, 1, 49),
+        stations: 2,
+        reached: false,
+      ),
+    ]);
+    expect(find.text('under a minute'), findsOneWidget);
+    expect(find.text('0 min'), findsNothing);
   });
 
   testWidgets('newest first, which is the whole point of a history', (
@@ -113,10 +191,16 @@ void main() {
     ]);
 
     // The approved frame had its top row out of order; the query does not.
-    final rows = tester.widgetList<Text>(find.byType(Text)).toList();
-    final meta = rows.map((t) => t.data).whereType<String>().where(
-          (s) => s.contains('•'),
-        );
+    // Read through textSpan, not .data: the meta line is rich text since the
+    // outcome left the bullet run, and .data is null for a Text.rich, so a
+    // .data-based filter would quietly match nothing and pass on an empty set.
+    final meta = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((t) => t.data ?? t.textSpan?.toPlainText())
+        .whereType<String>()
+        .where((s) => s.contains('•'))
+        .toList();
+    expect(meta, hasLength(2));
     expect(meta.first, contains('15:04'));
     expect(meta.last, contains('14:55'));
   });
