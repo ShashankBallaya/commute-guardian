@@ -72,6 +72,18 @@ class RideProgress {
   /// usable fix localizes it.
   int _reachedIndex = -1;
 
+  /// How far along [chain] the rider is provably confirmed, or -1 before the
+  /// first station is claimed.
+  ///
+  /// PUBLISHED SO THERE IS ONLY ONE PROJECTOR. Screen 4 draws the whole ride
+  /// from this: stations passed, "you are here", and what is still ahead. The
+  /// UI could re-derive it from the raw fix stream, which it already receives,
+  /// but that would be a SECOND projector against the same chain and it would
+  /// drift. This project has been bitten by that shape before, which is why the
+  /// engines gained forJourney factories after the replay tool silently stopped
+  /// matching the service.
+  int get reachedIndex => _reachedIndex;
+
   /// A passed-station claim from the previous usable fix that rested on
   /// elimination alone, held until the next usable fix agrees, or -1 when
   /// nothing is pending. See the corroboration rule in [onFix].

@@ -42,6 +42,7 @@ class GeofenceChainService {
     required this.onLog,
     this.onDestinationReached,
     this.onRawFix,
+    this.onProgress,
     this.onWakeLadderLive,
     this.onWindDownLive,
     this.onAutoOff,
@@ -82,6 +83,15 @@ class GeofenceChainService {
   /// origin under a stale chip).
   final void Function(fl.Location location)? onRawFix;
 
+  /// Fires when the rider provably reaches a further station along the chain,
+  /// carrying [RideProgress.reachedIndex].
+  ///
+  /// Screen 4 draws the whole ride from this. It is emitted from HERE rather
+  /// than re-derived in the UI from the raw fix stream, so that the chain has
+  /// exactly one projector. Fires only on CHANGE, so a 1 Hz fix stream does not
+  /// become a 1 Hz stream of identical messages across the isolate boundary.
+  final void Function(int reachedIndex)? onProgress;
+
   /// Fires when the wake ladder starts or stands down. The UI listens so it
   /// can show its manual "I'm awake" button and hold the native media session
   /// (the thing that routes an earphone tap to us) only while a ladder is
@@ -108,6 +118,11 @@ class GeofenceChainService {
 
   final FlutterTts _tts = FlutterTts();
   RideProgress? _rideProgress;
+
+  /// The last index handed to [onProgress]. Starts at -1, which is also
+  /// RideProgress's "nothing confirmed yet", so a ride that has not reached a
+  /// station never emits.
+  int _lastPublishedIndex = -1;
   WakeEscalation? _wakeEscalation;
   WakeAlertOutput? _wakeOutput;
   WindDown? _windDown;
@@ -956,6 +971,10 @@ class GeofenceChainService {
     await _session?.setActive(false);
     _session = null;
     _rideProgress = null;
+    // Reset with the engine it tracks. A second ride on a service that already
+    // ran one would otherwise inherit a high water mark and never publish its
+    // early stations, which is the same shape as the sustained-flag leak.
+    _lastPublishedIndex = -1;
     _journey = null;
     _log('Geofence chain stopped.');
     _logFile = null;
@@ -1037,6 +1056,17 @@ class GeofenceChainService {
           accuracyM: location.accuracy,
         ) ??
         const <Announcement>[];
+
+    // Position, published on CHANGE only. Sits here rather than inside the
+    // announcement loop because the chain can advance without speaking (a
+    // catch-up that resolves to a station already announced), and Screen 4 must
+    // still move.
+    final reached = _rideProgress?.reachedIndex;
+    if (reached != null && reached != _lastPublishedIndex) {
+      _lastPublishedIndex = reached;
+      onProgress?.call(reached);
+    }
+
     final now = DateTime.now();
     for (final announcement in announcements) {
       // The SPEAK line's format is load-bearing: replay_ride.dart parses it.

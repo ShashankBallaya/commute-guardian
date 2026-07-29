@@ -13,6 +13,7 @@ import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/preparing_flow.dart';
 import 'screens/preparing_screen.dart';
+import 'screens/travel_mode_screen.dart';
 import 'services/ride_service_client.dart';
 import 'state/journey_providers.dart';
 import 'state/ride_providers.dart';
@@ -232,6 +233,8 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
       case WakeLadderChanged():
       case WindDownChanged():
       case ToneCommanded():
+      case RideProgressed():
+        // liveRideProvider owns progress. The debug screen has no chain view.
         break;
       case RideEndedByService():
         unawaited(_onRideEndedByService());
@@ -459,6 +462,35 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     );
     if (!mounted || proceed != true) return;
     await _start();
+  }
+
+  /// Screen 4, as a preview. Uses the real planner and a mid-chain position, so
+  /// what is judged on the device is the real chain, not a mock.
+  Future<void> _previewTravelMode() async {
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
+    if (repo == null) return;
+    final Journey journey;
+    try {
+      journey = repo.planner.plan(originId: 'thane', destinationId: 'kalyan');
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+
+    var choice = WakeChoice.lastTwoStations;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => StatefulBuilder(
+          builder: (context, setLocal) => TravelModeScreen(
+            journey: journey,
+            reachedIndex: 2,
+            wakeChoice: choice,
+            onWakeChoiceChanged: (next) => setLocal(() => choice = next),
+            onEndJourney: () => Navigator.of(context).maybePop(),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Picks which Screen 3 state to preview.
@@ -887,6 +919,21 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                             color: Palette.textDim(0.6),
                           ),
                           onPressed: _previewScreen3,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      SizedBox(
+                        width: 22,
+                        child: IconButton(
+                          key: const Key('travel_mode_preview_button'),
+                          padding: EdgeInsets.zero,
+                          iconSize: 18,
+                          tooltip: 'Preview Screen 4',
+                          icon: Icon(
+                            Icons.train_outlined,
+                            color: Palette.textDim(0.6),
+                          ),
+                          onPressed: _previewTravelMode,
                         ),
                       ),
                       const Spacer(),

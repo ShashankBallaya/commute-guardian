@@ -40,6 +40,7 @@ class LiveRide {
     required this.originId,
     required this.destinationId,
     required this.destinationReached,
+    this.reachedIndex = -1,
   });
 
   final String originId;
@@ -47,6 +48,17 @@ class LiveRide {
 
   /// True only once the destination arrival announcement actually spoke.
   final bool destinationReached;
+
+  /// How far along the chain the ride has provably got, or -1 before the first
+  /// station. Comes from the service's own RideProgress, never re-derived here.
+  final int reachedIndex;
+
+  LiveRide withIndex(int index) => LiveRide(
+        originId: originId,
+        destinationId: destinationId,
+        destinationReached: destinationReached,
+        reachedIndex: index,
+      );
 }
 
 /// The running ride, or null when none is running.
@@ -63,6 +75,16 @@ class LiveRideNotifier extends AsyncNotifier<LiveRide?> {
     final subscription =
         ref.watch(rideServiceClientProvider).events.listen((event) {
       if (event is RideEndedByService) unawaited(refresh());
+      // Advance in place rather than re-reading the store: the store is the
+      // seed and the survivor, the stream is the low-latency path, and a full
+      // refresh on every station would make Screen 4 wait on a plugin read to
+      // move a dot the service already told us about.
+      if (event is RideProgressed) {
+        final current = state.valueOrNull;
+        if (current != null) {
+          state = AsyncData(current.withIndex(event.reachedIndex));
+        }
+      }
     });
     ref.onDispose(subscription.cancel);
     return _readFromStore();
@@ -83,6 +105,7 @@ class LiveRideNotifier extends AsyncNotifier<LiveRide?> {
         originId: originId,
         destinationId: destinationId,
         destinationReached: persisted.destinationReached,
+        reachedIndex: persisted.reachedIndex,
       );
     } catch (_) {
       // No service plumbing (widget tests) or a store race.
@@ -165,7 +188,10 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
       case ServiceLogged():
       case RideEndedByService():
       case ServiceFix():
-        // Not alerts. The screen handles these.
+      case RideProgressed():
+        // Not alerts. Progress belongs to LiveRide, which owns the projection;
+        // duplicating it here would give Screen 4 two places to disagree with
+        // itself about where the train is.
         break;
     }
   }

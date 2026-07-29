@@ -29,6 +29,11 @@ const sarvamClipsKey = 'sarvam_clips';
 /// Stop to decide if the turnaround origin default can be trusted.
 const destinationReachedKey = 'destination_reached';
 
+/// How far along the chain the ride has provably got. Saved as well as sent,
+/// so a UI the OS recreated mid-ride draws Screen 4 correctly with no user
+/// action, the way the destination already survives that.
+const reachedIndexKey = 'reached_index';
+
 /// Wind-down action ids, shared by the notification buttons and the debug
 /// screen's sendDataToTask messages.
 const windDownEndNowId = 'wind_down_end_now';
@@ -79,6 +84,16 @@ class GeofenceTaskHandler extends TaskHandler {
       sarvamClips: sarvamClips,
       onDestinationReached: () {
         FlutterForegroundTask.saveData(key: destinationReachedKey, value: true);
+      },
+      onProgress: (reachedIndex) {
+        // Sent AND saved: the stream is the low-latency path, the store is what
+        // a recreated process reads. Screen 4 must be right when the OS kills
+        // the UI mid-ride and rebuilds it, with no user action.
+        FlutterForegroundTask.sendDataToMain({'reachedIndex': reachedIndex});
+        FlutterForegroundTask.saveData(
+          key: reachedIndexKey,
+          value: reachedIndex,
+        );
       },
       onWakeLadderLive: (live) {
         FlutterForegroundTask.sendDataToMain({'wakeLadderLive': live});

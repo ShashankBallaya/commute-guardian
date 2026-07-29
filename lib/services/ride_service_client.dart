@@ -43,6 +43,16 @@ class ToneCommanded extends ServiceEvent {
   final double volume;
 }
 
+/// The ride reached a further station along the chain. Screen 4 is drawn from
+/// this, and it comes from the service's own RideProgress so the chain has one
+/// projector rather than two that can disagree.
+class RideProgressed extends ServiceEvent {
+  const RideProgressed(this.reachedIndex);
+
+  /// Index into the journey chain, or -1 before the first station.
+  final int reachedIndex;
+}
+
 /// The service ended the ride on its own (wind-down auto-off).
 class RideEndedByService extends ServiceEvent {
   const RideEndedByService();
@@ -71,10 +81,16 @@ class PersistedRide {
     required this.originId,
     required this.destinationId,
     required this.destinationReached,
+    this.reachedIndex = -1,
   });
 
   final String? originId;
   final String? destinationId;
+
+  /// How far along the chain the ride has provably got, or -1 before the first
+  /// station. Screen 4 draws itself from this after a process recreation, for
+  /// the same reason the destination is read here rather than held in a widget.
+  final int reachedIndex;
 
   /// True only once the destination arrival announcement actually spoke. An
   /// early End stays false, which is what gates the turnaround origin default
@@ -99,6 +115,9 @@ List<ServiceEvent> parseServiceData(Object data) {
 
   final windDownLive = data['windDownLive'] as bool?;
   if (windDownLive != null) events.add(WindDownChanged(windDownLive));
+
+  final reachedIndex = (data['reachedIndex'] as num?)?.toInt();
+  if (reachedIndex != null) events.add(RideProgressed(reachedIndex));
 
   final toneCommand = data['toneCommand'] as String?;
   if (toneCommand != null) {
@@ -316,6 +335,10 @@ class RideServiceClient {
               key: destinationReachedKey,
             ) ??
             false,
+        reachedIndex: await FlutterForegroundTask.getData<int>(
+              key: reachedIndexKey,
+            ) ??
+            -1,
       );
 
   Future<void> requestBatteryOptimizationExemption() async {
