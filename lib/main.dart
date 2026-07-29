@@ -11,6 +11,8 @@ import 'screens/destination_picker_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/preparing_flow.dart';
+import 'screens/preparing_screen.dart';
 import 'services/ride_service_client.dart';
 import 'state/journey_providers.dart';
 import 'state/ride_providers.dart';
@@ -402,7 +404,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
           onStartTo: (destinationId) {
             ref.read(journeyDraftProvider.notifier).setDestination(destinationId);
             Navigator.of(context).pop();
-            unawaited(_start());
+            unawaited(_prepareAndStart(destinationId));
           },
           onNew: _pickDestination,
         ),
@@ -411,8 +413,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
   }
 
   /// Screen 2. A pick sets the destination and starts the ride: origin is
-  /// never picked, it is detected live from GPS. There is no Preparing screen
-  /// yet, so a pick goes straight to a running ride.
+  /// never picked, it is detected live from GPS.
   Future<void> _pickDestination() async {
     final navigator = Navigator.of(context);
     await navigator.push<void>(
@@ -421,8 +422,197 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
           onPicked: (station) {
             ref.read(journeyDraftProvider.notifier).setDestination(station.id);
             navigator.popUntil((route) => route.isFirst);
-            unawaited(_start());
+            unawaited(_prepareAndStart(station.id));
           },
+        ),
+      ),
+    );
+  }
+
+  /// Screen 3, wired. The rider's route into a ride.
+  ///
+  /// NORMALLY SHOWS NOTHING. The probes run first and, when they all pass, the
+  /// ride starts with no screen in between, because the fix is usually already
+  /// held (Screen 1 acquires one on open) and the rest of the work is
+  /// milliseconds. Pushing the flow unconditionally would flash a progress
+  /// screen on every journey.
+  ///
+  /// The DEBUG screen's own Start button deliberately still calls [_start]
+  /// directly, so a bench is never gated on permissions or earphones.
+  Future<void> _prepareAndStart(String destinationId) async {
+    final report = await const PreparingGate().check(ref);
+    if (!mounted) return;
+
+    if (report.clear) {
+      await _start();
+      return;
+    }
+
+    final destination = _name(destinationId);
+    final proceed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => PreparingFlow(
+          destinationName: destination,
+          report: report,
+        ),
+      ),
+    );
+    if (!mounted || proceed != true) return;
+    await _start();
+  }
+
+  /// Picks which Screen 3 state to preview.
+  Future<void> _previewScreen3() async {
+    final choice = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: Palette.surfaceSolid,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (index, label) in const [
+              'A  Getting ready',
+              'B  Cannot find you',
+              'C  Background location',
+              'D  Before you doze off',
+            ].indexed)
+              ListTile(
+                key: Key('preview_screen3_$index'),
+                title: Text(
+                  label,
+                  style: const TextStyle(color: Palette.text),
+                ),
+                onTap: () => Navigator.of(sheet).pop(index),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 0:
+        await _previewPreparing();
+      case 1:
+        await _previewCannotLocate();
+      case 2:
+        await _previewBackgroundLocation();
+      case 3:
+        await _previewPreflight();
+    }
+  }
+
+  /// Screen 3 state D, as a preview only.
+  Future<void> _previewPreflight() async {
+    final draft = ref.read(journeyDraftProvider);
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
+    final destination = repo?.stationsById[draft.destinationId]?.name ?? 'Kalyan';
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => PreflightScreen(
+          originName: repo?.stationsById[draft.originId]?.name ?? 'Shahad',
+          destinationName: destination,
+          steps: [
+            const PrepStep(
+              label: "Your earphones aren't connected",
+              detail: 'The alarm will play out loud',
+              status: PrepStatus.active,
+            ),
+            const PrepStep(
+              label: 'Volume is low',
+              detail: 'Turn it up so you hear us over the train',
+              status: PrepStatus.active,
+            ),
+            PrepStep(
+              label: 'Watching for $destination',
+              status: PrepStatus.done,
+            ),
+          ],
+          onStart: () => Navigator.of(context).maybePop(),
+          onRecheck: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+    );
+  }
+
+  /// Screen 3 state A, as a preview only.
+  ///
+  /// The real trigger is a pick made while no fix is held, which is rare
+  /// because Screen 1 acquires one on open. Wiring it into _start() is a change
+  /// to the safety-critical path and is not made here.
+  Future<void> _previewPreparing() async {
+    final draft = ref.read(journeyDraftProvider);
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
+    String nameOf(String? id, String fallback) =>
+        repo?.stationsById[id]?.name ?? fallback;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => PreparingScreen(
+          originName: nameOf(draft.originId, 'Shahad'),
+          destinationName: nameOf(draft.destinationId, 'Kalyan'),
+          steps: const [
+            PrepStep(
+              label: 'Finding you',
+              detail: 'This can take a few seconds indoors',
+              status: PrepStatus.active,
+            ),
+            PrepStep(
+              label: 'Watching for your stop',
+              status: PrepStatus.pending,
+            ),
+            PrepStep(
+              label: 'Direction',
+              detail: 'Confirmed once the train moves',
+              status: PrepStatus.pending,
+            ),
+          ],
+          onCancel: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+    );
+  }
+
+  /// Screen 3 state B, as a preview only.
+  ///
+  /// "Set my station" is wired to a callback that does nothing yet: a manual
+  /// origin picker does not exist, origin is only ever detected.
+  Future<void> _previewCannotLocate() async {
+    final draft = ref.read(journeyDraftProvider);
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
+    String nameOf(String? id, String fallback) =>
+        repo?.stationsById[id]?.name ?? fallback;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => CannotLocateScreen(
+          originName: nameOf(draft.originId, 'Shahad'),
+          destinationName: nameOf(draft.destinationId, 'Kalyan'),
+          onRetry: () => Navigator.of(context).maybePop(),
+          onSetStation: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+    );
+  }
+
+  /// Screen 3 state C, as a preview only.
+  ///
+  /// "Open settings" is wired to a pop here rather than to
+  /// permission_handler's openAppSettings, so a preview cannot send anyone
+  /// into system settings by accident.
+  Future<void> _previewBackgroundLocation() async {
+    final draft = ref.read(journeyDraftProvider);
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
+    String nameOf(String? id, String fallback) =>
+        repo?.stationsById[id]?.name ?? fallback;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => BackgroundLocationScreen(
+          originName: nameOf(draft.originId, 'Shahad'),
+          destinationName: nameOf(draft.destinationId, 'Kalyan'),
+          onOpenSettings: () => Navigator.of(context).maybePop(),
+          onStartAnyway: () => Navigator.of(context).maybePop(),
         ),
       ),
     );
@@ -674,6 +864,29 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                             color: Palette.textDim(0.6),
                           ),
                           onPressed: _previewHome,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      // Preview of Screen 3 state A. Deliberately NOT wired
+                      // into the start path: that path is safety-critical and
+                      // has a verification ride pending, and on a normal ride
+                      // this screen does not appear at all (the fix is already
+                      // held by the time a destination is picked).
+                      // ONE entry for all four Screen 3 states. Three separate
+                      // icons filled this row and left no space for D; a
+                      // chooser scales and keeps the row readable.
+                      SizedBox(
+                        width: 22,
+                        child: IconButton(
+                          key: const Key('preparing_preview_button'),
+                          padding: EdgeInsets.zero,
+                          iconSize: 18,
+                          tooltip: 'Preview Screen 3',
+                          icon: Icon(
+                            Icons.hourglass_empty,
+                            color: Palette.textDim(0.6),
+                          ),
+                          onPressed: _previewScreen3,
                         ),
                       ),
                       const Spacer(),
