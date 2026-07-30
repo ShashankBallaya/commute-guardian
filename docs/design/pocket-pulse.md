@@ -237,6 +237,31 @@ from Settings and are not tunable here. Nothing in this design needs ride-log
 tuning: the pulse is clock-driven, not geometry-driven, which is exactly why it
 can be desk-benched in an hour.
 
+## The bag carrier, raised 30 Jul
+
+Many riders carry the phone in a bag, not a pocket. The design's honest
+position: **the pulse proves the audio link is alive to wherever the phone is**,
+never literal possession. Wired earphones plus a pocket is near-proof; Bluetooth
+plus a bag proves the phone is WITH the rider, within a few metres, which is
+still the anxiety the feature answers. Consequences:
+
+- The chime is the only channel that reaches a bag. A vibration-style pulse has
+  no body contact there, so the style default stays CHIME on every platform;
+  vibration is an opt-in for pocket carriers, never the baseline.
+- The reassurance goes stale by at most one interval. A phone lifted from a bag
+  on a moving train cannot leave Bluetooth range until the next station, so
+  crowd mode's 45 s is not a gimmick, it is the bounded detection window for
+  the packed-train case.
+- The case the pulse cannot cover is the phone LEFT BEHIND or carried out of
+  range: an app cannot chime about its own absence. The honest fix is the phone
+  sounding its own SPEAKER on audio-route loss mid-ride, which is the v2
+  anti-theft adjacency CLAUDE.md already parks ("shares sensor logic with
+  Pocket Pulse"). Its seams exist today (`AudioOutputGateway`, the interruption
+  listener). Recorded here so v2 inherits a trigger, not a vague ambition.
+- The built Settings card says "still in your pocket"; for bag carriers that
+  copy quietly excludes them. Change to "still with you" (one string,
+  `settings_screen.dart`).
+
 ## Battery, priced
 
 Zero new wakeups: the engine rides a tick that already fires. The marginal cost
@@ -256,7 +281,12 @@ hour. Bench 4 turns this claim into a measurement.
    `AudioOutputGateway`, failing open (if detection is unavailable, play).
    Bench 5 informs this.
 3. **The ladder drops pulses entirely** (never queues, never plays quietly
-   underneath). Recommended yes; the iOS seized-session evidence makes this
-   close to forced.
+   underneath). ACCEPTED 30 Jul: the owner stated the rank as
+   Wake-up > Announcement > Pocket Pulse, which is this table. Note the
+   enforcement differs per edge: wake > announcement by STREAM (the no-focus
+   alarm tone, shipped), announcement > pulse by DEFERRAL, wake > pulse by
+   DROP. The asymmetry is deliberate: announcements are bounded so waiting is
+   honest, a ladder is unbounded so waiting would stack stale pulses onto the
+   moment of acknowledgement.
 4. **The chime's rank: transient may-duck** rather than focus-free mixing.
    Recommended as designed, but ratify AFTER bench 1, with ears.
