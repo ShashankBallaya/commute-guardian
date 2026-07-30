@@ -1,7 +1,7 @@
 # 02 - What is the shared progress model?
 
 Type: grilling
-Status: open
+Status: claimed
 Blocked by: none
 
 ## Question
@@ -37,3 +37,39 @@ To settle:
 
 Consult `/domain-modeling`. The ubiquitous language matters here: Journey vs Ride
 is already a settled distinction in `CONTEXT.md` and this model must not blur it.
+
+## Progress, 30 Jul 2026
+
+A Fable session designed this against the prompt in
+`../fable-architecture-prompt.md`. The full design is written up at
+`docs/design/ride-snapshot.md`.
+
+Summary: a pure `RideSnapshot` in `lib/models/ride_snapshot.dart`, built by one
+factory over the primitives that ALREADY cross the isolate seam (ids,
+`reachedIndex`, `destinationReached`, and the two alert flags). Nothing new is
+persisted. Both isolates call the same pure function, so the snapshot is a
+projection OF `RideProgress`'s output rather than a second projector. Screen 4
+takes a snapshot and gives up its own `_stationsRemaining` derivation. iOS attaches
+at a `LiveActivityGateway` in the main isolate, so a "no" from ticket 03 costs that
+gateway and nothing else.
+
+Two shapes were compared and a third killed on sight (a UI-isolate renderer, dead
+because the 30 Jul bench proved the UI dies while the ride lives). The design also
+caught a live risk in code shipped that morning: `_updateNotificationButtons()`
+calls `updateService` with buttons and no text, so if the plugin treats an absent
+parameter as "clear", adding text updates would wipe the "I'm awake" button off a
+sounding alarm. Fix is to unify both into one `_updateSurface()` call.
+
+## STILL OPEN. Do not resolve this ticket yet.
+
+Four decisions are the owner's and are unanswered:
+
+1. Shape A (shared pure projection) over shape B (service ships a blob).
+2. Alert as an overlay flag rather than a phase.
+3. Copy formatted in Dart and shipped to SwiftUI as strings.
+4. The `_updateSurface()` unification of notification text and buttons.
+
+Two review caveats also unresolved, both written up in the design doc: the
+`approach` phase window contradicts the `WakeChoice` toggle for riders who picked
+"Only destination", and the claim that iOS runs the plugin's task in the main
+isolate is asserted rather than verified (now added to ticket 03).

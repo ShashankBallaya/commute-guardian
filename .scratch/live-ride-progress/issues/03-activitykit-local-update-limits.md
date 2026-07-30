@@ -31,5 +31,12 @@ session transcripts, ActivityKit release notes). Do not answer from memory.
   free provisioning profile grant them?
 - Is there a Flutter package worth using (`live_activities` or similar), what is
   its maintenance state, and does it force a particular deployment target?
+- ADDED 30 Jul, from the ticket 02 design review. **Which isolate does
+  `flutter_foreground_task` actually run its task in on iOS?** The design in
+  `docs/design/ride-snapshot.md` asserts it is the MAIN isolate, and builds the
+  `LiveActivityGateway` seam on that assumption. If true, the two-isolate problem
+  is Android-only and the iOS snapshot is computed in exactly one place. If false,
+  the gateway is specified in the wrong isolate. Verify against the plugin's own
+  source and documentation, not by inference.
 
 Capture the findings as a markdown file in the repo and link it here.

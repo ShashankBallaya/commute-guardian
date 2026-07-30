@@ -68,6 +68,12 @@ tickets.
 
 _None yet. The map was charted 30 Jul 2026._
 
+**In flight, not yet a decision.** Ticket 02 has a full design at
+`docs/design/ride-snapshot.md` (Fable, 30 Jul) and is `claimed`, waiting on four
+owner decisions listed at the end of that document. It stays out of this section
+until those are answered, because this section records the route actually walked
+and a design nobody has accepted is not a step on it.
+
 ## Not yet specified
 
 Fog: in scope, not yet sharp enough to ticket. Graduates as the frontier advances.

@@ -102,7 +102,17 @@ which is precisely the quiet abandonment it was written to prevent:
   and wind-down flags are the one part of the running ride that the service
   does not persist, so they cannot live in LiveRide without breaking the
   recreation invariant that class is built on. Splitting them documents which
-  half of the state model recovers and which does not. It also performs the
+  half of the state model recovers and which does not.
+
+  CORRECTED 30 JUL 2026: that reason is now FALSE, and the correction is left
+  in place rather than reworded so the reasoning stays auditable. Commit
+  91d52c8 made both flags store-backed, because leaving them transient meant a
+  recreated UI never learned an alarm was sounding and the rider could not
+  acknowledge it. So the flags COULD now live in LiveRide without breaking
+  anything. The split survives on its OTHER stated reason alone, the one
+  below: it performs side effects, and those are what keep it separate.
+
+  It also performs the
   media-session and native-tone side effects that the ladder state causes,
   which the provider table's "Owns" column does not capture: they are
   consequences of the alert, they were in the widget before, and a widget is
