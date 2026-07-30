@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'models/journey.dart';
 import 'models/station.dart';
+import 'screens/arrival_screen.dart';
 import 'screens/destination_picker_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/history_screen.dart';
@@ -16,6 +17,7 @@ import 'screens/preparing_screen.dart';
 import 'screens/travel_mode_screen.dart';
 import 'screens/wake_alert_screen.dart';
 import 'services/ride_service_client.dart';
+import 'services/wind_down.dart';
 import 'state/journey_providers.dart';
 import 'state/ride_providers.dart';
 import 'theme/palette.dart';
@@ -584,6 +586,76 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     );
   }
 
+  /// Screen 5, both states, as a preview.
+  ///
+  /// NOT WIRED, for the same reason Screen 3 is not: the wind-down path has a
+  /// verification ride pending and the notification's End now / Extend buttons
+  /// are the ride-proven controls. Wiring this replaces them, which is its own
+  /// decision.
+  ///
+  /// The chooser is what makes the second state testable at all. It is the
+  /// state a rider sees FIRST and for MINUTES, and it does not appear in any
+  /// frame, so without an entry here nobody would ever look at it.
+  Future<void> _previewScreen5() async {
+    final counting = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Palette.surfaceSolid,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final (isCounting, label) in const [
+              (false, 'Arrived, waiting for you to leave'),
+              (true, 'Counting down to auto end'),
+            ])
+              ListTile(
+                key: Key('preview_screen5_$isCounting'),
+                title: Text(
+                  label,
+                  style: const TextStyle(color: Palette.text),
+                ),
+                onTap: () => Navigator.of(sheet).pop(isCounting),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || counting == null) return;
+
+    final draft = ref.read(journeyDraftProvider);
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
+    final destination =
+        repo?.stationsById[draft.destinationId]?.name ?? 'Kalyan';
+    final origin = repo?.stationsById[draft.originId]?.name ?? 'Dadar';
+
+    // Declared OUTSIDE the builder, or Extend would set a new deadline and the
+    // very rebuild it triggers would throw it away.
+    var endsAt =
+        counting ? DateTime.now().add(WindDown.countdown) : null;
+    var window = WindDown.countdown;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => StatefulBuilder(
+          builder: (context, setLocal) => ArrivalScreen(
+            destinationName: destination,
+            summaryLine: '52 min • 18 stations • $origin → $destination',
+            autoEndAt: endsAt,
+            window: window,
+            onEndNow: () => Navigator.of(context).maybePop(),
+            onExtend: counting
+                ? () => setLocal(() {
+                      endsAt = DateTime.now().add(WindDown.extension);
+                      window = WindDown.extension;
+                    })
+                : null,
+            onSaveRoute: (_) => Navigator.of(context).maybePop(),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// The wake alert, as a preview.
   ///
   /// NOT WIRED. The live alert path is the ride-proven one on this screen (the
@@ -996,7 +1068,9 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                           onPressed: _showHistory,
                         ),
                       ),
-                      const SizedBox(width: 14),
+                      // 8, not 14: the sixth preview icon (Screen 5) overflowed
+                      // this row by 28 px on the 3T.
+                      const SizedBox(width: 8),
                       // Preview of the real Screen 1 while it is being built.
                       // The debug screen stays the app's home until Screen 1
                       // is approved on a device, so nothing half-finished can
@@ -1015,7 +1089,9 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                           onPressed: _previewHome,
                         ),
                       ),
-                      const SizedBox(width: 14),
+                      // 8, not 14: the sixth preview icon (Screen 5) overflowed
+                      // this row by 28 px on the 3T.
+                      const SizedBox(width: 8),
                       // Preview of Screen 3 state A. Deliberately NOT wired
                       // into the start path: that path is safety-critical and
                       // has a verification ride pending, and on a normal ride
@@ -1038,7 +1114,9 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                           onPressed: _previewScreen3,
                         ),
                       ),
-                      const SizedBox(width: 14),
+                      // 8, not 14: the sixth preview icon (Screen 5) overflowed
+                      // this row by 28 px on the 3T.
+                      const SizedBox(width: 8),
                       SizedBox(
                         width: 22,
                         child: IconButton(
@@ -1053,7 +1131,26 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                           onPressed: _previewTravelMode,
                         ),
                       ),
-                      const SizedBox(width: 14),
+                      // 8, not 14: the sixth preview icon (Screen 5) overflowed
+                      // this row by 28 px on the 3T.
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 22,
+                        child: IconButton(
+                          key: const Key('arrival_preview_button'),
+                          padding: EdgeInsets.zero,
+                          iconSize: 18,
+                          tooltip: 'Preview Screen 5',
+                          icon: Icon(
+                            Icons.flag_outlined,
+                            color: Palette.textDim(0.6),
+                          ),
+                          onPressed: _previewScreen5,
+                        ),
+                      ),
+                      // 8, not 14: the sixth preview icon (Screen 5) overflowed
+                      // this row by 28 px on the 3T.
+                      const SizedBox(width: 8),
                       SizedBox(
                         width: 22,
                         child: IconButton(
