@@ -32,7 +32,13 @@ import '../widgets/status_chip.dart';
 /// was deferred, and without the dot it is decoration; the notes' own kill
 /// rule says the cards win. Add it if the dead space bothers a real rider.
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key, required this.onStartTo, required this.onNew});
+  const HomeScreen({
+    super.key,
+    required this.onStartTo,
+    required this.onNew,
+    this.onHistory,
+    this.onSettings,
+  });
 
   /// Start a ride to this destination. Origin is never picked here: it is
   /// detected live from GPS, which is why SavedRoute does not store one.
@@ -40,6 +46,13 @@ class HomeScreen extends ConsumerStatefulWidget {
 
   /// Open the destination picker (Screen 2).
   final VoidCallback onNew;
+
+  /// Screen 7 and Screen 6, from the header row.
+  ///
+  /// Both nullable so this screen can still be pumped on its own in a test
+  /// without inventing two destinations for it to navigate to.
+  final VoidCallback? onHistory;
+  final VoidCallback? onSettings;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -83,12 +96,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              StatusChip(
-                state: nearest.state,
-                stationName: nearest.stationName,
-                onTap: () => unawaited(
-                  ref.read(nearestStationProvider.notifier).locate(),
-                ),
+              // The chip and the two secondary destinations share one row.
+              // Putting them on separate rows would spend two bands of vertical
+              // space on things a rider touches rarely, and the whole layout is
+              // built to keep the route cards in the thumb zone.
+              Row(
+                children: [
+                  // Expanded with an Align, NOT Flexible next to a Spacer. A
+                  // Spacer takes a flex share, so it competed with the chip for
+                  // the row and squeezed it until its own internal Row
+                  // overflowed by 239 px. This gives the chip all the room that
+                  // is left and lets it sit at its natural width on the left.
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: StatusChip(
+                        state: nearest.state,
+                        stationName: nearest.stationName,
+                        onTap: () => unawaited(
+                          ref.read(nearestStationProvider.notifier).locate(),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (widget.onHistory != null)
+                    _HeaderIcon(
+                      // The design system's history glyph: the plain
+                      // clock-with-counterclockwise-arrow, never a stopwatch,
+                      // and no numeral (a "24" reads as open-24-hours).
+                      icon: Icons.history,
+                      tooltip: 'Journey history',
+                      buttonKey: const Key('home_history'),
+                      onTap: widget.onHistory!,
+                    ),
+                  if (widget.onSettings != null) ...[
+                    const SizedBox(width: 4),
+                    _HeaderIcon(
+                      icon: Icons.settings_outlined,
+                      tooltip: 'Settings',
+                      buttonKey: const Key('home_settings'),
+                      onTap: widget.onSettings!,
+                    ),
+                  ],
+                ],
               ),
               const Spacer(),
               destinations.when(
@@ -106,6 +156,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A quiet destination in the header row.
+///
+/// Deliberately dim and deliberately small. The emphasis rule is that the
+/// loudest thing on a screen is its primary action, and on Screen 1 that is a
+/// route card. These two are for the rare visit, not the daily one, so they get
+/// a 44 pt target and almost no colour.
+class _HeaderIcon extends StatelessWidget {
+  const _HeaderIcon({
+    required this.icon,
+    required this.tooltip,
+    required this.buttonKey,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final Key buttonKey;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Pressable(
+        key: buttonKey,
+        onTap: onTap,
+        child: Padding(
+          // 10 all round on a 22 icon gives a 42 pt target, which is the
+          // minimum a thumb finds on a moving train.
+          padding: const EdgeInsets.all(10),
+          child: Icon(icon, size: 22, color: Palette.textDim(0.6)),
         ),
       ),
     );

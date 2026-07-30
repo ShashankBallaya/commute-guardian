@@ -43,10 +43,16 @@ void main() {
     return db;
   }
 
+  /// Taps on the two header destinations, so a test can assert they are wired
+  /// without this file having to know what a history screen looks like.
+  final taps = <String>[];
+
   Future<List<String>> pumpHome(
     WidgetTester tester, {
     AppDatabase? history,
+    bool header = true,
   }) async {
+    taps.clear();
     final started = <String>[];
     final db = history ?? AppDatabase.inMemory();
     await tester.pumpWidget(
@@ -62,7 +68,12 @@ void main() {
           }),
         ],
         child: MaterialApp(
-          home: HomeScreen(onStartTo: started.add, onNew: () {}),
+          home: HomeScreen(
+            onStartTo: started.add,
+            onNew: () {},
+            onHistory: header ? () => taps.add('history') : null,
+            onSettings: header ? () => taps.add('settings') : null,
+          ),
         ),
       ),
     );
@@ -183,5 +194,31 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const Key('new_journey')), findsOneWidget);
+  });
+
+  testWidgets('the header offers history and settings, and both are wired', (
+    tester,
+  ) async {
+    await pumpHome(tester);
+
+    await tester.tap(find.byKey(const Key('home_history')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('home_settings')));
+    await tester.pump();
+
+    expect(taps, ['history', 'settings']);
+  });
+
+  testWidgets('the header is optional, so the screen stands alone', (
+    tester,
+  ) async {
+    // Nullable on purpose: a test, and any future embedding, can pump Screen 1
+    // without inventing two destinations for it to navigate to.
+    await pumpHome(tester, header: false);
+
+    expect(find.byKey(const Key('home_history')), findsNothing);
+    expect(find.byKey(const Key('home_settings')), findsNothing);
+    // And the primary action is still there, which is the point of the screen.
+    expect(find.text('Start your first journey'), findsOneWidget);
   });
 }

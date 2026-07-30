@@ -457,6 +457,13 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
             unawaited(_prepareAndStart(destinationId));
           },
           onNew: _pickDestination,
+          // WIRED, not previewed. These are the first two real routes out of
+          // Screen 1, and both destinations already exist and are already used
+          // by riders on the debug screen, so there is nothing speculative
+          // about them. The entry gate still opens on the debug screen; that
+          // switch is its own decision (see the Phase 2 exit criteria).
+          onHistory: _showHistory,
+          onSettings: _previewSettings,
         ),
       ),
     );
