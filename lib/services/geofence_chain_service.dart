@@ -1379,7 +1379,15 @@ class GeofenceChainService {
           unawaited(output.chime());
           if (_pulseVibrate) unawaited(output.buzz());
         case PulseNote(:final reason):
-          _log(reason.toUpperCase().startsWith('PULSE') ? reason : 'PULSE $reason');
+          // Uppercase prefix, like every other line in this file. The engine
+          // writes "pulse suppressed: ..." in prose; the log wants "PULSE ...".
+          // Ride logs are read under pressure and a lowercase outlier is the
+          // line the eye skips.
+          _log(
+            reason.startsWith('pulse ')
+                ? 'PULSE ${reason.substring(6)}'
+                : 'PULSE $reason',
+          );
       }
     }
   }
