@@ -9,7 +9,11 @@
 # exactly one copy of each file and nothing can drift. CLAUDE.md especially has
 # to stay where it is or the project instructions stop loading.
 #
-#   .\tool\docs.ps1 "why this changed"
+#   powershell -ExecutionPolicy Bypass -File tool\docs.ps1 "why this changed"
+#
+# The ExecutionPolicy flag is not optional on this machine: unsigned local
+# scripts are blocked by default, and `.\tool\docs.ps1` fails with
+# UnauthorizedAccess.
 #
 # With no message it just reports what has changed since the last docs commit.
 
