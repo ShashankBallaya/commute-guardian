@@ -92,8 +92,13 @@ class FakeRideServiceClient implements RideServiceClient {
     required bool sarvamClips,
     required DateTime startedAt,
     int? startBatteryPct,
+    int? pulseIntervalSeconds,
+    bool pulseVibrate = true,
   }) async {
     commands.add('startRide:$originStationId->$destinationStationId');
+    if (pulseIntervalSeconds != null) {
+      commands.add('startPulse:$pulseIntervalSeconds');
+    }
     running = true;
     originId = originStationId;
     destinationId = destinationStationId;
@@ -133,6 +138,10 @@ class FakeRideServiceClient implements RideServiceClient {
 
   @override
   void testWakeAlert() => commands.add('testWakeAlert');
+
+  @override
+  Future<void> setPulseInterval({required int? seconds, bool? vibrate}) async =>
+      commands.add('setPulseInterval:${seconds ?? 'off'}');
 
   @override
   void testPulse() => commands.add('testPulse');

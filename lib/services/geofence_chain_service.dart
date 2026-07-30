@@ -17,6 +17,7 @@ import '../models/station.dart';
 import 'announcement_templates.dart';
 import 'clip_library.dart';
 import 'ride_progress.dart';
+import 'pocket_pulse.dart';
 import 'pulse_output.dart';
 import 'self_audio_interruption.dart';
 import 'wake_alert_output.dart';
@@ -155,6 +156,19 @@ class GeofenceChainService {
   /// nothing left for it to sound through. See docs/design/pocket-pulse.md.
   PulseOutput? _pulseOutput;
 
+  /// Pocket Pulse's head: WHEN to chime. Rides the same [onTick] the other
+  /// engines do, so the feature adds no timer and no wakeups.
+  PocketPulse? _pocketPulse;
+
+  /// Whether the rider asked for a buzz alongside the chime. Read from the
+  /// store at start, like the interval.
+  bool _pulseVibrate = true;
+
+  /// Clips currently queued or playing. TTS has [_pendingSpeaks]; this is its
+  /// counterpart, and together they are what "the app is talking right now"
+  /// means to Pocket Pulse.
+  int _pendingClips = 0;
+
   /// Serializes announcements so two never overlap, and so the ducking window
   /// spans a whole run of them (see [_speak]).
   Future<void> _speaking = Future<void>.value();
@@ -179,6 +193,12 @@ class GeofenceChainService {
   Future<void> start({
     required String originId,
     required String destinationId,
+    // Pocket Pulse's settings arrive as VALUES, not as store keys, for the same
+    // reason origin and destination do: the handler owns the store and this
+    // owns the ride. Importing the handler's key constants here would make the
+    // dependency circular.
+    int pulseIntervalS = 0,
+    bool pulseVibrate = true,
   }) async {
     _logFile = await _createLogFile();
 
@@ -220,6 +240,21 @@ class GeofenceChainService {
         WakeAlertOutput(log: _log, onIosToneCommand: onIosToneCommand);
     _pulseOutput =
         PulseOutput(log: _log, interruptionFilter: _selfInterruption);
+
+    // The interval crosses the isolate boundary through the STORE, the same
+    // way the Sarvam flags do, because settings live in drift and the service
+    // isolate never opens that database. The store is also what a RESTARTED
+    // service reads, which is what keeps the pulse alive across the restart
+    // the 30 Jul swipe bench showed is possible.
+    _pulseVibrate = pulseVibrate;
+    _pocketPulse = PocketPulse(
+      intervalS: pulseIntervalS,
+      startedAt: DateTime.now(),
+    );
+    if (pulseIntervalS > 0) {
+      _log('PULSE every ${pulseIntervalS}s'
+          '${_pulseVibrate ? ", with vibration" : ""}.');
+    }
 
     if (sarvamClips && Platform.isAndroid) {
       final dir = await getExternalStorageDirectory();
@@ -371,6 +406,7 @@ class GeofenceChainService {
   /// the device TTS floor with the exact same sentence, so the rider loses
   /// the nicer voice, never the information.
   void _enqueueClip(File clip, {required String floorText}) {
+    _pendingClips++;
     _clipChain = _clipChain.then((_) async {
       try {
         _log('CLIP ${clip.uri.pathSegments.last}');
@@ -378,6 +414,8 @@ class GeofenceChainService {
       } catch (error) {
         _log('CLIP failed, using device TTS: $error');
         await _speak(floorText);
+      } finally {
+        _pendingClips--;
       }
       // Nothing may escape into the chain itself. A rejected future here
       // poisons every clip queued after it for the rest of the ride, which
@@ -653,6 +691,9 @@ class GeofenceChainService {
     // signal moved the ladder, or a later session cannot tell a CallKit
     // suspension from a session one.
     _log(inCall ? 'Call started (CallKit).' : 'Call ended (CallKit).');
+    _handlePulseActions(
+      _pocketPulse?.onCallState(inCall, DateTime.now()) ?? const [],
+    );
     _handleWakeActions(
       _wakeEscalation?.onCallStateChanged(
             inCall: inCall,
@@ -743,6 +784,18 @@ class GeofenceChainService {
     await _speak(
       'This is a test announcement from Commute Guardian. '
       'If you can hear this, text to speech is working.',
+    );
+  }
+
+  /// The rider changed the pulse interval MID-RIDE, from Settings.
+  ///
+  /// Re-anchors from now, so a rider switching crowd mode on hears the tighter
+  /// cadence start immediately rather than after the old interval drains. The
+  /// UI rewrites the store key in the same breath, so a service restarted after
+  /// this reads the new value rather than the one the ride started with.
+  void setPulseInterval(int? seconds) {
+    _handlePulseActions(
+      _pocketPulse?.setInterval(seconds, DateTime.now()) ?? const [],
     );
   }
 
@@ -900,6 +953,12 @@ class GeofenceChainService {
         _wakeTestCeiling = null;
         unawaited(_releaseLadderAudio());
       }
+      // Pocket Pulse DROPS while a ladder is live, and does not catch up when
+      // it stands down. Fed from here rather than sniffed from a flag so the
+      // two can never disagree about whether an alarm is sounding.
+      _handlePulseActions(
+        _pocketPulse?.onWakeLadder(live, DateTime.now()) ?? const [],
+      );
       onWakeLadderLive?.call(live);
     }
   }
@@ -987,6 +1046,7 @@ class GeofenceChainService {
     await _wakeOutput?.dispose();
     _wakeOutput = null;
     _pulseOutput = null;
+    _pocketPulse = null;
     if (_wakeLadderLive) {
       _wakeLadderLive = false;
       onWakeLadderLive?.call(false);
@@ -1180,6 +1240,17 @@ class GeofenceChainService {
   void onTick(DateTime now) {
     _handleWindDownActions(_windDown?.onTick(now) ?? const []);
 
+    // Pocket Pulse rides the tick the other engines already use. `announcerBusy`
+    // is passed rather than held, because it is a fact about right now: TTS
+    // queued or speaking, or a clip queued or playing.
+    _handlePulseActions(
+      _pocketPulse?.onTick(
+            now,
+            announcerBusy: _pendingSpeaks > 0 || _pendingClips > 0,
+          ) ??
+          const [],
+    );
+
     // Bench-test safety net: synthesize the ceiling arrival the missing
     // train would have produced, through the same real engine path.
     final testCeilingAt = _wakeTestCeilingAt;
@@ -1229,6 +1300,30 @@ class GeofenceChainService {
   void windDownExtend() {
     _log('WIND_DOWN Extend pressed.');
     _handleWindDownActions(_windDown?.extend(DateTime.now()) ?? const []);
+  }
+
+  /// Turns the pulse engine's decisions into sound and log lines.
+  ///
+  /// Fire and forget: a chime that fails is a chime that is missed, and must
+  /// never be able to disturb the ride that asked for it.
+  void _handlePulseActions(List<PulseAction> actions) {
+    final output = _pulseOutput;
+    for (final action in actions) {
+      switch (action) {
+        case PulseChime():
+          if (output == null) continue;
+          // LOGGED, despite being the most frequent event in a ride. A 45 s
+          // crowd-mode ride writes about 120 of these into a file that already
+          // holds thousands of FIX lines, and without them a rider reporting
+          // "the pulse stopped" leaves nothing to read. Same rule the rest of
+          // this service follows: silence has no cause in a log.
+          _log('PULSE chime.');
+          unawaited(output.chime());
+          if (_pulseVibrate) unawaited(output.buzz());
+        case PulseNote(:final reason):
+          _log(reason.toUpperCase().startsWith('PULSE') ? reason : 'PULSE $reason');
+      }
+    }
   }
 
   void _handleWindDownActions(List<WindDownAction> actions) {

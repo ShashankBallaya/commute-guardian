@@ -143,8 +143,12 @@ class SettingsScreen extends StatelessWidget {
 
   Widget _pulseCard() => _Card(
         title: 'Pocket Pulse',
+        // "with you", not "in your pocket". Many riders carry the phone in a
+        // bag, and the pulse never proved possession anyway: it proves the
+        // audio link is alive to wherever the phone is. The old copy quietly
+        // excluded the bag carriers it actually serves.
         subtitle: 'A quiet sound through your earphones, so you know your phone '
-            'is still in your pocket without checking.',
+            'is still with you without checking.',
         children: [
           _Segmented(
             labels: [

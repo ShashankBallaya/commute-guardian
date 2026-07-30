@@ -63,6 +63,47 @@ const wakeAckMediaPrefix = 'wake_ack_media:';
 /// docs/design/pocket-pulse.md section 7, item 2.
 const pulseCollidePrefix = 'test_pulse_collide:';
 
+/// Pocket Pulse's settings, handed to the service at ride start the same way
+/// the Sarvam flags are. They live in the STORE rather than in a message
+/// because settings are written in the UI isolate's drift database, which the
+/// service isolate never opens, and because a restarted service has to be able
+/// to read them back.
+const pulseIntervalKey = 'pulse_interval_s';
+const pulseVibrateKey = 'pulse_vibrate';
+
+/// The rider changed the Pocket Pulse interval MID-RIDE. Carries seconds, or
+/// the literal `off`.
+const pulseSetPrefix = 'pulse_set:';
+
+/// A pulse interval change from the UI.
+///
+/// A COMMAND with a null interval means "the rider turned it off". A null
+/// COMMAND means "that message was not about the pulse". Collapsing the two
+/// would let a garbled message silence the pulse for the rest of a ride, which
+/// is why [parsePulseCommand] refuses to guess.
+class PulseCommand {
+  const PulseCommand(this.intervalS);
+
+  /// Seconds between chimes, or null for off.
+  final int? intervalS;
+}
+
+/// Reads a [pulseSetPrefix] message, or null if [data] is not one.
+///
+/// Pure, and separated from the handler's switch for the same reason
+/// [parseServiceData] is separated from the client: this is a string crossing
+/// an isolate boundary with a plugin either side, so a mistake here is
+/// invisible to every other test and surfaces only on a device, mid-ride.
+PulseCommand? parsePulseCommand(Object data) {
+  if (data is! String || !data.startsWith(pulseSetPrefix)) return null;
+  final payload = data.substring(pulseSetPrefix.length);
+  if (payload == 'off') return const PulseCommand(null);
+  final seconds = int.tryParse(payload);
+  // Unparseable: ignore it. Reading a garbled payload as "off" would silence
+  // the pulse for the rest of the ride on a single corrupt message.
+  return seconds == null ? null : PulseCommand(seconds);
+}
+
 /// Whether an alert is asking to be answered right now. Saved as well as sent,
 /// for the reason the 30 Jul swipe bench made concrete: these were transient,
 /// so a UI the OS recreated (or that the rider swiped away and reopened) came
@@ -175,7 +216,14 @@ class GeofenceTaskHandler extends TaskHandler {
       },
       onAutoOff: () => _autoOff(),
     );
-    await _chain!.start(originId: originId, destinationId: destinationId);
+    await _chain!.start(
+      originId: originId,
+      destinationId: destinationId,
+      pulseIntervalS:
+          await FlutterForegroundTask.getData<int>(key: pulseIntervalKey) ?? 0,
+      pulseVibrate:
+          await FlutterForegroundTask.getData<bool>(key: pulseVibrateKey) ?? true,
+    );
   }
 
   /// The wind-down countdown expired or [End now] was pressed: run the
@@ -244,6 +292,8 @@ class GeofenceTaskHandler extends TaskHandler {
         _chain?.testWindDown();
       case 'test_pulse':
         _chain?.testPulse();
+      case final String message when parsePulseCommand(message) != null:
+        _chain?.setPulseInterval(parsePulseCommand(message)!.intervalS);
       case final String message when message.startsWith(pulseCollidePrefix):
         _chain?.testPulse(
           collideAfterMs:

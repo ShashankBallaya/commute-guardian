@@ -336,6 +336,28 @@ class RideServiceClient {
   void testWindDown() =>
       FlutterForegroundTask.sendDataToTask('test_wind_down');
 
+  /// The rider changed the pulse interval while a ride is running.
+  ///
+  /// DUAL WRITE, deliberately. The message updates the engine that is running
+  /// right now; the store is what a restarted service reads. Sending only the
+  /// message would lose the change on a restart, and writing only the store
+  /// would leave the running ride on the old cadence until it ended.
+  Future<void> setPulseInterval({required int? seconds, bool? vibrate}) async {
+    await FlutterForegroundTask.saveData(
+      key: pulseIntervalKey,
+      value: seconds ?? 0,
+    );
+    if (vibrate != null) {
+      await FlutterForegroundTask.saveData(
+        key: pulseVibrateKey,
+        value: vibrate,
+      );
+    }
+    FlutterForegroundTask.sendDataToTask(
+      '$pulseSetPrefix${seconds == null || seconds <= 0 ? 'off' : seconds}',
+    );
+  }
+
   /// Pocket Pulse bench, section 7 of docs/design/pocket-pulse.md.
   void testPulse() => FlutterForegroundTask.sendDataToTask('test_pulse');
   void testPulseCollision({int afterMs = 150}) =>
@@ -414,6 +436,12 @@ class RideServiceClient {
     required bool sarvamClips,
     required DateTime startedAt,
     int? startBatteryPct,
+    // Pocket Pulse's settings, handed over HERE and not only on change. The
+    // first build shipped the mid-ride push alone, and the interval never
+    // reached a ride that simply started with the pulse already switched on:
+    // the store key was written only when a ride was already running.
+    int? pulseIntervalSeconds,
+    bool pulseVibrate = true,
   }) async {
     await FlutterForegroundTask.saveData(
       key: originIdKey,
@@ -447,6 +475,14 @@ class RideServiceClient {
     await FlutterForegroundTask.saveData(
       key: sarvamClipsKey,
       value: sarvamClips,
+    );
+    await FlutterForegroundTask.saveData(
+      key: pulseIntervalKey,
+      value: pulseIntervalSeconds ?? 0,
+    );
+    await FlutterForegroundTask.saveData(
+      key: pulseVibrateKey,
+      value: pulseVibrate,
     );
 
     final result = await FlutterForegroundTask.startService(

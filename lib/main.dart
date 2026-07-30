@@ -278,6 +278,12 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     // Read BEFORE the service starts, so the reading belongs to the ride rather
     // than to whatever the battery had already lost to starting it.
     final startBattery = await _batteryPct();
+    // AWAITED, not read. appSettingsProvider is an AsyncNotifier and this
+    // screen never watches it, so a plain read returns AsyncLoading and
+    // valueOrNull is null. That silently handed the service "no pulse" on
+    // every ride, which is exactly what the device showed twice before this
+    // line was fixed: settings that persist are not settings that arrive.
+    final pulseSettings = await ref.read(appSettingsProvider.future);
 
     final started = await _service.startRide(
       originStationId: journey.originStationId,
@@ -289,6 +295,11 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
       sarvamClips: _sarvamClips,
       startedAt: DateTime.now(),
       startBatteryPct: startBattery,
+      // Read at START, not only on change. pulseIntervalSeconds is the single
+      // place crowd mode is folded in, so the service is handed one number and
+      // never has to know the rule.
+      pulseIntervalSeconds: pulseSettings.pulseIntervalSeconds,
+      pulseVibrate: pulseSettings.vibrateWithPulse,
     );
 
     if (started) {
@@ -602,6 +613,22 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     );
   }
 
+  /// Hands the current pulse settings to the service, if a ride is running.
+  ///
+  /// Reads them back from the provider rather than taking an argument, so the
+  /// three callers cannot each compute a slightly different answer about what
+  /// crowd mode does to the interval. [AppSettings.pulseIntervalSeconds] is the
+  /// single place that folds crowd mode in.
+  Future<void> _pushPulseSettings() async {
+    if (!ref.read(isRideRunningProvider)) return;
+    final settings = ref.read(appSettingsProvider).valueOrNull;
+    if (settings == null) return;
+    await _service.setPulseInterval(
+      seconds: settings.pulseIntervalSeconds,
+      vibrate: settings.vibrateWithPulse,
+    );
+  }
+
   /// Screen 6, Settings, as a preview.
   ///
   /// The settings themselves are REAL: every switch writes through to AppFlags
@@ -639,9 +666,22 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                 ),
               ],
               onBack: () => Navigator.of(context).maybePop(),
-              onPulseInterval: notifier.setPulseInterval,
-              onCrowdMode: notifier.setCrowdMode,
-              onVibrateWithPulse: notifier.setVibrateWithPulse,
+              // Written to settings AND pushed to a running ride. Without the
+              // push a rider who changes the interval mid-journey would keep
+              // the old cadence until the ride ended, which is exactly the kind
+              // of "it didn't take" that makes a setting feel broken.
+              onPulseInterval: (minutes) async {
+                await notifier.setPulseInterval(minutes);
+                await _pushPulseSettings();
+              },
+              onCrowdMode: (on) async {
+                await notifier.setCrowdMode(on);
+                await _pushPulseSettings();
+              },
+              onVibrateWithPulse: (on) async {
+                await notifier.setVibrateWithPulse(on);
+                await _pushPulseSettings();
+              },
               onAnnounceEveryStation: notifier.setAnnounceEveryStation,
               onShareAnonymousUsage: notifier.setShareAnonymousUsage,
               onLanguage: notifier.setLanguage,
