@@ -821,6 +821,11 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     final alerts = ref.watch(rideAlertsProvider);
 
     return Scaffold(
+      // The keyboard belongs to the station search SHEET, not to this page:
+      // nothing here is a text field the rider types into. Letting it resize
+      // the body just squeezed a fixed-height column until it overflowed by
+      // 271 px. It overlays now, and the sheet keeps managing its own inset.
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -1424,9 +1429,19 @@ class _JourneySummary extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          stops.map((s) => s.name).join(' → '),
-          style: TextStyle(fontSize: 12, color: Palette.textDim(0.5)),
+        // Bounded and scrollable rather than free-growing. A 28 station
+        // cross-line chain ran to eight lines, which starved the Expanded
+        // debug log below and overflowed the screen by 271 px with the
+        // keyboard up. Scrolling keeps the whole chain readable, which the
+        // bench does use, without letting it size the page.
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 96),
+          child: SingleChildScrollView(
+            child: Text(
+              stops.map((s) => s.name).join(' → '),
+              style: TextStyle(fontSize: 12, color: Palette.textDim(0.5)),
+            ),
+          ),
         ),
       ],
     );

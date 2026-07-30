@@ -84,6 +84,8 @@ class PersistedRide {
     this.reachedIndex = -1,
     this.startedAt,
     this.startBatteryPct,
+    this.wakeLadderLive = false,
+    this.windDownLive = false,
   });
 
   /// When the ride started, or null if no ride is running. The history row is
@@ -106,6 +108,12 @@ class PersistedRide {
   /// early End stays false, which is what gates the turnaround origin default
   /// and the history row's reachedDestination.
   final bool destinationReached;
+
+  /// Whether the wake ladder is asking to be acknowledged right now, and
+  /// whether the auto-off countdown is running. Read back so a UI that was
+  /// recreated or reopened knows an alert it never saw start is still live.
+  final bool wakeLadderLive;
+  final bool windDownLive;
 }
 
 /// Turns one raw payload from the service isolate into the events it carries.
@@ -355,6 +363,14 @@ class RideServiceClient {
         startBatteryPct: _batteryFromStore(
           await FlutterForegroundTask.getData<int>(key: rideStartBatteryKey),
         ),
+        wakeLadderLive: await FlutterForegroundTask.getData<bool>(
+              key: wakeLadderLiveKey,
+            ) ??
+            false,
+        windDownLive: await FlutterForegroundTask.getData<bool>(
+              key: windDownLiveKey,
+            ) ??
+            false,
       );
 
   static DateTime? _dateFromMillis(int? millis) =>

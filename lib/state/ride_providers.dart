@@ -135,17 +135,15 @@ final isRideRunningProvider = Provider<bool>(
 
 /// What the app is currently asking the rider for.
 ///
-/// DELIBERATELY TRANSIENT, and kept out of [LiveRide] for that reason. The
-/// service does not persist these, so after an activity recreation both come
-/// back false: a ladder that is mid-climb would lose its on-screen "I'm awake"
-/// button until the next rung's event arrives. That is exactly the behaviour
-/// before this refactor, so it is a known gap rather than a regression, and it
-/// is honest about which half of the state model recovers.
-///
-/// Closing it is a SERVICE-SIDE change (persist the two flags next to the
-/// sendDataToMain that already announces them), which is additive and cheap,
-/// but it belongs to whoever builds the Active Journey screen, not to a state
-/// migration.
+/// STORE-BACKED SINCE 30 JUL, and the bench that changed it is worth keeping.
+/// These used to be deliberately transient, on the reasoning that a recreated
+/// UI would lose the on-screen "I'm awake" button only "until the next rung's
+/// event arrives". THAT REASONING WAS WRONG: liveness is edge-triggered, rungs
+/// do not re-announce it, so the button never came back at all. Swiping the
+/// app out of recents mid-alarm left a rider with a full-volume alarm and no
+/// way to answer it, because the media session dies with the UI too. The
+/// service now persists both flags next to the sendDataToMain that announces
+/// them, and [build] seeds from the store.
 class RideAlerts {
   const RideAlerts({this.wakeLadderLive = false, this.windDownLive = false});
 
@@ -163,7 +161,34 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
     final subscription =
         ref.watch(rideServiceClientProvider).events.listen(_onEvent);
     ref.onDispose(subscription.cancel);
+    // The store read is async and this notifier is not, so the seed lands a
+    // frame or two later. That is fine: false then true is a button appearing,
+    // where the old behaviour was a button that never appeared.
+    unawaited(_seedFromStore());
     return const RideAlerts();
+  }
+
+  /// Recovers liveness the UI was never present to hear announced.
+  ///
+  /// Re-claims the media session when a ladder turns out to be live, because
+  /// the earphone tap is the ack a rider with the phone in their pocket
+  /// actually uses, and it was released when the previous UI died.
+  Future<void> _seedFromStore() async {
+    final client = ref.read(rideServiceClientProvider);
+    try {
+      final persisted = await client.readPersistedRide();
+      if (!persisted.wakeLadderLive && !persisted.windDownLive) return;
+      // An event may have arrived while the read was in flight; it is fresher
+      // than the store, so it wins.
+      state = RideAlerts(
+        wakeLadderLive: state.wakeLadderLive || persisted.wakeLadderLive,
+        windDownLive: state.windDownLive || persisted.windDownLive,
+      );
+      if (state.wakeLadderLive) await client.setMediaSession(true);
+    } catch (_) {
+      // No service plumbing (widget tests) or a store race. The event stream
+      // is still the primary path.
+    }
   }
 
   void _onEvent(ServiceEvent event) {

@@ -26,6 +26,8 @@ class FakeRideServiceClient implements RideServiceClient {
     this.destinationReached = false,
     this.startedAt,
     this.startBatteryPct,
+    this.wakeLadderLive = false,
+    this.windDownLive = false,
   });
 
   bool running;
@@ -37,6 +39,11 @@ class FakeRideServiceClient implements RideServiceClient {
   /// of recents keeps its record.
   DateTime? startedAt;
   int? startBatteryPct;
+
+  /// Alerts the service says are live. Persisted since 30 Jul, so a screen born
+  /// mid-alarm can find out it has an alarm to answer.
+  bool wakeLadderLive;
+  bool windDownLive;
 
   /// Every command the screen sent, in order, for assertions.
   final List<String> commands = [];
@@ -65,6 +72,8 @@ class FakeRideServiceClient implements RideServiceClient {
         destinationReached: destinationReached,
         startedAt: startedAt,
         startBatteryPct: startBatteryPct,
+        wakeLadderLive: wakeLadderLive,
+        windDownLive: windDownLive,
       );
 
   @override

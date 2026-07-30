@@ -279,6 +279,54 @@ void main() {
     expect(find.text('Start Travel Mode'), findsNothing);
   });
 
+  testWidgets('a screen born mid-alarm can still answer the alarm', (
+    tester,
+  ) async {
+    // THE 30 JUL SWIPE BENCH, as a test. The app was swiped out of recents
+    // while the wake ladder was climbing. The service is never killed by that,
+    // so the alarm kept sounding, but every ack died with the UI: the media
+    // session was released, the notification carried no button, and reopening
+    // the app did NOT bring "I'm awake" back. The old comment on RideAlerts
+    // predicted the button would return "until the next rung's event arrives",
+    // and that was wrong, because rungs do not re-announce liveness.
+    //
+    // So this pumps a screen that never saw the ladder start, and asserts it
+    // finds out anyway. Nothing below taps anything.
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+      wakeLadderLive: true,
+    );
+    await _pumpScreen(tester, service: service);
+    await tester.pumpAndSettle();
+
+    // The ack the rider can see.
+    expect(find.text("I'm awake"), findsOneWidget);
+
+    // And the ack they cannot see, which is the one that matters with the
+    // phone in a pocket: the earphone tap has to route to us again.
+    expect(service.commands, contains('setMediaSession:true'));
+  });
+
+  testWidgets('a quiet ride does not claim the rider\'s media buttons', (
+    tester,
+  ) async {
+    // The other half of the seed. Outside a live ladder the earphone tap must
+    // keep controlling the rider's music, so a screen born mid-ride with
+    // nothing sounding must not grab the session on the way up.
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+    );
+    await _pumpScreen(tester, service: service);
+    await tester.pumpAndSettle();
+
+    expect(find.text("I'm awake"), findsNothing);
+    expect(service.commands, isNot(contains('setMediaSession:true')));
+  });
+
   testWidgets('a ride whose UI died still gets its history row', (
     tester,
   ) async {

@@ -58,6 +58,15 @@ const windDownExtendId = 'wind_down_extend';
 const wakeAckButtonId = 'wake_ack';
 const wakeAckMediaPrefix = 'wake_ack_media:';
 
+/// Whether an alert is asking to be answered right now. Saved as well as sent,
+/// for the reason the 30 Jul swipe bench made concrete: these were transient,
+/// so a UI the OS recreated (or that the rider swiped away and reopened) came
+/// back believing nothing was live. With the alarm sounding, that left NO way
+/// to acknowledge it, because liveness is edge-triggered and the next rung
+/// does not re-announce it. The store is what a rebuilt UI reads.
+const wakeLadderLiveKey = 'wake_ladder_live';
+const windDownLiveKey = 'wind_down_live';
+
 /// Native call state from iOS CallKit, forwarded main isolate -> service.
 /// Android has no counterpart and does not need one: there the audio session
 /// already reports a real call, because the ringtone interrupts us.
@@ -72,6 +81,35 @@ const wakeAudioNotePrefix = 'wake_audio:';
 /// screen lock and app backgrounding.
 class GeofenceTaskHandler extends TaskHandler {
   GeofenceChainService? _chain;
+
+  /// Which alerts are asking to be answered. Held here, not read back from the
+  /// store, because the notification's buttons are composed from BOTH and one
+  /// callback must not wipe the other's buttons off the notification.
+  bool _wakeLadderLive = false;
+  bool _windDownLive = false;
+
+  /// The ongoing Travel Mode notification's actions, recomputed whenever either
+  /// alert changes.
+  ///
+  /// This is the ack a pocketed, locked phone can actually reach. Until the
+  /// 30 Jul bench the wake ladder attached nothing here, so an alarm on a
+  /// phone whose app had been swiped out of recents could not be answered at
+  /// all: the media session dies with the UI, and the on-screen button dies
+  /// with it. The rider's only remaining option was ending the whole journey.
+  ///
+  /// Android shows at most three actions, which is exactly the worst case here.
+  void _updateNotificationButtons() {
+    FlutterForegroundTask.updateService(
+      notificationButtons: [
+        if (_wakeLadderLive)
+          const NotificationButton(id: wakeAckButtonId, text: "I'm awake"),
+        if (_windDownLive) ...const [
+          NotificationButton(id: windDownEndNowId, text: 'End now'),
+          NotificationButton(id: windDownExtendId, text: 'Extend 10 min'),
+        ],
+      ],
+    );
+  }
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
@@ -106,7 +144,10 @@ class GeofenceTaskHandler extends TaskHandler {
         );
       },
       onWakeLadderLive: (live) {
+        _wakeLadderLive = live;
         FlutterForegroundTask.sendDataToMain({'wakeLadderLive': live});
+        FlutterForegroundTask.saveData(key: wakeLadderLiveKey, value: live);
+        _updateNotificationButtons();
       },
       onIosToneCommand: (command, volume) {
         FlutterForegroundTask.sendDataToMain({
@@ -122,22 +163,10 @@ class GeofenceTaskHandler extends TaskHandler {
         });
       },
       onWindDownLive: (live) {
+        _windDownLive = live;
         FlutterForegroundTask.sendDataToMain({'windDownLive': live});
-        // The buttons appear on the ongoing Travel Mode notification only
-        // while the countdown runs, so a pocketed phone can answer without
-        // being unlocked. Android only in practice; the iOS notification is
-        // disabled and its real surface is the Phase 2 Arrival screen.
-        FlutterForegroundTask.updateService(
-          notificationButtons: live
-              ? const [
-                  NotificationButton(id: windDownEndNowId, text: 'End now'),
-                  NotificationButton(
-                    id: windDownExtendId,
-                    text: 'Extend 10 min',
-                  ),
-                ]
-              : const [],
-        );
+        FlutterForegroundTask.saveData(key: windDownLiveKey, value: live);
+        _updateNotificationButtons();
       },
       onAutoOff: () => _autoOff(),
     );
@@ -166,6 +195,10 @@ class GeofenceTaskHandler extends TaskHandler {
   @override
   void onNotificationButtonPressed(String id) {
     switch (id) {
+      case wakeAckButtonId:
+        // Named apart from the screen button so the ride log says which
+        // surface answered, the way the earphone tap already does.
+        _chain?.wakeAck(source: 'notification button');
       case windDownEndNowId:
         _chain?.windDownEndNow();
       case windDownExtendId:
@@ -186,6 +219,13 @@ class GeofenceTaskHandler extends TaskHandler {
     // (OS recreation, reboot restart) cannot replay a stale opt-in.
     await FlutterForegroundTask.saveData(key: sarvamGreetingKey, value: false);
     await FlutterForegroundTask.saveData(key: sarvamClipsKey, value: false);
+    // Same reasoning, and it matters more: a stale true here would have the
+    // next ride's UI open claiming an alarm that is not sounding, and claim
+    // the rider's media buttons for it.
+    _wakeLadderLive = false;
+    _windDownLive = false;
+    await FlutterForegroundTask.saveData(key: wakeLadderLiveKey, value: false);
+    await FlutterForegroundTask.saveData(key: windDownLiveKey, value: false);
   }
 
   @override
