@@ -174,6 +174,26 @@ class GeofenceChainService {
   Future<void> _speaking = Future<void>.value();
   int _pendingSpeaks = 0;
 
+  /// Completed when the CURRENT utterance actually finishes speaking, on
+  /// Android only.
+  ///
+  /// THIS EXISTS BECAUSE ANNOUNCEMENTS DID NOT DUCK THE RIDER'S MUSIC, on
+  /// every Android ride, for the life of the project. `awaitSpeakCompletion`
+  /// is honoured by the plugin ONLY in QUEUE_FLUSH mode, and the ride runs in
+  /// QUEUE_ADD so a short approach ping cannot flush a long interchange
+  /// script. Under QUEUE_ADD `speak()` returns AT ONCE, so [_speak]'s finally
+  /// block ran while the words were still queued and deactivated the audio
+  /// session 91 ms after activating it. Measured 30 Jul: requestAudioFocus at
+  /// 22:41:06.465, abandonAudioFocus at 22:41:06.556, and `dumpsys audio`
+  /// showed an empty ducked list for the whole announcement while the pulse
+  /// chime (which holds its own focus for the sound's real duration) ducked
+  /// correctly.
+  ///
+  /// The codebase already knew half of this: the farewell path works around
+  /// the same fact by flipping to QUEUE_FLUSH for that one utterance. Nobody
+  /// had connected it to ducking.
+  Completer<void>? _utteranceDone;
+
   /// The pushed Sarvam clip pack, or null when clips are off or absent.
   ClipLibrary? _clips;
 
@@ -279,6 +299,16 @@ class GeofenceChainService {
     await _tts.setLanguage('en-IN');
     await _tts.setSpeechRate(0.45);
     await _tts.awaitSpeakCompletion(true);
+    // The single source of truth for "the words have stopped". Registered on
+    // both platforms because it costs nothing, but only AWAITED on Android
+    // (see _speak): iOS honours awaitSpeakCompletion and its shared-session
+    // behaviour is device-proven, so it is left exactly as it was.
+    _tts.setCompletionHandler(_finishUtterance);
+    _tts.setCancelHandler(_finishUtterance);
+    _tts.setErrorHandler((dynamic message) {
+      _log('Announcement error: $message');
+      _finishUtterance();
+    });
     if (Platform.isAndroid) {
       // flutter_tts defaults to QUEUE_FLUSH on Android: a second speak()
       // cuts off whatever is still playing. If a GPS gap drops the first
@@ -727,6 +757,15 @@ class GeofenceChainService {
   /// only once the last queued announcement has finished, so a run of them (the
   /// Thane approach ping followed by the interchange script) ducks the music
   /// once rather than bobbing its volume between sentences.
+  /// Releases whatever utterance is waiting. Idempotent and safe to call when
+  /// nothing is speaking: a cancel and a completion can both arrive for the
+  /// same utterance, and a double completion would throw.
+  void _finishUtterance() {
+    final done = _utteranceDone;
+    _utteranceDone = null;
+    if (done != null && !done.isCompleted) done.complete();
+  }
+
   Future<void> _speak(String text) {
     _pendingSpeaks++;
     _speaking = _speaking.then((_) async {
@@ -735,7 +774,26 @@ class GeofenceChainService {
         // window opens here rather than after the utterance starts.
         _selfInterruption.noteOwnAudioStarted(DateTime.now());
         await _session?.setActive(true);
-        await _tts.speak(text);
+        if (Platform.isAndroid) {
+          // Wait for the ENGINE to say it has finished, not for speak() to
+          // return, because under QUEUE_ADD those are not the same moment and
+          // the difference is the whole ducking bug. Bounded: the longest
+          // interchange script runs about 8 s at rate 0.45, and a TTS engine
+          // that never reports completion must not wedge every later
+          // announcement of the ride behind it.
+          final done = Completer<void>();
+          _utteranceDone = done;
+          await _tts.speak(text);
+          await done.future.timeout(
+            const Duration(seconds: 20),
+            onTimeout: () {
+              _log('Announcement completion never arrived, continuing.');
+              if (identical(_utteranceDone, done)) _utteranceDone = null;
+            },
+          );
+        } else {
+          await _tts.speak(text);
+        }
       } catch (error) {
         // Swallowed so one failed announcement cannot poison the chain and
         // silence every announcement after it for the rest of the ride.

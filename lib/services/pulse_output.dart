@@ -77,6 +77,7 @@ class PulseOutput {
 
   /// One chime. Fire and forget: a pulse that fails is a pulse that is missed,
   /// never a pulse that damages a ride.
+  ///
   Future<void> chime() async {
     final player = ap.AudioPlayer();
     try {
@@ -88,10 +89,10 @@ class PulseOutput {
       // lands after it is a stamp that did not happen.
       _interruption.noteOwnAudioStarted(now());
       await player.play(ap.AssetSource('audio/pulse_chime.wav'));
-      // The asset is 520 ms. Two seconds is a generous ceiling that still
+      // The asset is 1.25 s. Three seconds is a generous ceiling that still
       // guarantees the player is released rather than left holding a duck on
       // the rider's music.
-      await completed.timeout(const Duration(seconds: 2));
+      await completed.timeout(const Duration(seconds: 3));
     } catch (error) {
       // Swallowed on purpose. A missed pulse is a missed reassurance; a thrown
       // pulse would poison whatever called it, and what calls it is the ride.
