@@ -1,0 +1,590 @@
+import 'package:flutter/material.dart';
+
+import '../models/app_settings.dart';
+import '../theme/palette.dart';
+import '../theme/type_scale.dart';
+import '../widgets/pressable.dart';
+
+/// Whether a readiness item is satisfied. Not an error state: an unmet item is
+/// something to fix, not something that has gone wrong, and the palette has no
+/// status red for exactly that reason.
+enum ReadinessState { ok, needsAttention }
+
+/// One row of the readiness card.
+class ReadinessItem {
+  const ReadinessItem({
+    required this.label,
+    required this.state,
+    this.detail,
+    this.onFix,
+  });
+
+  final String label;
+  final ReadinessState state;
+
+  /// What goes wrong if it stays unmet. Only shown when it is unmet, because a
+  /// satisfied item needs no explanation.
+  final String? detail;
+  final VoidCallback? onFix;
+}
+
+/// Screen 6, Settings. The screen Pocket Pulse has been waiting for.
+///
+/// Nothing here is crimson. Crimson starts or ends a JOURNEY, and no control on
+/// this screen does either, so the palette's one accent simply does not appear.
+///
+/// THREE ITEMS FROM THE HANDOVER'S SCREEN 6 LIST ARE DELIBERATELY ABSENT, and
+/// they are worth naming so nobody adds them back as an oversight:
+///
+///   - The wake "stations before" stepper. Screen 4's WakeChoice toggle already
+///     owns that choice, and it must never become a second way to change
+///     leadTimeS, which is locked at 90 s. Two controls for one behaviour is the
+///     same disease as two projectors for one position.
+///   - Alarm volume behaviour. The ladder is [0.3, 0.6, 1.0] and climbs until
+///     acknowledged. A volume control's only function would be to make the alarm
+///     worse at the single job this product exists to do.
+///   - A plain haptics toggle. `vibration` is wired into the wake ladder through
+///     wake_alert_output.dart, so one switch would let a rider quietly disable
+///     part of their own alarm. It is scoped to the pulse instead, and the
+///     caption states the guarantee rather than leaving it to be discovered.
+class SettingsScreen extends StatelessWidget {
+  const SettingsScreen({
+    super.key,
+    required this.settings,
+    required this.readiness,
+    required this.availableLanguages,
+    required this.versionLine,
+    required this.onBack,
+    required this.onPulseInterval,
+    required this.onCrowdMode,
+    required this.onVibrateWithPulse,
+    required this.onAnnounceEveryStation,
+    required this.onShareAnonymousUsage,
+    required this.onLanguage,
+    this.onPreviewPulse,
+  });
+
+  final AppSettings settings;
+  final List<ReadinessItem> readiness;
+
+  /// Only what the device can actually speak. See TtsLanguageGateway: offering
+  /// a language with no voice behind it silences the wake alarm.
+  final Set<AppLanguage> availableLanguages;
+
+  /// "Commute Guardian 1.0.0 (1)". The line every support conversation starts
+  /// with, and this app already has a false-positive antivirus problem.
+  final String versionLine;
+
+  final VoidCallback onBack;
+  final ValueChanged<int> onPulseInterval;
+  final ValueChanged<bool> onCrowdMode;
+  final ValueChanged<bool> onVibrateWithPulse;
+  final ValueChanged<bool> onAnnounceEveryStation;
+  final ValueChanged<bool> onShareAnonymousUsage;
+  final ValueChanged<AppLanguage> onLanguage;
+  final VoidCallback? onPreviewPulse;
+
+  static const _intervals = [0, 2, 3, 5, 10];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _Header(onBack: onBack),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(22, 4, 22, 28),
+                children: [
+                  _readinessCard(),
+                  const SizedBox(height: 16),
+                  _pulseCard(),
+                  const SizedBox(height: 16),
+                  _announcementsCard(),
+                  const SizedBox(height: 16),
+                  _privacyCard(),
+                  const SizedBox(height: 20),
+                  Center(
+                    child: Text(
+                      versionLine,
+                      style: TextStyle(
+                        fontSize: TypeScale.caption,
+                        color: Palette.textDim(0.4),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// FIRST ON THE SCREEN, and that is a departure from the handover, which had
+  /// battery optimisation last as a footnote. OEM battery killers are this
+  /// project's own named top product risk and the Android 11 background
+  /// location flow is where riders silently drop out. A rider whose app was
+  /// killed mid journey has no other way to find out.
+  Widget _readinessCard() => _Card(
+        title: 'Travel Mode readiness',
+        subtitle: 'What the app needs to wake you while your phone is locked '
+            'in a pocket.',
+        children: [
+          for (final (index, item) in readiness.indexed) ...[
+            if (index > 0) const _Divider(),
+            _ReadinessRow(item: item),
+          ],
+        ],
+      );
+
+  Widget _pulseCard() => _Card(
+        title: 'Pocket Pulse',
+        subtitle: 'A quiet sound through your earphones, so you know your phone '
+            'is still in your pocket without checking.',
+        children: [
+          _Segmented(
+            labels: [
+              for (final m in _intervals) m == 0 ? 'Off' : '$m min',
+            ],
+            selected: _intervals.indexOf(settings.pulseIntervalMinutes),
+            onChanged: (i) => onPulseInterval(_intervals[i]),
+          ),
+          const SizedBox(height: 4),
+          _SwitchRow(
+            label: 'Crowd mode',
+            detail: 'Every 45 seconds. For a packed train.',
+            value: settings.crowdMode,
+            onChanged: onCrowdMode,
+            switchKey: const Key('settings_crowd_mode'),
+          ),
+          const _Divider(),
+          // MOVED INSIDE THIS CARD from a card of its own. It is scoped to the
+          // pulse, and position makes that scope self-evident where a caption
+          // alone had to be read and believed.
+          _SwitchRow(
+            label: 'Vibrate with the pulse',
+            detail: 'The wake alarm always vibrates.',
+            value: settings.vibrateWithPulse,
+            onChanged: onVibrateWithPulse,
+            switchKey: const Key('settings_vibrate'),
+          ),
+          if (onPreviewPulse != null) ...[
+            const _Divider(),
+            Pressable(
+              key: const Key('settings_preview_pulse'),
+              onTap: onPreviewPulse!,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Hear it now',
+                        style: TextStyle(
+                          fontSize: TypeScale.body,
+                          color: Palette.text,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: Palette.textDim(0.45),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ],
+      );
+
+  Widget _announcementsCard() => _Card(
+        title: 'Announcements',
+        children: [
+          _SwitchRow(
+            label: 'Name every station',
+            detail: 'Off announces only your stop, and still wakes you.',
+            value: settings.announceEveryStation,
+            onChanged: onAnnounceEveryStation,
+            switchKey: const Key('settings_announce_every'),
+          ),
+          const _Divider(),
+          _LanguagePicker(
+            available: availableLanguages,
+            selected: settings.language,
+            onChanged: onLanguage,
+          ),
+        ],
+      );
+
+  Widget _privacyCard() => _Card(
+        title: 'Privacy',
+        children: [
+          _SwitchRow(
+            label: 'Share anonymous usage',
+            detail: 'Never your location, and never where you travel.',
+            value: settings.shareAnonymousUsage,
+            onChanged: onShareAnonymousUsage,
+            switchKey: const Key('settings_share_usage'),
+          ),
+        ],
+      );
+}
+
+class _Header extends StatelessWidget {
+  const _Header({required this.onBack});
+
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 22, 10),
+      child: Row(
+        children: [
+          Pressable(
+            key: const Key('settings_back'),
+            onTap: onBack,
+            child: const Padding(
+              padding: EdgeInsets.all(8),
+              child: Icon(Icons.chevron_left, color: Palette.text, size: 24),
+            ),
+          ),
+          const SizedBox(width: 2),
+          const Text(
+            'Settings',
+            style: TextStyle(
+              fontSize: TypeScale.heading,
+              fontWeight: FontWeight.w700,
+              color: Palette.text,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Card extends StatelessWidget {
+  const _Card({required this.title, required this.children, this.subtitle});
+
+  final String title;
+  final String? subtitle;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitle = this.subtitle;
+    return Container(
+      decoration: Palette.glassCard(radius: 20),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: TypeScale.bodyLarge,
+              fontWeight: FontWeight.w700,
+              color: Palette.text,
+            ),
+          ),
+          if (subtitle != null) ...[
+            const SizedBox(height: 3),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: TypeScale.caption,
+                height: 1.45,
+                color: Palette.textDim(0.6),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _Divider extends StatelessWidget {
+  const _Divider();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 1,
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        color: Palette.hairline,
+      );
+}
+
+class _ReadinessRow extends StatelessWidget {
+  const _ReadinessRow({required this.item});
+
+  final ReadinessItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final ok = item.state == ReadinessState.ok;
+    final detail = ok ? null : item.detail;
+    final onFix = ok ? null : item.onFix;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        // TOP aligned, not centre. On a row with a wrapped detail line a
+        // centred dot lands in the gap between the label and the detail and
+        // reads as pointing at the wrong one.
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            // Optically centres the dot on the label's first line.
+            padding: const EdgeInsets.only(top: 6),
+            child: Container(
+              width: 9,
+              height: 9,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                // FLAT, no glow. The glow is the locked "live, tracking now"
+                // signal and belongs to the position dot alone; a permission
+                // is a state, not a live reading.
+                color: ok ? Palette.dotGreen : Palette.dotAmber,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.label,
+                  style: const TextStyle(
+                    fontSize: TypeScale.body,
+                    color: Palette.text,
+                  ),
+                ),
+                if (detail != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    detail,
+                    style: TextStyle(
+                      fontSize: TypeScale.caption,
+                      height: 1.4,
+                      color: Palette.textDim(0.55),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (onFix != null) ...[
+            const SizedBox(width: 10),
+            Pressable(
+              key: Key('settings_fix_${item.label}'),
+              onTap: onFix,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(color: Palette.textDim(0.25)),
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
+                child: const Text(
+                  'Fix',
+                  style: TextStyle(
+                    fontSize: TypeScale.label,
+                    fontWeight: FontWeight.w600,
+                    color: Palette.text,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SwitchRow extends StatelessWidget {
+  const _SwitchRow({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    required this.switchKey,
+    this.detail,
+  });
+
+  final String label;
+  final String? detail;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final Key switchKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final detail = this.detail;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: TypeScale.body,
+                    color: Palette.text,
+                  ),
+                ),
+                if (detail != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    detail,
+                    style: TextStyle(
+                      fontSize: TypeScale.caption,
+                      height: 1.4,
+                      color: Palette.textDim(0.55),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Switch(
+            key: switchKey,
+            value: value,
+            onChanged: onChanged,
+            activeThumbColor: Palette.dotGreen,
+            activeTrackColor: Palette.greenSoft,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The interval control, in the app's locked selected-segment language: green
+/// TEXT on a soft green wash, never a loud fill.
+class _Segmented extends StatelessWidget {
+  const _Segmented({
+    required this.labels,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: Palette.hairline),
+      ),
+      child: Row(
+        children: [
+          for (final (i, label) in labels.indexed)
+            Expanded(
+              child: Pressable(
+                key: Key('settings_interval_$i'),
+                onTap: () => onChanged(i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  curve: const Cubic(0.23, 1, 0.32, 1),
+                  decoration: BoxDecoration(
+                    color: i == selected
+                        ? Palette.greenSoft
+                        : Palette.greenSoft.withValues(alpha: 0),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Center(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.clip,
+                      style: TextStyle(
+                        fontSize: TypeScale.label,
+                        fontWeight:
+                            i == selected ? FontWeight.w700 : FontWeight.w400,
+                        color: i == selected
+                            ? Palette.dotGreen
+                            : Palette.textDim(0.75),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The language picker.
+///
+/// ONLY OFFERS WHAT THE DEVICE CAN SPEAK, and says so when that is one thing.
+/// A rider who picks a language with no voice behind it does not get an English
+/// fallback, they get silence from the wake alarm, which is the failure this
+/// whole product exists to prevent.
+class _LanguagePicker extends StatelessWidget {
+  const _LanguagePicker({
+    required this.available,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final Set<AppLanguage> available;
+  final AppLanguage selected;
+  final ValueChanged<AppLanguage> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final offered =
+        AppLanguage.values.where(available.contains).toList(growable: false);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Voice',
+            style: TextStyle(fontSize: TypeScale.body, color: Palette.text),
+          ),
+          const SizedBox(height: 10),
+          if (offered.length < 2)
+            Text(
+              'This phone can only speak English. Adding a Hindi or Marathi '
+              'voice in your phone settings will offer it here.',
+              style: TextStyle(
+                fontSize: TypeScale.caption,
+                height: 1.4,
+                color: Palette.textDim(0.55),
+              ),
+            )
+          else
+            _Segmented(
+              labels: [for (final l in offered) l.label],
+              selected: offered.indexOf(selected).clamp(0, offered.length - 1),
+              onChanged: (i) => onChanged(offered[i]),
+            ),
+        ],
+      ),
+    );
+  }
+}

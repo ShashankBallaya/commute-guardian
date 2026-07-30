@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'models/app_settings.dart';
 import 'models/journey.dart';
 import 'models/station.dart';
 import 'screens/arrival_screen.dart';
@@ -14,12 +15,14 @@ import 'screens/history_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/preparing_flow.dart';
 import 'screens/preparing_screen.dart';
+import 'screens/settings_screen.dart';
 import 'screens/travel_mode_screen.dart';
 import 'screens/wake_alert_screen.dart';
 import 'services/ride_service_client.dart';
 import 'services/wind_down.dart';
 import 'state/journey_providers.dart';
 import 'state/ride_providers.dart';
+import 'state/settings_providers.dart';
 import 'theme/palette.dart';
 import 'widgets/slide_to_start.dart';
 import 'widgets/status_chip.dart';
@@ -586,6 +589,56 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
     );
   }
 
+  /// Screen 6, Settings, as a preview.
+  ///
+  /// The settings themselves are REAL: every switch writes through to AppFlags
+  /// and survives a restart. Only the readiness rows are dressed, because the
+  /// live permission reads belong with the wiring, not with the screen.
+  Future<void> _previewSettings() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => Consumer(
+          builder: (context, ref, _) {
+            final settings =
+                ref.watch(appSettingsProvider).valueOrNull ?? const AppSettings();
+            final languages =
+                ref.watch(availableLanguagesProvider).valueOrNull ??
+                    {AppLanguage.english};
+            final notifier = ref.read(appSettingsProvider.notifier);
+
+            return SettingsScreen(
+              settings: settings,
+              availableLanguages: languages,
+              versionLine: 'Commute Guardian 1.0.0 (1)',
+              readiness: const [
+                ReadinessItem(
+                  label: 'Location, always',
+                  state: ReadinessState.ok,
+                ),
+                ReadinessItem(
+                  label: 'Notifications',
+                  state: ReadinessState.ok,
+                ),
+                ReadinessItem(
+                  label: 'Battery use',
+                  state: ReadinessState.needsAttention,
+                  detail: 'Restricted. Android may stop the app mid journey.',
+                ),
+              ],
+              onBack: () => Navigator.of(context).maybePop(),
+              onPulseInterval: notifier.setPulseInterval,
+              onCrowdMode: notifier.setCrowdMode,
+              onVibrateWithPulse: notifier.setVibrateWithPulse,
+              onAnnounceEveryStation: notifier.setAnnounceEveryStation,
+              onShareAnonymousUsage: notifier.setShareAnonymousUsage,
+              onLanguage: notifier.setLanguage,
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   /// Screen 5, both states, as a preview.
   ///
   /// NOT WIRED, for the same reason Screen 3 is not: the wind-down path has a
@@ -1052,6 +1105,14 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                   height: 22,
                   child: Row(
                     children: [
+                      // The previews SCROLL. Every new screen adds an icon here
+                      // and the row overflowed twice while shaving the gaps
+                      // between them; a seventh would have done it again.
+                      Expanded(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
                       // History icon per the design system: the plain
                       // clock-with-counterclockwise-arrow, never a stopwatch.
                       SizedBox(
@@ -1165,7 +1226,28 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                           onPressed: _previewWakeAlert,
                         ),
                       ),
-                      const Spacer(),
+                      // 8, not 14: the sixth preview icon (Screen 5) overflowed
+                      // this row by 28 px on the 3T.
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 22,
+                        child: IconButton(
+                          key: const Key('settings_preview_button'),
+                          padding: EdgeInsets.zero,
+                          iconSize: 18,
+                          tooltip: 'Preview Screen 6',
+                          icon: Icon(
+                            Icons.settings_outlined,
+                            color: Palette.textDim(0.6),
+                          ),
+                          onPressed: _previewSettings,
+                        ),
+                      ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
                       // Debug bench flag (Android only): Sarvam clip greets
                       // at Start, TTS still speaks the route line. Applied at
                       // the next Start; off keeps the Start path stock.
