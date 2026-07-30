@@ -336,6 +336,11 @@ class RideServiceClient {
   void testWindDown() =>
       FlutterForegroundTask.sendDataToTask('test_wind_down');
 
+  /// Pocket Pulse bench, section 7 of docs/design/pocket-pulse.md.
+  void testPulse() => FlutterForegroundTask.sendDataToTask('test_pulse');
+  void testPulseCollision({int afterMs = 150}) =>
+      FlutterForegroundTask.sendDataToTask('$pulseCollidePrefix$afterMs');
+
   // ---------------------------------------------------------------------
   // Lifecycle and the shared store
   // ---------------------------------------------------------------------

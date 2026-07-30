@@ -135,5 +135,12 @@ class FakeRideServiceClient implements RideServiceClient {
   void testWakeAlert() => commands.add('testWakeAlert');
 
   @override
+  void testPulse() => commands.add('testPulse');
+
+  @override
+  void testPulseCollision({int afterMs = 150}) =>
+      commands.add('testPulseCollision:$afterMs');
+
+  @override
   void testWindDown() => commands.add('testWindDown');
 }

@@ -58,6 +58,11 @@ const windDownExtendId = 'wind_down_extend';
 const wakeAckButtonId = 'wake_ack';
 const wakeAckMediaPrefix = 'wake_ack_media:';
 
+/// Bench only: fire a Pocket Pulse chime N ms into a spoken line, reproducing
+/// the 21 Jul collision that once stood the wake ladder down. See
+/// docs/design/pocket-pulse.md section 7, item 2.
+const pulseCollidePrefix = 'test_pulse_collide:';
+
 /// Whether an alert is asking to be answered right now. Saved as well as sent,
 /// for the reason the 30 Jul swipe bench made concrete: these were transient,
 /// so a UI the OS recreated (or that the rider swiped away and reopened) came
@@ -237,6 +242,13 @@ class GeofenceTaskHandler extends TaskHandler {
         _chain?.testWakeAlert();
       case 'test_wind_down':
         _chain?.testWindDown();
+      case 'test_pulse':
+        _chain?.testPulse();
+      case final String message when message.startsWith(pulseCollidePrefix):
+        _chain?.testPulse(
+          collideAfterMs:
+              int.tryParse(message.substring(pulseCollidePrefix.length)) ?? 150,
+        );
       case wakeAckButtonId:
         _chain?.wakeAck(source: 'screen button');
       case final String message when message.startsWith(wakeAckMediaPrefix):

@@ -435,6 +435,12 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
 
   void _testWindDown() => _service.testWindDown();
 
+  /// Pocket Pulse bench, section 7 of docs/design/pocket-pulse.md. Plain tap
+  /// is the chime on its own; LONG PRESS fires it 150 ms into a spoken line,
+  /// which is the 21 Jul collision that once stood the wake ladder down.
+  void _testPulse() => _service.testPulse();
+  void _testPulseCollision() => _service.testPulseCollision();
+
   void _wakeAck() => _service.ackWakeFromButton();
 
   void _windDownEndNow() => _service.windDownEndNow();
@@ -1105,6 +1111,14 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen> {
                         onPressed: isRunning ? _testWindDown : null,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _TestButton(
+                        label: 'Pulse',
+                        onPressed: isRunning ? _testPulse : null,
+                        onLongPress: isRunning ? _testPulseCollision : null,
+                      ),
+                    ),
                   ],
                 ),
               if (!isRunning)
@@ -1325,11 +1339,21 @@ ButtonStyle get _urgentButtonStyle => ElevatedButton.styleFrom(
     );
 
 class _TestButton extends StatelessWidget {
-  const _TestButton({required this.label, required this.onPressed, this.buttonKey});
+  const _TestButton({
+    required this.label,
+    required this.onPressed,
+    this.buttonKey,
+    this.onLongPress,
+  });
 
   final String label;
   final VoidCallback? onPressed;
   final Key? buttonKey;
+
+  /// A second bench action hidden behind a long press, for the case where a
+  /// button would otherwise need a twin. Today: the Pocket Pulse collision
+  /// test, which is the same chime fired 150 ms into a spoken line.
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -1337,6 +1361,7 @@ class _TestButton extends StatelessWidget {
     return OutlinedButton(
       key: buttonKey,
       onPressed: onPressed,
+      onLongPress: onLongPress,
       style: OutlinedButton.styleFrom(
         foregroundColor: Palette.textDim(0.75),
         disabledForegroundColor: Palette.textDim(0.25),

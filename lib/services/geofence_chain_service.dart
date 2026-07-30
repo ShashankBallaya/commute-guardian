@@ -17,6 +17,7 @@ import '../models/station.dart';
 import 'announcement_templates.dart';
 import 'clip_library.dart';
 import 'ride_progress.dart';
+import 'pulse_output.dart';
 import 'self_audio_interruption.dart';
 import 'wake_alert_output.dart';
 import 'wake_escalation.dart';
@@ -149,6 +150,11 @@ class GeofenceChainService {
   /// taking a call. See [SelfAudioInterruptionFilter] for the bench evidence.
   final _selfInterruption = SelfAudioInterruptionFilter();
 
+  /// Pocket Pulse's hands. Built with the ride and nulled with it, which is
+  /// what makes a pulse structurally unable to outlive the journey: there is
+  /// nothing left for it to sound through. See docs/design/pocket-pulse.md.
+  PulseOutput? _pulseOutput;
+
   /// Serializes announcements so two never overlap, and so the ducking window
   /// spans a whole run of them (see [_speak]).
   Future<void> _speaking = Future<void>.value();
@@ -212,6 +218,8 @@ class GeofenceChainService {
     _selfInterruption.noteSustainedOwnAudioEnded();
     _wakeOutput =
         WakeAlertOutput(log: _log, onIosToneCommand: onIosToneCommand);
+    _pulseOutput =
+        PulseOutput(log: _log, interruptionFilter: _selfInterruption);
 
     if (sarvamClips && Platform.isAndroid) {
       final dir = await getExternalStorageDirectory();
@@ -738,6 +746,56 @@ class GeofenceChainService {
     );
   }
 
+  /// Debug-only, and it is THE BENCH INSTRUMENT for Pocket Pulse.
+  ///
+  /// Section 7 of docs/design/pocket-pulse.md asks for the audio risk to be
+  /// spiked at the desk BEFORE the engine is built, a carve-out made 29 Jul
+  /// that had slipped twice. This is what makes that possible: no engine, no
+  /// timer, no settings, just the real chime through the real duck.
+  ///
+  /// [collideAfterMs] is bench item 2, and it is the one that matters. Firing
+  /// a chime a few hundred milliseconds into a spoken line reproduces the
+  /// 21 Jul collision, where our own audio raised an interruption that the
+  /// service reads as "the rider took a call" and the wake ladder STOOD DOWN
+  /// on a sleeping rider. With the stamp in PulseOutput the ride log should
+  /// show the interruption attributed to our own audio and the ladder
+  /// untouched. Without it, this is how we would find out on a train.
+  Future<void> testPulse({int? collideAfterMs}) async {
+    final output = _pulseOutput;
+    if (output == null) {
+      _log('PULSE test ignored: no ride is running.');
+      return;
+    }
+    if (collideAfterMs == null) {
+      _log('PULSE test chime.');
+      await output.chime();
+      await output.buzz();
+      return;
+    }
+    // A SWEEP, not a single offset, and the first run of this bench is why.
+    // Firing one chime 150 ms after _speak() returns proved nothing: TTS takes
+    // longer than that to produce sound, so the chime had come and gone before
+    // any speech began and the "no interruption" result was untestable. The
+    // sweep walks the chime across the whole utterance, so at least one lands
+    // during session activation, one mid-sentence, and one at the tail.
+    const offsets = [150, 700, 1500, 2500, 3500];
+    _log('PULSE collision sweep: chimes at ${offsets.join(", ")} ms.');
+    unawaited(
+      _speak(
+        'This is a long test announcement for the pocket pulse collision '
+        'bench, and it needs to keep speaking for several seconds so that a '
+        'chime can land in the middle of it more than once.',
+      ),
+    );
+    var elapsed = 0;
+    for (final at in offsets) {
+      await Future<void>.delayed(Duration(milliseconds: at - elapsed));
+      elapsed = at;
+      _log('PULSE collision chime at ${at}ms.');
+      await output.chime();
+    }
+  }
+
   /// Debug-only: benches the REAL wake engine with no train, by feeding it
   /// the arrival at the first critical station's trigger (one stop before
   /// it), exactly what RideProgress would emit there. Everything downstream
@@ -928,6 +986,7 @@ class GeofenceChainService {
     await _wakeOutput?.stopTone();
     await _wakeOutput?.dispose();
     _wakeOutput = null;
+    _pulseOutput = null;
     if (_wakeLadderLive) {
       _wakeLadderLive = false;
       onWakeLadderLive?.call(false);
