@@ -1,8 +1,12 @@
 # RideSnapshot: one progress model, three renderings
 
-Status: DESIGNED, NOT ACCEPTED. Produced 30 Jul 2026 in a Fable session against
-`.scratch/live-ride-progress/issues/02-the-shared-progress-model.md`. Four
-decisions are still the owner's and are listed at the end. No code exists.
+Status: ACCEPTED 30 Jul 2026, all four decisions approved by the owner. Ticket 02
+of `.scratch/live-ride-progress/` is resolved. NO CODE EXISTS YET; this is the
+design the renderers will be built against.
+
+One caveat below is NOT settled by this acceptance and is now ticket 10: the
+`approach` phase window contradicts the `WakeChoice` toggle. Do not implement
+`phase` until 10 answers.
 
 ## The problem
 
@@ -192,12 +196,17 @@ since `91d52c8`: the flags are store-backed now. The split remains right, but fo
 its other stated reason, the media-session side effects. That document corrects
 itself in place by convention and has earned the same treatment here.
 
-## The four decisions still owed by the owner
+## The four decisions, ACCEPTED 30 Jul 2026
+
+All four approved by the owner:
 
 1. Shape A over shape B.
 2. Alert as an overlay flag rather than a phase.
 3. Copy formatted in Dart and shipped to SwiftUI as strings.
 4. The `_updateSurface()` unification of notification text and buttons.
 
-Ticket 02 stays `claimed` until these are answered. It is NOT resolved, and the
-map's Decisions-so-far deliberately does not yet list it.
+Ticket 02 is resolved and the map's Decisions-so-far records it.
+
+Caveat 1 above (the `approach` window vs `WakeChoice`) was NOT settled by that
+acceptance and became ticket 10. Caveat 2 (which isolate iOS runs the task in)
+went to ticket 03. Caveat 3 was fixed in place in `riverpod-adoption.md`.

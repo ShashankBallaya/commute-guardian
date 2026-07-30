@@ -31,7 +31,25 @@ Constraints already locked that this must respect:
 - `onlyAlertOnce: true` is set today, which is the current answer by default:
   everything is silent. Confirm or change it deliberately rather than inheriting.
 
-Also settle: does the surface do anything DIFFERENT in the last two stations, the
-window the wake ladder already treats specially? And is arrival at the destination
-a state on this surface at all, or does it hand off entirely to the Arrival screen
-(Screen 5, approved 09 Jul, still unbuilt)?
+Also settle: is arrival at the destination a state on this surface at all, or does
+it hand off entirely to the Arrival screen (Screen 5, approved 09 Jul, still
+unbuilt)?
+
+The "does it do something different in the last stations" half of this question
+moved to ticket 10, which owns how `approach` is defined.
+
+## Graduated into this ticket from the map's fog, 30 Jul
+
+**The surface during an alert.** Ticket 02 settled the shape: alerts are OVERLAY
+FLAGS on the snapshot, not phases, so a ladder can be live during `approach` or
+`arrived` and the surface has to render both at once. What was fog is now a
+specific question this ticket owns: what does the surface SAY while the wake ladder
+is climbing, and while the wind-down countdown runs?
+
+Constraints already fixed by shipped code (`91d52c8`), not up for grabs here:
+
+- The notification already carries an "I'm awake" action while the ladder is live,
+  and up to three actions during wind-down. Content must read with those present.
+- Actions are composed from BOTH flags in one place. This ticket decides text, not
+  buttons.
+- The alarm itself is the loud thing. Nothing decided here may compete with it.

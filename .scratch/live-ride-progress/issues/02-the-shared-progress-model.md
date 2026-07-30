@@ -1,7 +1,7 @@
 # 02 - What is the shared progress model?
 
 Type: grilling
-Status: claimed
+Status: resolved
 Blocked by: none
 
 ## Question
@@ -60,16 +60,50 @@ calls `updateService` with buttons and no text, so if the plugin treats an absen
 parameter as "clear", adding text updates would wipe the "I'm awake" button off a
 sounding alarm. Fix is to unify both into one `_updateSurface()` call.
 
-## STILL OPEN. Do not resolve this ticket yet.
+## Answer
 
-Four decisions are the owner's and are unanswered:
+Resolved 30 Jul 2026. The owner accepted all four decisions as designed.
 
-1. Shape A (shared pure projection) over shape B (service ships a blob).
-2. Alert as an overlay flag rather than a phase.
-3. Copy formatted in Dart and shipped to SwiftUI as strings.
-4. The `_updateSurface()` unification of notification text and buttons.
+**The model is `RideSnapshot`**, a pure Dart class in `lib/models/ride_snapshot.dart`,
+built by one factory over the primitives that already cross the isolate seam:
+origin and destination ids, `reachedIndex`, `destinationReached`, `wakeLadderLive`,
+`windDownLive`. It derives `lastReached`, `next`, the between-pair,
+`stationsRemaining`, `nextInterchange` and `phase`. It holds no ETA, no
+interpolated position, and no copy strings.
 
-Two review caveats also unresolved, both written up in the design doc: the
-`approach` phase window contradicts the `WakeChoice` toggle for riders who picked
-"Only destination", and the claim that iOS runs the plugin's task in the main
-isolate is asserted rather than verified (now added to ticket 03).
+**Nothing new is persisted.** The snapshot is never stored, only its inputs are,
+and those already survive process death. That is what makes recreation a non-event
+here for the same structural reason it already is for `LiveRide`.
+
+The four decisions, all ACCEPTED:
+
+1. **Shape A over shape B.** A shared pure projection, both isolates calling the
+   same function, rather than the service serializing a blob and shipping it.
+   B failed the deletion test and would have reversed "journeys cross the bridge
+   as IDS, never as objects".
+2. **Alerts are overlay flags, not phases.** A ladder can be live during
+   `approach` or `arrived`, and the notification's actions are already composed
+   from both flags. Phase drives narrative, flags drive overlays.
+3. **Copy is formatted in Dart** and shipped to SwiftUI as pre-formatted strings,
+   so the Live Activity is a dumb layout and phrasing lives in one place beside
+   the Android formatter.
+4. **`_updateSurface()` unifies notification text and buttons** into a single
+   `updateService` call, so the "does an absent parameter clear or keep" question
+   never has to be answered in production.
+
+Phase precedence: `windingDown` > `arrived` > `approach` > `active` > `locating`.
+
+Full design, including the shape comparison, the isolate argument, the iOS seam
+and all six accepted failure modes: `docs/design/ride-snapshot.md`.
+
+**What it also bought.** A third shape was killed on sight, rendering the
+notification from the UI isolate, which the 30 Jul swipe bench proved would freeze
+the surface exactly when the rider is asleep with the phone pocketed. That rules
+out `flutter_local_notifications`-from-a-widget permanently. And the design caught
+a latent clobber risk in `_updateNotificationButtons()`, shipped that same morning
+in `91d52c8`; decision 4 removes it by construction, and ticket 04 still confirms
+the underlying plugin behaviour.
+
+**Carried forward, not resolved here.** The `approach` window contradicts the
+`WakeChoice` toggle for riders who chose "Only destination". That is now ticket 10.
+The claim that iOS runs the plugin's task in the main isolate went to ticket 03.

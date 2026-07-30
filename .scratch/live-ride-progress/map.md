@@ -66,22 +66,20 @@ tickets.
 
 <!-- one line per resolved ticket: gist, then open the ticket for detail -->
 
-_None yet. The map was charted 30 Jul 2026._
-
-**In flight, not yet a decision.** Ticket 02 has a full design at
-`docs/design/ride-snapshot.md` (Fable, 30 Jul) and is `claimed`, waiting on four
-owner decisions listed at the end of that document. It stays out of this section
-until those are answered, because this section records the route actually walked
-and a design nobody has accepted is not a step on it.
+- [02 What is the shared progress model?](issues/02-the-shared-progress-model.md) —
+  `RideSnapshot`: one pure factory over primitives that already cross the isolate
+  seam, so NOTHING NEW IS PERSISTED and it is a projection of `RideProgress`
+  rather than a second projector. Both isolates call the same function; copy is
+  formatted in Dart; alerts are overlay flags, not phases; notification text and
+  buttons ship in one `_updateSurface()` call. Full design in
+  `docs/design/ride-snapshot.md`. Killed UI-isolate rendering permanently.
 
 ## Not yet specified
 
 Fog: in scope, not yet sharp enough to ticket. Graduates as the frontier advances.
 
-- **The surface during an alert.** What the notification says while the wake
-  ladder is climbing, and during the wind-down countdown. Entangled with the
-  30 Jul ack work (commit `91d52c8`) which put an "I'm awake" action there and
-  composes actions from both alerts. Needs the progress model settled first.
+- ~~**The surface during an alert.**~~ GRADUATED 30 Jul into ticket 05, once
+  ticket 02 settled that alerts are overlay flags rather than phases.
 - **Language.** The app speaks Hindi and Marathi through TTS. Whether the passive
   surface follows, and what that costs on a notification that updates 30 times a
   ride.
