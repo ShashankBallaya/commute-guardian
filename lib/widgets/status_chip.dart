@@ -59,7 +59,12 @@ class StatusChip extends StatelessWidget {
   Widget _chipBody(Color dotColor, String label, String? station) {
     return Container(
       decoration: Palette.glassCard(radius: 28),
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      // 13, not 12. At 12 the chip measured 47 dp, one under the 48 dp touch
+      // minimum, found on 1 Aug 2026 by the floor test added to Screen 1 while
+      // trimming buttons that were too LARGE. It matters more here than the
+      // size suggests: this chip is the GPS retry, and it exists because one
+      // 8 second fix at launch is a coin flip indoors on an old phone.
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

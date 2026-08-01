@@ -31,6 +31,23 @@ import '../widgets/status_chip.dart';
 /// deliberately absent. Its only bright element was to be a position dot that
 /// was deferred, and without the dot it is decoration; the notes' own kill
 /// rule says the cards win. Add it if the dead space bothers a real rider.
+/// Vertical padding on every tappable surface this screen owns.
+///
+/// TRIMMED FROM 20 ON 1 AUG 2026, after a first-time viewer read the screen as
+/// "designed for senior citizens". The measurement backed them up rather than
+/// the instinct that made it 20: the cards sat at about 65 dp and the CTA at
+/// about 61, against a 48 to 56 dp convention for a full-width button.
+///
+/// WHAT WAS NOT TRIMMED MATTERS MORE. The wake alert stays at 30 (about 81 dp)
+/// because it is pressed by someone asleep, and Screen 5's arrival buttons stay
+/// because they are pressed on a moving train. The rule this file follows is to
+/// size by the rider's STATE at the moment of the press, never for uniformity.
+///
+/// The floor is 48 dp, the touch-target minimum, and `home_screen_test` holds
+/// it. These are still one-handed taps on a platform, so there is no room below
+/// it however tidy a smaller number would look.
+const _tapPadding = 16.0;
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({
     super.key,
@@ -296,7 +313,10 @@ class _DestinationCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: Palette.glassCard(radius: 20),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 20),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: _tapPadding,
+        ),
         child: Row(
           children: [
             Expanded(
@@ -331,7 +351,7 @@ class _NewJourneyButton extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: Palette.glassCard(radius: 18),
-        padding: const EdgeInsets.symmetric(vertical: 18),
+        padding: const EdgeInsets.symmetric(vertical: _tapPadding),
         child: Center(
           child: Text(
             'New journey',
@@ -362,7 +382,7 @@ class _CrimsonCta extends StatelessWidget {
           color: Palette.crimson,
           borderRadius: BorderRadius.circular(18),
         ),
-        padding: const EdgeInsets.symmetric(vertical: 20),
+        padding: const EdgeInsets.symmetric(vertical: _tapPadding),
         child: Center(
           child: Text(
             label,

@@ -161,6 +161,34 @@ void main() {
       ),
       findsOneWidget,
     );
+    // Trimmed on 1 Aug 2026 along with the rest of the screen, and this is the
+    // floor it stopped at. See the touch-minimum test below.
+    final cta = tester.getSize(find.byKey(const Key('start_first_journey')));
+    expect(cta.height, greaterThanOrEqualTo(48.0));
+  });
+
+  testWidgets('no tappable surface falls under the 48 dp touch minimum', (
+    tester,
+  ) async {
+    // The buttons were trimmed on 1 Aug 2026 because they read as oversized.
+    // This is the floor that trim stopped at, and it is here so the next trim
+    // cannot quietly go through it: these are one-handed taps on a platform,
+    // often by someone tired, and 48 dp is the accessibility minimum rather
+    // than a style preference. The wake alert's own far larger target is
+    // guarded separately, in wake_alert_screen_test.
+    await pumpHome(
+      tester,
+      history: await historyWith([('thane', 'Thane')]),
+    );
+
+    for (final key in ['destination_card_thane', 'new_journey', 'status_chip']) {
+      final height = tester.getSize(find.byKey(Key(key))).height;
+      expect(
+        height,
+        greaterThanOrEqualTo(48.0),
+        reason: '$key is $height dp tall, under the 48 dp touch minimum',
+      );
+    }
   });
 
   testWidgets('a daily destination appears once, not once per ride', (
