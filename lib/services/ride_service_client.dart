@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../foreground/geofence_task_handler.dart';
+import 'wind_down.dart';
 
 /// One thing that happened on the other side of the isolate boundary.
 ///
@@ -31,8 +32,19 @@ class WakeLadderChanged extends ServiceEvent {
 
 /// The post-arrival auto-off countdown started or stopped.
 class WindDownChanged extends ServiceEvent {
-  const WindDownChanged(this.live);
+  const WindDownChanged(
+    this.live, {
+    this.endsAt,
+    this.window = WindDown.countdown,
+  });
   final bool live;
+
+  /// When Travel Mode ends by itself, null when nothing is counting. Screen 5
+  /// shows this to the rider, so it travels rather than being guessed.
+  final DateTime? endsAt;
+
+  /// The window [endsAt] was set from: 60 s normally, 10 minutes after Extend.
+  final Duration window;
 }
 
 /// iOS only: play or stop the ladder tone natively. audioplayers' loop dies
@@ -51,6 +63,15 @@ class RideProgressed extends ServiceEvent {
 
   /// Index into the journey chain, or -1 before the first station.
   final int reachedIndex;
+}
+
+/// The ride reached the destination and said so out loud.
+///
+/// Distinct from [RideProgressed] hitting the last index: the arrival is what
+/// the announcement commits to, and it is what arms WindDown. Screen 5 opens on
+/// this.
+class DestinationReached extends ServiceEvent {
+  const DestinationReached();
 }
 
 /// The service ended the ride on its own (wind-down auto-off).
@@ -86,6 +107,8 @@ class PersistedRide {
     this.startBatteryPct,
     this.wakeLadderLive = false,
     this.windDownLive = false,
+    this.windDownEndsAt,
+    this.windDownWindow = WindDown.countdown,
   });
 
   /// When the ride started, or null if no ride is running. The history row is
@@ -114,6 +137,12 @@ class PersistedRide {
   /// recreated or reopened knows an alert it never saw start is still live.
   final bool wakeLadderLive;
   final bool windDownLive;
+
+  /// The live countdown's deadline and the window it was set from. Read back
+  /// so Screen 5, born after a process recreation, shows the seconds the rider
+  /// really has left rather than a fresh minute it invented.
+  final DateTime? windDownEndsAt;
+  final Duration windDownWindow;
 }
 
 /// Turns one raw payload from the service isolate into the events it carries.
@@ -132,7 +161,23 @@ List<ServiceEvent> parseServiceData(Object data) {
   if (ladderLive != null) events.add(WakeLadderChanged(ladderLive));
 
   final windDownLive = data['windDownLive'] as bool?;
-  if (windDownLive != null) events.add(WindDownChanged(windDownLive));
+  if (windDownLive != null) {
+    final endsAtMs = (data['windDownEndsAtMs'] as num?)?.toInt();
+    final windowS = (data['windDownWindowS'] as num?)?.toInt();
+    events.add(
+      WindDownChanged(
+        windDownLive,
+        // Absent or zero both mean "nothing is counting". Zero is what the
+        // store holds for none, because saveData has no null.
+        endsAt: (endsAtMs == null || endsAtMs == 0)
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(endsAtMs),
+        window: windowS == null
+            ? WindDown.countdown
+            : Duration(seconds: windowS),
+      ),
+    );
+  }
 
   final reachedIndex = (data['reachedIndex'] as num?)?.toInt();
   if (reachedIndex != null) events.add(RideProgressed(reachedIndex));
@@ -145,6 +190,10 @@ List<ServiceEvent> parseServiceData(Object data) {
         (data['toneVolume'] as num?)?.toDouble() ?? 1.0,
       ),
     );
+  }
+
+  if (data['destinationReached'] == true) {
+    events.add(const DestinationReached());
   }
 
   if (data['rideEnded'] == true) events.add(const RideEndedByService());
@@ -398,6 +447,15 @@ class RideServiceClient {
               key: windDownLiveKey,
             ) ??
             false,
+        windDownEndsAt: _dateFromMillis(
+          await FlutterForegroundTask.getData<int>(key: windDownEndsAtKey),
+        ),
+        windDownWindow: Duration(
+          seconds: await FlutterForegroundTask.getData<int>(
+                key: windDownWindowKey,
+              ) ??
+              WindDown.countdown.inSeconds,
+        ),
       );
 
   static DateTime? _dateFromMillis(int? millis) =>

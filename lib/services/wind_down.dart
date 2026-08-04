@@ -173,6 +173,11 @@ class WindDown {
   bool _countingDown = false;
   DateTime? _endAt;
 
+  /// The window the live deadline was set from: [countdown] normally,
+  /// [extension] after an Extend. Screen 5 draws its ring as a fraction of
+  /// this, so a countdown and an extended countdown cannot look identical.
+  Duration _window = countdown;
+
   /// Where and when the train stopped: the first near-stationary in-fence fix.
   ///
   /// Frozen once set, deliberately. Walking through a crowded station includes
@@ -214,6 +219,18 @@ class WindDown {
   /// Whether the auto-off countdown is running. The shell mirrors this into
   /// the notification buttons and the debug screen.
   bool get isCountingDown => _countingDown;
+
+  /// When Travel Mode ends by itself, or null when nothing is counting.
+  ///
+  /// Exposed for Screen 5, which shows the rider the time they have left. It
+  /// has to travel from this isolate rather than be reconstructed on the other
+  /// side: a UI born mid-countdown (the swipe case) would otherwise draw a
+  /// fresh sixty seconds over five real ones, and an Extend would not show at
+  /// all.
+  DateTime? get endsAt => _countingDown ? _endAt : null;
+
+  /// The window [endsAt] was set from. See [_window].
+  Duration get window => _window;
 
   /// Once the rider is provably still on the train past the destination,
   /// auto-off is off the table until the app tells them where to get off:
@@ -417,6 +434,7 @@ class WindDown {
     if (_qualifyingFixes >= exitFixesRequired) {
       _countingDown = true;
       _endAt = now.add(countdown);
+      _window = countdown;
       return const [
         WindDownSpeak(
           'Looks like you have left the station. Travel Mode will end in '
@@ -450,6 +468,7 @@ class WindDown {
   List<WindDownAction> extend(DateTime now) {
     if (_ended || !_countingDown) return const [];
     _endAt = now.add(extension);
+    _window = extension;
     return const [
       WindDownSpeak('Travel Mode will stay on for ten more minutes.'),
     ];

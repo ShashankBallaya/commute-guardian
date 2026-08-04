@@ -113,6 +113,12 @@ PulseCommand? parsePulseCommand(Object data) {
 const wakeLadderLiveKey = 'wake_ladder_live';
 const windDownLiveKey = 'wind_down_live';
 
+/// The live countdown's deadline (epoch millis, 0 for none) and the window it
+/// was set from (seconds). Screen 5 needs both to draw a ring that means
+/// anything; without them a UI born mid-countdown would invent a fresh minute.
+const windDownEndsAtKey = 'wind_down_ends_at_ms';
+const windDownWindowKey = 'wind_down_window_s';
+
 /// Native call state from iOS CallKit, forwarded main isolate -> service.
 /// Android has no counterpart and does not need one: there the audio session
 /// already reports a real call, because the ringtone interrupts us.
@@ -177,6 +183,11 @@ class GeofenceTaskHandler extends TaskHandler {
       sarvamGreeting: sarvamGreeting,
       sarvamClips: sarvamClips,
       onDestinationReached: () {
+        // Sent AND saved, like progress. The save alone was enough while the
+        // only reader was the history row at teardown; Screen 5 has to open the
+        // moment the rider is standing on the platform, and nothing was
+        // announcing that.
+        FlutterForegroundTask.sendDataToMain({'destinationReached': true});
         FlutterForegroundTask.saveData(key: destinationReachedKey, value: true);
       },
       onProgress: (reachedIndex) {
@@ -208,10 +219,26 @@ class GeofenceTaskHandler extends TaskHandler {
           'fixAccuracyM': location.accuracy,
         });
       },
-      onWindDownLive: (live) {
+      onWindDownLive: (live, endsAt, window) {
         _windDownLive = live;
-        FlutterForegroundTask.sendDataToMain({'windDownLive': live});
+        // Sent AND saved, for the same reason progress is: the stream is the
+        // low-latency path, the store is what a UI born mid-countdown reads.
+        // Screen 5 draws real seconds, so a stale deadline is a lie about how
+        // long the rider has to get off.
+        FlutterForegroundTask.sendDataToMain({
+          'windDownLive': live,
+          'windDownEndsAtMs': endsAt?.millisecondsSinceEpoch,
+          'windDownWindowS': window.inSeconds,
+        });
         FlutterForegroundTask.saveData(key: windDownLiveKey, value: live);
+        FlutterForegroundTask.saveData(
+          key: windDownEndsAtKey,
+          value: endsAt?.millisecondsSinceEpoch ?? 0,
+        );
+        FlutterForegroundTask.saveData(
+          key: windDownWindowKey,
+          value: window.inSeconds,
+        );
         _updateNotificationButtons();
       },
       onAutoOff: () => _autoOff(),

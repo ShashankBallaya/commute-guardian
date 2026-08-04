@@ -47,6 +47,29 @@ void main() {
       expect(await c.read(liveRideProvider.future), isNull);
     });
 
+    test('arriving flips the projection mid-ride, with no store re-read',
+        () async {
+      final service = FakeRideServiceClient(
+        running: true,
+        originId: 'shahad',
+        destinationId: 'kalyan',
+      );
+      final c = makeContainer(service);
+      final before = await c.read(liveRideProvider.future);
+      expect(before!.destinationReached, isFalse);
+
+      // The arrival used to be written to the store and NOTHING else, so this
+      // flag could only ever change by re-reading the store at teardown. That
+      // is why Screen 5 could not open on arrival: the UI never heard about it
+      // while the ride was still running.
+      service.emit(const DestinationReached());
+      await Future<void>.delayed(Duration.zero);
+
+      expect(c.read(liveRideProvider).valueOrNull!.destinationReached, isTrue);
+      expect(c.read(isRideRunningProvider), isTrue,
+          reason: 'arriving is not ending: the ride runs until wind-down');
+    });
+
     test('the service ending the ride on its own clears the projection', () async {
       final service = FakeRideServiceClient(
         running: true,
@@ -90,6 +113,31 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(c.read(rideAlertsProvider).wakeLadderLive, isFalse);
       expect(c.read(rideAlertsProvider).windDownLive, isTrue);
+    });
+
+    test('an Extend moves the deadline while liveness never changes', () async {
+      final service = FakeRideServiceClient();
+      final c = makeContainer(service);
+      c.read(rideAlertsProvider);
+
+      final first = DateTime.now().add(const Duration(seconds: 60));
+      service.emit(WindDownChanged(true, endsAt: first));
+      await Future<void>.delayed(Duration.zero);
+      expect(c.read(rideAlertsProvider).windDownEndsAt, first);
+      expect(c.read(rideAlertsProvider).windDownWindow,
+          const Duration(seconds: 60));
+
+      // The bug this guards: live stays true across an Extend, so anything
+      // keyed on liveness alone would show the old sixty seconds while the
+      // rider had been promised ten minutes.
+      final extended = DateTime.now().add(const Duration(minutes: 10));
+      service.emit(WindDownChanged(true, endsAt: extended,
+          window: const Duration(minutes: 10)));
+      await Future<void>.delayed(Duration.zero);
+      expect(c.read(rideAlertsProvider).windDownLive, isTrue);
+      expect(c.read(rideAlertsProvider).windDownEndsAt, extended);
+      expect(c.read(rideAlertsProvider).windDownWindow,
+          const Duration(minutes: 10));
     });
 
     test('a live ladder claims the media session, and releases it after', () async {

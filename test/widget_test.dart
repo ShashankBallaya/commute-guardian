@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:commute_guardian/data/app_database.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/main.dart';
+import 'package:commute_guardian/screens/arrival_screen.dart';
+import 'package:commute_guardian/services/ride_service_client.dart';
 import 'package:commute_guardian/theme/app_theme.dart';
 import 'package:commute_guardian/widgets/slide_to_start.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
@@ -20,10 +23,13 @@ import 'support/fake_ride_service_client.dart';
 /// because the asset bundle does real I/O and real I/O cannot make progress
 /// inside the fake-async zone that `pump` runs in: the pickers would come up
 /// empty and disabled, and the whole screen would be untestable.
+final _navigatorKey = GlobalKey<NavigatorState>();
+
 Future<void> _pumpScreen(
   WidgetTester tester, {
   AppDatabase? history,
   FakeRideServiceClient? service,
+  bool underRoot = false,
 }) async {
   final raw = File(StationRepository.assetPath).readAsStringSync();
   // The single ProviderScope for every widget test. Overrides land here, so no
@@ -67,11 +73,25 @@ Future<void> _pumpScreen(
       // the app's real one, so anything judged on colour still is.
       child: MaterialApp(
         theme: commuteGuardianTheme(),
-        home: const RideDebugScreen(),
+        navigatorKey: _navigatorKey,
+        // underRoot mounts the screen OVER another route, so a test can tell
+        // the difference between closing one route and closing two.
+        home: underRoot
+            ? const Scaffold(body: Center(child: Text('beneath')))
+            : const RideDebugScreen(),
       ),
     ),
   );
   await tester.pumpAndSettle();
+
+  if (underRoot) {
+    unawaited(
+      _navigatorKey.currentState!.push<void>(
+        MaterialPageRoute(builder: (_) => const RideDebugScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
 
   // Sanity check that the station data actually arrived, since almost every
   // test below is meaningless without it. Skipped when a ride is already
@@ -286,6 +306,89 @@ void main() {
     // And the screen knows a ride is live: End is offered, Start is not.
     expect(find.text('End journey'), findsOneWidget);
     expect(find.text('Start Travel Mode'), findsNothing);
+  });
+
+  testWidgets('arriving opens Screen 5, before any countdown exists', (
+    tester,
+  ) async {
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+    );
+    await _pumpScreen(tester, service: service);
+    expect(find.byType(ArrivalScreen), findsNothing);
+
+    // The arrival, which is what the announcement commits to. Screen 5 must
+    // NOT wait for the wind-down countdown: WindDown only starts counting after
+    // two walking-speed fixes 150 m from where the train stopped, about six
+    // minutes after the doors opened on the 18 Jul Kalyan log. Waiting would
+    // hide this screen for the entire walk down the platform.
+    service.emit(const DestinationReached());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ArrivalScreen), findsOneWidget);
+    // The no-countdown state: End now is offered, Extend is not, because there
+    // is nothing yet to extend.
+    expect(find.text('Extend 10 min'), findsNothing);
+
+    // NAMES THE DESTINATION. An earlier draft named journey.chain[reachedIndex]
+    // instead, and the debug bench (which fires an arrival without moving
+    // progress) put "You've arrived at Kalyan" on a ride to Thane.
+    expect(find.textContaining('Thane'), findsWidgets);
+    expect(find.textContaining("You've arrived at Kalyan"), findsNothing);
+  });
+
+  testWidgets('End now closes Screen 5 and nothing underneath it', (
+    tester,
+  ) async {
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+    );
+    // THE HOST IS PUSHED OVER SOMETHING, which is the whole point of this test
+    // and the reason the first version of it was worthless: mounted as the root
+    // route, a stray second pop has nothing to take and the bug cannot show. On
+    // the device the host really is pushed (Settings, then the debug screen).
+    await _pumpScreen(tester, service: service, underRoot: true);
+    service.emit(const DestinationReached());
+    await tester.pumpAndSettle();
+    expect(find.byType(ArrivalScreen), findsOneWidget);
+
+    // Ending clears the ride, and the liveness watcher pops this route. Popping
+    // in the button's own callback AS WELL took the route underneath with it:
+    // on the device that surfaced as End now landing on Settings, two screens
+    // back. Invisible on the product path, where both pops happen to end up
+    // somewhere sensible.
+    service.running = false;
+    await tester.tap(find.text('End now'));
+    service.emit(const RideEndedByService());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ArrivalScreen), findsNothing);
+    expect(find.byType(RideDebugScreen), findsOneWidget,
+        reason: 'the host must survive its arrival screen closing');
+  });
+
+  testWidgets('an arrival opens exactly one Screen 5, however many fixes land',
+      (tester) async {
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+    );
+    await _pumpScreen(tester, service: service);
+
+    // A service can repeat itself across a reconnect, and the store seeds the
+    // same truth the stream announces. Two arrival screens stacked on each
+    // other would leave a rider tapping End now twice.
+    service.emit(const DestinationReached());
+    await tester.pumpAndSettle();
+    service.emit(const DestinationReached());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ArrivalScreen), findsOneWidget);
   });
 
   testWidgets('a screen born mid-alarm can still answer the alarm', (

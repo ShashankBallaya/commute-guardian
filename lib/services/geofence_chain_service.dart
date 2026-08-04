@@ -100,10 +100,15 @@ class GeofenceChainService {
   /// actually asking to be acknowledged.
   final void Function(bool live)? onWakeLadderLive;
 
-  /// Fires when the post-arrival auto-off countdown starts or stops. The
-  /// handler mirrors it into the notification's [End now] and [Extend 10
-  /// min] buttons and the debug screen's equivalents.
-  final void Function(bool live)? onWindDownLive;
+  /// Fires when the post-arrival auto-off countdown starts, stops, or has its
+  /// deadline moved. The handler mirrors it into the notification's [End now]
+  /// and [Extend 10 min] buttons, the debug screen's equivalents, and Screen 5.
+  ///
+  /// Carries the deadline because Screen 5 shows the rider how long they have.
+  /// AN EXTEND MOVES THE DEADLINE WITHOUT CHANGING [live], so anything watching
+  /// only liveness would show the old countdown for ten more minutes.
+  final void Function(bool live, DateTime? endsAt, Duration window)?
+      onWindDownLive;
 
   /// The auto-off countdown expired (or [End now] was pressed): the ride is
   /// over and the whole service should tear itself down. Owned by the
@@ -129,6 +134,9 @@ class GeofenceChainService {
   WakeAlertOutput? _wakeOutput;
   WindDown? _windDown;
   bool _windDownLive = false;
+
+  /// The last deadline published, so an Extend is noticed as a change.
+  DateTime? _windDownEndsAt;
 
   /// The volume of the last engine Tone action, while a ladder is live.
   /// The tick watchdog re-asserts the tone at this volume every 5 seconds,
@@ -1038,6 +1046,11 @@ class GeofenceChainService {
     final destination = journey.chain
         .firstWhere((s) => s.id == journey.destinationStationId);
     final now = DateTime.now();
+    // The arrival itself, which the real path fires beside the announcement.
+    // Without it this bench skipped straight to the countdown and never
+    // exercised what a rider gets first: Screen 5 opens on the ARRIVAL, minutes
+    // before any countdown exists.
+    onDestinationReached?.call();
     _handleWindDownActions(
       windDown.onStationEvent(
         Announcement(
@@ -1059,17 +1072,28 @@ class GeofenceChainService {
         now: now,
       ),
     );
-    // Then walking-speed fixes due north, well past the exit walk
-    // distance from the alight anchor; only the distance matters.
-    final lat = destination.lat + (destination.radiusM + 200) / 111000.0;
-    for (var i = 0; i < WindDown.exitFixesRequired; i++) {
+    // Then a WALK, simulated as a walk rather than as a teleport.
+    //
+    // THIS BENCH COULD NOT START A COUNTDOWN, and had not been able to since
+    // the teleport guard landed: it jumped ~700 m with one second between
+    // fixes, and WindDown rejects any displacement above `2.5 * elapsed` as a
+    // GPS jump rather than a walk (the 20 Jul lone 6.2 m/s reading). So the
+    // button armed the exit watch and stopped, and every countdown state below
+    // it was unreachable from the desk. Found 4 Aug 2026 while wiring Screen 5,
+    // by reading the ride log instead of the screen.
+    //
+    // 2 m/s, a fix every 10 s: inside the 12 s continuity gap so the streak
+    // never breaks and the anchor is never re-set, past 150 m by 80 s, and far
+    // under the 4 m/s recession that would disarm this as a departing train.
+    for (var i = 1; i <= 9; i++) {
+      final walkedM = 20.0 * i;
       _handleWindDownActions(
         windDown.onFix(
-          lat: lat,
+          lat: destination.lat + walkedM / 111000.0,
           lng: destination.lng,
           accuracyM: 10,
-          speedMps: 1.0,
-          now: now.add(Duration(seconds: i + 1)),
+          speedMps: 2.0,
+          now: now.add(Duration(seconds: 10 * i)),
         ),
       );
     }
@@ -1114,7 +1138,8 @@ class GeofenceChainService {
     _windDown = null;
     if (_windDownLive) {
       _windDownLive = false;
-      onWindDownLive?.call(false);
+      _windDownEndsAt = null;
+      onWindDownLive?.call(false, null, WindDown.countdown);
     }
 
     // The goodbye must speak BEFORE teardown (after _tts.stop() nothing
@@ -1405,13 +1430,26 @@ class GeofenceChainService {
           _log('WIND_DOWN $reason.');
       }
     }
-    // Mirrors the countdown state out to the notification buttons and the
-    // debug screen, only on change.
+    // Mirrors the countdown state out to the notification buttons, the debug
+    // screen and Screen 5, only on change.
+    //
+    // THE DEADLINE IS PART OF THE CHANGE, not just liveness: Extend replaces
+    // the deadline while live stays true, and a rider who pressed it must see
+    // the ten minutes they asked for.
     final live = _windDown?.isCountingDown ?? false;
-    if (live != _windDownLive) {
+    final endsAt = _windDown?.endsAt;
+    if (live != _windDownLive || endsAt != _windDownEndsAt) {
+      final started = live != _windDownLive;
       _windDownLive = live;
-      _log('WIND_DOWN countdown ${live ? 'started' : 'stopped'}.');
-      onWindDownLive?.call(live);
+      _windDownEndsAt = endsAt;
+      if (started) {
+        _log('WIND_DOWN countdown ${live ? 'started' : 'stopped'}.');
+      }
+      onWindDownLive?.call(
+        live,
+        endsAt,
+        _windDown?.window ?? WindDown.countdown,
+      );
     }
   }
 

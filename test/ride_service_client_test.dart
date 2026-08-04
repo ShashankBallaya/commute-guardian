@@ -1,4 +1,5 @@
 import 'package:commute_guardian/services/ride_service_client.dart';
+import 'package:commute_guardian/services/wind_down.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// The wire contract with the service isolate.
@@ -34,6 +35,57 @@ void main() {
             .live,
         isTrue,
       );
+    });
+
+    test('the wind-down deadline travels with its liveness', () {
+      // Screen 5 draws real seconds. Reconstructing the deadline on the UI side
+      // would show a fresh minute to a rider who has five seconds left, and
+      // would miss an Extend entirely.
+      final counting = parseServiceData({
+        'windDownLive': true,
+        'windDownEndsAtMs': DateTime.utc(2026, 8, 4, 12, 30).millisecondsSinceEpoch,
+        'windDownWindowS': 600,
+      }).single as WindDownChanged;
+      expect(counting.live, isTrue);
+      expect(counting.endsAt, DateTime.utc(2026, 8, 4, 12, 30).toLocal());
+      expect(counting.window, const Duration(minutes: 10));
+    });
+
+    test('a stopped countdown carries no deadline, sent or stored', () {
+      // The store has no null, so it holds 0 for "nothing is counting". Both
+      // spellings have to mean the same thing or a finished countdown would
+      // come back as a deadline in 1970.
+      final sent = parseServiceData({
+        'windDownLive': false,
+        'windDownEndsAtMs': null,
+      }).single as WindDownChanged;
+      expect(sent.endsAt, isNull);
+
+      final stored = parseServiceData({
+        'windDownLive': false,
+        'windDownEndsAtMs': 0,
+      }).single as WindDownChanged;
+      expect(stored.endsAt, isNull);
+    });
+
+    test('an older payload with no deadline still parses', () {
+      // A service isolate can outlive an app update in the field.
+      final event =
+          parseServiceData({'windDownLive': true}).single as WindDownChanged;
+      expect(event.live, isTrue);
+      expect(event.endsAt, isNull);
+      expect(event.window, WindDown.countdown);
+    });
+
+    test('the destination arrival is announced, not only stored', () {
+      // It was store-only until 4 Aug 2026, which meant nothing on the UI side
+      // could ever notice the rider had arrived while the ride was still
+      // running. Screen 5 opens on this.
+      expect(
+        parseServiceData({'destinationReached': true}).single,
+        isA<DestinationReached>(),
+      );
+      expect(parseServiceData({'destinationReached': false}), isEmpty);
     });
 
     test('a tone command defaults to full volume when none is sent', () {

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/app_database.dart';
 import '../services/ride_service_client.dart';
+import '../services/wind_down.dart';
 
 /// The running-ride half of the state model.
 ///
@@ -59,6 +60,13 @@ class LiveRide {
         destinationReached: destinationReached,
         reachedIndex: index,
       );
+
+  LiveRide get arrived => LiveRide(
+        originId: originId,
+        destinationId: destinationId,
+        destinationReached: true,
+        reachedIndex: reachedIndex,
+      );
 }
 
 /// The running ride, or null when none is running.
@@ -83,6 +91,15 @@ class LiveRideNotifier extends AsyncNotifier<LiveRide?> {
         final current = state.valueOrNull;
         if (current != null) {
           state = AsyncData(current.withIndex(event.reachedIndex));
+        }
+      }
+      // Advanced in place for the same reason progress is: Screen 5 opens on
+      // this edge, and a store re-read would put a plugin call between the
+      // rider standing on the platform and being told they have arrived.
+      if (event is DestinationReached) {
+        final current = state.valueOrNull;
+        if (current != null && !current.destinationReached) {
+          state = AsyncData(current.arrived);
         }
       }
     });
@@ -145,7 +162,12 @@ final isRideRunningProvider = Provider<bool>(
 /// service now persists both flags next to the sendDataToMain that announces
 /// them, and [build] seeds from the store.
 class RideAlerts {
-  const RideAlerts({this.wakeLadderLive = false, this.windDownLive = false});
+  const RideAlerts({
+    this.wakeLadderLive = false,
+    this.windDownLive = false,
+    this.windDownEndsAt,
+    this.windDownWindow = WindDown.countdown,
+  });
 
   /// The wake ladder is asking to be acknowledged. Drives the "I'm awake"
   /// button and the native media session.
@@ -153,6 +175,12 @@ class RideAlerts {
 
   /// The post-arrival auto-off countdown is running.
   final bool windDownLive;
+
+  /// When it ends by itself, and the window that deadline was set from.
+  /// Screen 5's ring is drawn from these, so they come from the service rather
+  /// than being started fresh whenever this screen happens to appear.
+  final DateTime? windDownEndsAt;
+  final Duration windDownWindow;
 }
 
 class RideAlertsNotifier extends Notifier<RideAlerts> {
@@ -183,6 +211,11 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
       state = RideAlerts(
         wakeLadderLive: state.wakeLadderLive || persisted.wakeLadderLive,
         windDownLive: state.windDownLive || persisted.windDownLive,
+        // The event, if one arrived while the read was in flight, is fresher.
+        windDownEndsAt: state.windDownEndsAt ?? persisted.windDownEndsAt,
+        windDownWindow: state.windDownEndsAt != null
+            ? state.windDownWindow
+            : persisted.windDownWindow,
       );
       if (state.wakeLadderLive) await client.setMediaSession(true);
     } catch (_) {
@@ -197,14 +230,18 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
         state = RideAlerts(
           wakeLadderLive: live,
           windDownLive: state.windDownLive,
+          windDownEndsAt: state.windDownEndsAt,
+          windDownWindow: state.windDownWindow,
         );
         // Claim media buttons exactly while a ladder is live, so the rider's
         // earphone taps keep controlling their music the rest of the time.
         unawaited(ref.read(rideServiceClientProvider).setMediaSession(live));
-      case WindDownChanged(:final live):
+      case WindDownChanged(:final live, :final endsAt, :final window):
         state = RideAlerts(
           wakeLadderLive: state.wakeLadderLive,
           windDownLive: live,
+          windDownEndsAt: endsAt,
+          windDownWindow: window,
         );
       case ToneCommanded(:final command, :final volume):
         unawaited(
@@ -214,6 +251,7 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
       case RideEndedByService():
       case ServiceFix():
       case RideProgressed():
+      case DestinationReached():
         // Not alerts. Progress belongs to LiveRide, which owns the projection;
         // duplicating it here would give Screen 4 two places to disagree with
         // itself about where the train is.

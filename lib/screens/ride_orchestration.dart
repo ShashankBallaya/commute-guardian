@@ -11,6 +11,7 @@ import '../services/ride_service_client.dart';
 import '../state/journey_providers.dart';
 import '../state/ride_providers.dart';
 import '../state/settings_providers.dart';
+import 'arrival_screen.dart';
 import 'destination_picker_screen.dart';
 import 'history_screen.dart';
 import 'preparing_flow.dart';
@@ -90,8 +91,31 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // Forces the alerts notifier to exist before the first frame, so a ladder
     // event arriving between launch and the first build is not missed.
     ref.read(rideAlertsProvider);
+    _watchForArrival();
     unawaited(_openingSequence());
   }
+
+  /// Opens Screen 5 the moment the ride reaches its destination.
+  ///
+  /// Guarded three ways, because two hosts can carry this mixin at once (the
+  /// debug screen opens over HomeShell) and an arrival must not push two
+  /// arrival screens: only the host whose route is on top reacts, and only on
+  /// the false-to-true edge.
+  void _watchForArrival() {
+    ref.listenManual(liveRideProvider, (previous, next) {
+      final arrived = next.valueOrNull?.destinationReached ?? false;
+      final wasArrived = previous?.valueOrNull?.destinationReached ?? false;
+      if (!arrived || wasArrived || _arrivalShown) return;
+      if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return;
+      _arrivalShown = true;
+      unawaited(showArrival());
+    });
+  }
+
+  /// One arrival screen per ride. Cleared when a ride starts, not when the
+  /// screen closes: a rider who dismisses it and is still at the station should
+  /// not have it spring back on the next fix.
+  bool _arrivalShown = false;
 
   void disposeOrchestration() {
     // The client itself is NOT disposed: it belongs to a provider that outlives
@@ -150,7 +174,10 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       case WindDownChanged():
       case ToneCommanded():
       case RideProgressed():
-        // liveRideProvider owns progress.
+      case DestinationReached():
+        // liveRideProvider owns progress and arrival; Screen 5 opens off that
+        // provider (see _watchForArrival) rather than off this stream, so a
+        // host that was not mounted when the event passed still catches up.
         break;
       case RideEndedByService():
         unawaited(onRideEndedByService());
@@ -215,6 +242,8 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       // The store now owns the history row's seed (see startRide). This field
       // stays only as the fast path for a ride recorded in the same process.
       _startedJourney = journey;
+      // A new ride gets a new arrival screen.
+      _arrivalShown = false;
       // Liveness comes from the store, never from an assumption here.
       await ref.read(liveRideProvider.notifier).refresh();
     }
@@ -459,6 +488,95 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
                   Navigator.of(routeContext).maybePop();
                 }
               },
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Screen 5, Arrival, wired to the live ride. The last thing a ride shows.
+  ///
+  /// TRIGGERED BY ARRIVAL, NOT BY THE COUNTDOWN, which is what the screen's own
+  /// doc asks for: WindDown only starts counting after two walking-speed fixes
+  /// 150 m from where the train stopped, about six minutes after the doors
+  /// opened on the 18 Jul Kalyan log. Waiting for the countdown would hide this
+  /// screen for the whole walk down the platform, which is exactly when the
+  /// rider is looking at their phone.
+  ///
+  /// END NOW MEANS TWO THINGS and this is the caller the screen's doc refers
+  /// to. While a countdown runs it is WindDown's own End now; before one starts
+  /// WindDown.endNow() early-returns, so it has to be the normal ride teardown
+  /// or the button would do nothing at all.
+  Future<void> showArrival() async {
+    if (!mounted) return;
+    final persisted = await service.readPersistedRide();
+    if (!mounted) return;
+    final journey = ref.read(plannedJourneyProvider).journey;
+    final live = ref.read(liveRideProvider).valueOrNull;
+    if (journey == null || live == null) return;
+
+    // THE DESTINATION, not the chain index. An earlier draft read
+    // journey.chain[reachedIndex] to name the platform the rider is standing
+    // on, which was cleverness with a failure mode and no upside: the overshoot
+    // pins live OUTSIDE the chain (see recordRide), so that index can never
+    // name anything but the destination anyway, and it made this screen depend
+    // on progress and arrival crossing the isolate boundary in order. The debug
+    // bench, which fires an arrival without moving progress, showed "You've
+    // arrived at Shahad" for a ride to Kalyan.
+    //
+    // STILL NOT COVERED, and it needs the service to say so rather than a
+    // guess here: a rider carried past their stop alights at an overshoot pin,
+    // and this will name the destination they never reached. WindDown already
+    // moves its own exit anchor to that pin, so the fact exists on the far side
+    // of the boundary; it just does not travel yet.
+    final here = stationName(live.destinationId);
+
+    final startedAt = persisted.startedAt;
+    final minutes = startedAt == null
+        ? null
+        : DateTime.now().difference(startedAt).inMinutes;
+    final summary = [
+      if (minutes != null) '$minutes min',
+      '${journey.chain.length} stations',
+      '${stationName(live.originId)} → ${stationName(live.destinationId)}',
+    ].join(' • ');
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (routeContext) => Consumer(
+          builder: (context, ref, _) {
+            final alerts = ref.watch(rideAlertsProvider);
+            final stillRunning =
+                ref.watch(liveRideProvider).valueOrNull != null;
+            if (!stillRunning) {
+              // The ride is over, by auto-off or by End now. Leave on the next
+              // frame: popping during a build is not allowed.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (routeContext.mounted) Navigator.of(routeContext).maybePop();
+              });
+            }
+            final counting = alerts.windDownLive;
+            return ArrivalScreen(
+              destinationName: here,
+              summaryLine: summary,
+              autoEndAt: alerts.windDownEndsAt,
+              window: alerts.windDownWindow,
+              // NO POP HERE, deliberately. Ending the ride clears
+              // liveRideProvider, and the watcher above pops this route on the
+              // next frame. Doing both popped TWICE: on the device this screen
+              // came down and took the screen underneath with it, landing on
+              // Settings. It is invisible on the product path (Screen 5 over
+              // Screen 4 lands on Screen 1 either way) which is exactly why it
+              // would have survived.
+              onEndNow: () async {
+                if (counting) {
+                  service.windDownEndNow();
+                } else {
+                  await stop();
+                }
+              },
+              onExtend: counting ? service.windDownExtend : null,
             );
           },
         ),
