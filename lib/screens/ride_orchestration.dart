@@ -17,6 +17,7 @@ import 'history_screen.dart';
 import 'preparing_flow.dart';
 import 'settings_screen.dart';
 import 'travel_mode_screen.dart';
+import 'wake_alert_screen.dart';
 
 /// Everything a screen needs in order to OWN a ride: the isolate subscription,
 /// the start and stop paths, the history write, and the routes a ride opens.
@@ -92,30 +93,139 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // event arriving between launch and the first build is not missed.
     ref.read(rideAlertsProvider);
     _watchForArrival();
+    _watchForWakeLadder();
     unawaited(_openingSequence());
   }
 
   /// Opens Screen 5 the moment the ride reaches its destination.
   ///
-  /// Guarded three ways, because two hosts can carry this mixin at once (the
-  /// debug screen opens over HomeShell) and an arrival must not push two
-  /// arrival screens: only the host whose route is on top reacts, and only on
-  /// the false-to-true edge.
+  /// THE LATCH IS STATIC, and an earlier draft's per-host `isCurrent` guard was
+  /// WRONG in the exact case that matters. During a real ride the rider is on
+  /// Screen 4, which is pushed OVER HomeShell, so HomeShell's route is not
+  /// current and nothing would have opened Screen 5 at all. It passed on the
+  /// bench only because the debug screen fired the arrival while its own route
+  /// was on top. Pushing from a host that is not the visible route is correct:
+  /// every host shares the root Navigator, so the arrival lands above whatever
+  /// the rider is looking at, which is what an arrival should do.
+  ///
+  /// What the latch prevents is the real duplicate risk: two hosts carrying
+  /// this mixin at once (the debug screen sits over HomeShell) both reacting to
+  /// one arrival.
   void _watchForArrival() {
     ref.listenManual(liveRideProvider, (previous, next) {
       final arrived = next.valueOrNull?.destinationReached ?? false;
       final wasArrived = previous?.valueOrNull?.destinationReached ?? false;
-      if (!arrived || wasArrived || _arrivalShown) return;
-      if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return;
+      if (!arrived || wasArrived || _arrivalShown || !mounted) return;
       _arrivalShown = true;
       unawaited(showArrival());
     });
   }
 
-  /// One arrival screen per ride. Cleared when a ride starts, not when the
-  /// screen closes: a rider who dismisses it and is still at the station should
-  /// not have it spring back on the next fix.
-  bool _arrivalShown = false;
+  /// One arrival screen per ride, ACROSS HOSTS. Cleared when a ride starts, not
+  /// when the screen closes: a rider who dismisses it and is still at the
+  /// station should not have it spring back on the next fix.
+  static bool _arrivalShown = false;
+
+  /// Puts the wake alert in front of a sleeping rider, and takes it away when
+  /// the ladder stands down.
+  ///
+  /// UNLIKE THE ARRIVAL, this latch is cleared when the ladder ends rather than
+  /// when the ride starts: a chain can raise a ladder more than once (the
+  /// approach ladder, then the destination's), and each one has to be answered.
+  ///
+  /// It opens whatever else is on screen, deliberately. The rider may be on
+  /// Screen 4, or on the arrival screen after an overshoot; the alarm outranks
+  /// all of it, which is the same rank the audio already uses.
+  void _watchForWakeLadder() {
+    ref.listenManual(rideAlertsProvider, (previous, next) {
+      if (!mounted) return;
+      if (next.wakeLadderLive && !_wakeAlertShown) {
+        _wakeAlertShown = true;
+        unawaited(showWakeAlert());
+      } else if (!next.wakeLadderLive) {
+        _wakeAlertShown = false;
+      }
+    });
+  }
+
+  static bool _wakeAlertShown = false;
+
+  /// Clears both alert latches.
+  ///
+  /// They are static so two hosts cannot both open one alert, which means they
+  /// outlive a widget the way a real ride does. In the app that is right: the
+  /// wake latch clears when the ladder stands down, the arrival latch when the
+  /// next ride starts. A test process shares them across every test in the
+  /// file, so it has to say when a new session begins.
+  @visibleForTesting
+  static void resetAlertLatches() {
+    _arrivalShown = false;
+    _wakeAlertShown = false;
+  }
+
+  /// The wake alert, wired. The screen the whole product exists to put in front
+  /// of a sleeping rider.
+  ///
+  /// IT DOES NOT OWN THE ACK, and that distinction is what makes it safe to
+  /// add. The alarm is answered by the service; this screen is one more way to
+  /// reach that, beside the notification button and the earphone tap that the
+  /// 24 Jul bench proved. So it POPS ON LIVENESS, not on the press: if the
+  /// rider answers with an earphone tap while this is showing, the ladder
+  /// stands down and the screen leaves on its own.
+  ///
+  /// Back is refused by the screen itself while it is up (see WakeAlertScreen),
+  /// because backing out would leave an alarm sounding with its on-screen ack
+  /// gone.
+  Future<void> showWakeAlert() async {
+    if (!mounted) return;
+    final live = ref.read(liveRideProvider).valueOrNull;
+    final journey = ref.read(plannedJourneyProvider).journey;
+    if (live == null) return;
+
+    // "Thakurli passed 19:49": the rider's proof the app was awake while they
+    // were not. Null before anything has been passed, which the screen expects.
+    String? lastPassed;
+    final reached = live.reachedIndex;
+    if (journey != null && reached >= 0 && reached < journey.chain.length) {
+      final at = TimeOfDay.fromDateTime(DateTime.now());
+      final hh = at.hour.toString().padLeft(2, '0');
+      final mm = at.minute.toString().padLeft(2, '0');
+      lastPassed = '${journey.chain[reached].name} passed $hh:$mm';
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (routeContext) => Consumer(
+          builder: (context, ref, _) {
+            final alerts = ref.watch(rideAlertsProvider);
+            if (!alerts.wakeLadderLive) {
+              // Answered, by whatever route. Leave on the next frame: popping
+              // during a build is not allowed.
+              //
+              // pop(), NOT maybePop(). This screen wraps itself in
+              // PopScope(canPop: false) to refuse a half-asleep back press, and
+              // maybePop honours that refusal, so it would have been a no-op
+              // here: the alarm answered by an earphone tap or the notification
+              // would have left the rider staring at an alert screen for an
+              // alarm that had already stopped, with no way out. The refusal is
+              // aimed at the rider's back gesture, not at the ladder standing
+              // down.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (routeContext.mounted) Navigator.of(routeContext).pop();
+              });
+            }
+            return WakeAlertScreen(
+              destinationName: stationName(live.destinationId),
+              lastPassedLine: lastPassed,
+              rung: alerts.wakeRung,
+              climbing: alerts.wakeClimbing,
+              onAcknowledge: service.ackWakeFromButton,
+            );
+          },
+        ),
+      ),
+    );
+  }
 
   void disposeOrchestration() {
     // The client itself is NOT disposed: it belongs to a provider that outlives

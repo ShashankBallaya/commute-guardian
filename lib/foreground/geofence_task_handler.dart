@@ -113,6 +113,12 @@ PulseCommand? parsePulseCommand(Object data) {
 const wakeLadderLiveKey = 'wake_ladder_live';
 const windDownLiveKey = 'wind_down_live';
 
+/// The live ladder's rung and whether it is still climbing. The alert screen's
+/// glow steps with the sound, so a UI born mid-alarm has to know how loud the
+/// alarm already is rather than restart its visual at rung one.
+const wakeRungKey = 'wake_rung';
+const wakeClimbingKey = 'wake_climbing';
+
 /// The live countdown's deadline (epoch millis, 0 for none) and the window it
 /// was set from (seconds). Screen 5 needs both to draw a ring that means
 /// anything; without them a UI born mid-countdown would invent a fresh minute.
@@ -200,10 +206,19 @@ class GeofenceTaskHandler extends TaskHandler {
           value: reachedIndex,
         );
       },
-      onWakeLadderLive: (live) {
+      onWakeLadderLive: (live, rung, climbing) {
         _wakeLadderLive = live;
-        FlutterForegroundTask.sendDataToMain({'wakeLadderLive': live});
+        FlutterForegroundTask.sendDataToMain({
+          'wakeLadderLive': live,
+          'wakeRung': rung,
+          'wakeClimbing': climbing,
+        });
         FlutterForegroundTask.saveData(key: wakeLadderLiveKey, value: live);
+        // Saved as well as sent, for the same reason liveness is: a UI born
+        // mid-alarm (the 30 Jul swipe case) has to show the right glow, not
+        // restart the ladder's visual at rung one.
+        FlutterForegroundTask.saveData(key: wakeRungKey, value: rung);
+        FlutterForegroundTask.saveData(key: wakeClimbingKey, value: climbing);
         _updateNotificationButtons();
       },
       onIosToneCommand: (command, volume) {

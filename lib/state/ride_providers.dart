@@ -164,6 +164,8 @@ final isRideRunningProvider = Provider<bool>(
 class RideAlerts {
   const RideAlerts({
     this.wakeLadderLive = false,
+    this.wakeRung = 0,
+    this.wakeClimbing = true,
     this.windDownLive = false,
     this.windDownEndsAt,
     this.windDownWindow = WindDown.countdown,
@@ -172,6 +174,12 @@ class RideAlerts {
   /// The wake ladder is asking to be acknowledged. Drives the "I'm awake"
   /// button and the native media session.
   final bool wakeLadderLive;
+
+  /// Which rung it is on, and whether it is still climbing. The alert screen's
+  /// glow steps with the sound, so these travel with liveness rather than being
+  /// guessed: a ladder climbing 1 to 3 never changes [wakeLadderLive].
+  final int wakeRung;
+  final bool wakeClimbing;
 
   /// The post-arrival auto-off countdown is running.
   final bool windDownLive;
@@ -210,6 +218,9 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
       // than the store, so it wins.
       state = RideAlerts(
         wakeLadderLive: state.wakeLadderLive || persisted.wakeLadderLive,
+        wakeRung: state.wakeLadderLive ? state.wakeRung : persisted.wakeRung,
+        wakeClimbing:
+            state.wakeLadderLive ? state.wakeClimbing : persisted.wakeClimbing,
         windDownLive: state.windDownLive || persisted.windDownLive,
         // The event, if one arrived while the read was in flight, is fresher.
         windDownEndsAt: state.windDownEndsAt ?? persisted.windDownEndsAt,
@@ -226,9 +237,11 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
 
   void _onEvent(ServiceEvent event) {
     switch (event) {
-      case WakeLadderChanged(:final live):
+      case WakeLadderChanged(:final live, :final rung, :final climbing):
         state = RideAlerts(
           wakeLadderLive: live,
+          wakeRung: rung,
+          wakeClimbing: climbing,
           windDownLive: state.windDownLive,
           windDownEndsAt: state.windDownEndsAt,
           windDownWindow: state.windDownWindow,
@@ -239,6 +252,8 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
       case WindDownChanged(:final live, :final endsAt, :final window):
         state = RideAlerts(
           wakeLadderLive: state.wakeLadderLive,
+          wakeRung: state.wakeRung,
+          wakeClimbing: state.wakeClimbing,
           windDownLive: live,
           windDownEndsAt: endsAt,
           windDownWindow: window,

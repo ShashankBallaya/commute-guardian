@@ -9,6 +9,8 @@ import 'package:commute_guardian/data/app_database.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/main.dart';
 import 'package:commute_guardian/screens/arrival_screen.dart';
+import 'package:commute_guardian/screens/ride_orchestration.dart';
+import 'package:commute_guardian/screens/wake_alert_screen.dart';
 import 'package:commute_guardian/services/ride_service_client.dart';
 import 'package:commute_guardian/theme/app_theme.dart';
 import 'package:commute_guardian/widgets/slide_to_start.dart';
@@ -124,6 +126,11 @@ Future<void> _pick(WidgetTester tester, String label, String station) async {
 }
 
 void main() {
+  // The alert latches are static so two hosts cannot both open one alert, which
+  // means they survive between tests in this process the way they survive
+  // between screens in the app. Each test is a new ride.
+  setUp(RideOrchestration.resetAlertLatches);
+
   testWidgets('the ride cannot be started until one has been picked', (
     tester,
   ) async {
@@ -483,6 +490,89 @@ void main() {
     );
     // The seed is cleared so a later teardown cannot write the ride twice.
     expect(service.commands, contains('clearRideRecordSeed'));
+  });
+
+  testWidgets('a climbing ladder opens the wake alert and updates its rung', (
+    tester,
+  ) async {
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+    );
+    await _pumpScreen(tester, service: service);
+    expect(find.byType(WakeAlertScreen), findsNothing);
+
+    service.emit(const WakeLadderChanged(true, rung: 1));
+    await tester.pumpAndSettle();
+    expect(find.byType(WakeAlertScreen), findsOneWidget);
+    expect(
+      tester.widget<WakeAlertScreen>(find.byType(WakeAlertScreen)).rung,
+      1,
+    );
+
+    // THE RUNG MOVES WITHOUT LIVENESS MOVING. The glow steps with the sound, so
+    // a ladder climbing 1 to 3 has to reach the screen; keyed on liveness alone
+    // it would hold the quietest glow through the loudest alarm.
+    service.emit(const WakeLadderChanged(true, rung: 3, climbing: false));
+    await tester.pumpAndSettle();
+    final screen =
+        tester.widget<WakeAlertScreen>(find.byType(WakeAlertScreen));
+    expect(screen.rung, 3);
+    expect(screen.climbing, isFalse);
+  });
+
+  testWidgets('the wake alert leaves when the ladder is answered anywhere', (
+    tester,
+  ) async {
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+    );
+    await _pumpScreen(tester, service: service);
+
+    service.emit(const WakeLadderChanged(true, rung: 1));
+    await tester.pumpAndSettle();
+    expect(find.byType(WakeAlertScreen), findsOneWidget);
+
+    // Answered by an EARPHONE TAP, not by this screen's button. The ack belongs
+    // to the service (24 Jul bench), so the screen has to leave on liveness
+    // rather than on its own press, or a rider who taps their earphones is left
+    // staring at an alarm screen for an alarm that has stopped.
+    service.emit(const WakeLadderChanged(false));
+    await tester.pumpAndSettle();
+    expect(find.byType(WakeAlertScreen), findsNothing);
+  });
+
+  testWidgets('arrival opens Screen 5 even with another route on top', (
+    tester,
+  ) async {
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+    );
+    await _pumpScreen(tester, service: service, underRoot: true);
+
+    // THE RIDE CASE, and the one an earlier draft got wrong. On a real ride the
+    // rider is on Screen 4, pushed OVER the host, so the host's route is not
+    // current. Guarding on isCurrent meant Screen 5 would never have opened on
+    // the ride at all, and the bench missed it because the debug screen fired
+    // the arrival while its own route was on top.
+    unawaited(
+      _navigatorKey.currentState!.push<void>(
+        MaterialPageRoute(
+          builder: (_) => const Scaffold(body: Center(child: Text('on top'))),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('on top'), findsOneWidget);
+
+    service.emit(const DestinationReached());
+    await tester.pumpAndSettle();
+    expect(find.byType(ArrivalScreen), findsOneWidget);
   });
 
   testWidgets('a screen born with no ride running offers Start, not End', (

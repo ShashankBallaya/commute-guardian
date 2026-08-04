@@ -26,8 +26,15 @@ class ServiceLogged extends ServiceEvent {
 
 /// The wake ladder started or finished asking to be acknowledged.
 class WakeLadderChanged extends ServiceEvent {
-  const WakeLadderChanged(this.live);
+  const WakeLadderChanged(this.live, {this.rung = 0, this.climbing = true});
   final bool live;
+
+  /// Which rung the ladder is on, 1-based, 0 when nothing is live. Drives the
+  /// alert screen's glow, which steps with the sound.
+  final int rung;
+
+  /// False once the ladder is at full volume and holding.
+  final bool climbing;
 }
 
 /// The post-arrival auto-off countdown started or stopped.
@@ -106,6 +113,8 @@ class PersistedRide {
     this.startedAt,
     this.startBatteryPct,
     this.wakeLadderLive = false,
+    this.wakeRung = 0,
+    this.wakeClimbing = true,
     this.windDownLive = false,
     this.windDownEndsAt,
     this.windDownWindow = WindDown.countdown,
@@ -136,6 +145,12 @@ class PersistedRide {
   /// whether the auto-off countdown is running. Read back so a UI that was
   /// recreated or reopened knows an alert it never saw start is still live.
   final bool wakeLadderLive;
+
+  /// The live ladder's rung and whether it is still climbing, read back so a UI
+  /// born mid-alarm shows the glow the sound has already reached.
+  final int wakeRung;
+  final bool wakeClimbing;
+
   final bool windDownLive;
 
   /// The live countdown's deadline and the window it was set from. Read back
@@ -158,7 +173,15 @@ List<ServiceEvent> parseServiceData(Object data) {
   if (message != null) events.add(ServiceLogged(message));
 
   final ladderLive = data['wakeLadderLive'] as bool?;
-  if (ladderLive != null) events.add(WakeLadderChanged(ladderLive));
+  if (ladderLive != null) {
+    events.add(
+      WakeLadderChanged(
+        ladderLive,
+        rung: (data['wakeRung'] as num?)?.toInt() ?? 0,
+        climbing: data['wakeClimbing'] as bool? ?? true,
+      ),
+    );
+  }
 
   final windDownLive = data['windDownLive'] as bool?;
   if (windDownLive != null) {
@@ -443,6 +466,11 @@ class RideServiceClient {
               key: wakeLadderLiveKey,
             ) ??
             false,
+        wakeRung:
+            await FlutterForegroundTask.getData<int>(key: wakeRungKey) ?? 0,
+        wakeClimbing:
+            await FlutterForegroundTask.getData<bool>(key: wakeClimbingKey) ??
+                true,
         windDownLive: await FlutterForegroundTask.getData<bool>(
               key: windDownLiveKey,
             ) ??

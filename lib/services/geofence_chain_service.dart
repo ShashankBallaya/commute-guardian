@@ -94,11 +94,15 @@ class GeofenceChainService {
   /// become a 1 Hz stream of identical messages across the isolate boundary.
   final void Function(int reachedIndex)? onProgress;
 
-  /// Fires when the wake ladder starts or stands down. The UI listens so it
-  /// can show its manual "I'm awake" button and hold the native media session
-  /// (the thing that routes an earphone tap to us) only while a ladder is
-  /// actually asking to be acknowledged.
-  final void Function(bool live)? onWakeLadderLive;
+  /// Fires when the wake ladder starts asking to be acknowledged, stands down,
+  /// or CLIMBS A RUNG.
+  ///
+  /// The UI listens so it can show its manual "I'm awake" button and hold the
+  /// native media session (the thing that routes an earphone tap to us) only
+  /// while a ladder is actually asking to be acknowledged. The rung drives the
+  /// alert screen's glow; liveness alone would hold the quietest glow through
+  /// the loudest alarm.
+  final void Function(bool live, int rung, bool climbing)? onWakeLadderLive;
 
   /// Fires when the post-arrival auto-off countdown starts, stops, or has its
   /// deadline moved. The handler mirrors it into the notification's [End now]
@@ -133,6 +137,9 @@ class GeofenceChainService {
   WakeEscalation? _wakeEscalation;
   WakeAlertOutput? _wakeOutput;
   WindDown? _windDown;
+  /// The last rung published, so a climb is noticed as a change.
+  int _wakeLadderRung = 0;
+
   bool _windDownLive = false;
 
   /// The last deadline published, so an Extend is noticed as a change.
@@ -1011,21 +1018,35 @@ class GeofenceChainService {
     }
 
     final live = _wakeEscalation?.isLadderLive ?? false;
-    if (live != _wakeLadderLive) {
+    final rung = _wakeEscalation?.rung ?? 0;
+    // THE RUNG IS PART OF THE CHANGE, not just liveness. The wake alert screen
+    // steps its glow with the sound, and a ladder that climbs from rung 1 to 3
+    // never changes `live`, so anything keyed on liveness alone would hold the
+    // quietest glow through the loudest alarm. Same shape as the wind-down
+    // deadline: the flag is not the state.
+    if (live != _wakeLadderLive || rung != _wakeLadderRung) {
+      final changedLive = live != _wakeLadderLive;
       _wakeLadderLive = live;
-      _log('WAKE ladder ${live ? 'live' : 'stood down'}.');
-      if (!live) {
-        _wakeTestCeilingAt = null;
-        _wakeTestCeiling = null;
-        unawaited(_releaseLadderAudio());
+      _wakeLadderRung = rung;
+      if (changedLive) {
+        _log('WAKE ladder ${live ? 'live' : 'stood down'}.');
+        if (!live) {
+          _wakeTestCeilingAt = null;
+          _wakeTestCeiling = null;
+          unawaited(_releaseLadderAudio());
+        }
+        // Pocket Pulse DROPS while a ladder is live, and does not catch up when
+        // it stands down. Fed from here rather than sniffed from a flag so the
+        // two can never disagree about whether an alarm is sounding.
+        _handlePulseActions(
+          _pocketPulse?.onWakeLadder(live, DateTime.now()) ?? const [],
+        );
       }
-      // Pocket Pulse DROPS while a ladder is live, and does not catch up when
-      // it stands down. Fed from here rather than sniffed from a flag so the
-      // two can never disagree about whether an alarm is sounding.
-      _handlePulseActions(
-        _pocketPulse?.onWakeLadder(live, DateTime.now()) ?? const [],
+      onWakeLadderLive?.call(
+        live,
+        rung,
+        _wakeEscalation?.isClimbing ?? true,
       );
-      onWakeLadderLive?.call(live);
     }
   }
 
@@ -1131,7 +1152,8 @@ class GeofenceChainService {
     _pocketPulse = null;
     if (_wakeLadderLive) {
       _wakeLadderLive = false;
-      onWakeLadderLive?.call(false);
+      _wakeLadderRung = 0;
+      onWakeLadderLive?.call(false, 0, true);
     }
 
     // A manual End mid-countdown must not leave phantom wind-down buttons.

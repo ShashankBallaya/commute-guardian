@@ -163,6 +163,20 @@ class WakeEscalation {
   /// the ladder: mid-call the rider needs none of those.
   bool get isLadderLive => _ladderLive;
 
+  /// Which rung the ladder is on, 1-based, or 0 before it starts.
+  ///
+  /// Exposed for the wake alert screen, which steps its glow with the sound so
+  /// a rider who surfaces mid-ladder can see how long it has been shouting.
+  int get rung => _rung;
+
+  /// False once the ladder has reached full volume and is holding there.
+  ///
+  /// THERE IS NO TOTAL TO SHOW, deliberately: [_rung] keeps incrementing past
+  /// [rungVolumes] while the volume holds, and the ladder ends when the rider
+  /// answers or the train passes the ceiling, never on a count. The screen
+  /// states that contract in words rather than printing "of 3".
+  bool get isClimbing => _rung < rungVolumes.length;
+
   bool get _hasTarget => _cursor < _targets.length;
   int get _targetIndex =>
       chain.indexWhere((s) => s.id == _targets[_cursor]);
