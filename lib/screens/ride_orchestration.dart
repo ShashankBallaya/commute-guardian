@@ -78,6 +78,13 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   bool get sarvamGreeting => false;
   bool get sarvamClips => false;
 
+  /// The long press on Settings' version line, or null where there is nothing
+  /// behind it (the debug screen itself, which is already there).
+  ///
+  /// Passed DOWN from the entry gate rather than reached for here, because the
+  /// debug screen lives in main.dart and this file must not import it back.
+  VoidCallback? get debugDoor => null;
+
   void initOrchestration() {
     _serviceEvents = service.events.listen(_onServiceEvent);
     // Forces the alerts notifier to exist before the first frame, so a ladder
@@ -539,6 +546,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
               onAnnounceEveryStation: notifier.setAnnounceEveryStation,
               onShareAnonymousUsage: notifier.setShareAnonymousUsage,
               onLanguage: notifier.setLanguage,
+              onVersionLongPress: debugDoor,
             );
           },
         ),

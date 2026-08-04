@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:commute_guardian/data/app_database.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/main.dart';
+import 'package:commute_guardian/theme/app_theme.dart';
 import 'package:commute_guardian/widgets/slide_to_start.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
@@ -59,7 +60,15 @@ Future<void> _pumpScreen(
         // onboarding. The gate itself is tested in onboarding_test.dart.
         onboardingSeenProvider.overrideWith((ref) async => true),
       ],
-      child: const CommuteGuardianDebugApp(),
+      // The DEBUG SCREEN directly, not the app, since 4 Aug 2026. These tests
+      // are about the screen, and mounting the app to reach it meant the entry
+      // gate decided what they examined: flipping the gate to Screen 1 failed
+      // eleven tests that had no opinion about the gate at all. The theme is
+      // the app's real one, so anything judged on colour still is.
+      child: MaterialApp(
+        theme: commuteGuardianTheme(),
+        home: const RideDebugScreen(),
+      ),
     ),
   );
   await tester.pumpAndSettle();

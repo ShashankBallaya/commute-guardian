@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:commute_guardian/data/app_database.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/main.dart';
+import 'package:commute_guardian/screens/home_screen.dart';
 import 'package:commute_guardian/screens/onboarding_screen.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
@@ -244,10 +245,17 @@ void _entryGateTests() {
     expect(find.byKey(const Key('onboarding_welcome')), findsOneWidget);
   });
 
-  testWidgets('a rider who has done it lands in the app', (tester) async {
+  testWidgets('a rider who has done it lands on Screen 1, not the debug screen',
+      (tester) async {
     await pumpApp(tester, seen: true);
     expect(find.byKey(const Key('onboarding_welcome')), findsNothing);
-    expect(find.text('Pick an origin and a destination.'), findsOneWidget);
+
+    // THE PHASE 2 EXIT CRITERION, as an assertion: a rider who has never seen
+    // the debug screen must not be shown it. It was the app's home until
+    // 4 Aug 2026, and nothing but this test stops it quietly becoming the home
+    // again the next time someone needs a bench in a hurry.
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.byType(RideDebugScreen), findsNothing);
   });
 
   testWidgets('finishing onboarding records it and does not ask again', (
@@ -271,6 +279,6 @@ void _entryGateTests() {
     // restart.
     expect(await db.hasSeenOnboarding(), isTrue);
     expect(find.byKey(const Key('onboarding_ready')), findsNothing);
-    expect(find.text('Pick an origin and a destination.'), findsOneWidget);
+    expect(find.byType(HomeScreen), findsOneWidget);
   });
 }

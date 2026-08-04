@@ -233,7 +233,10 @@ void main() {
     expect(find.text('History'), findsOneWidget);
   });
 
-  testWidgets('the debug screen reaches it', (tester) async {
+  // Screen 1's header, not the debug screen's button, since 4 Aug 2026. This
+  // is now the route a rider actually takes, and it runs through HomeShell, so
+  // it also proves the shell's callbacks are wired to something real.
+  testWidgets('a rider reaches it from the home screen', (tester) async {
     final db = AppDatabase.inMemory();
     addTearDown(db.close);
     await tester.pumpWidget(
@@ -255,7 +258,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('history_button')));
+    await tester.tap(find.byKey(const Key('home_history')));
     await tester.pumpAndSettle();
 
     expect(find.byType(HistoryScreen), findsOneWidget);

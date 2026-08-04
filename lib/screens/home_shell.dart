@@ -17,7 +17,12 @@ import 'ride_orchestration.dart';
 /// orchestration was hoisted out of the debug screen on 4 Aug 2026 rather than
 /// copied.
 class HomeShell extends ConsumerStatefulWidget {
-  const HomeShell({super.key});
+  const HomeShell({super.key, this.onOpenDebug});
+
+  /// The dev door, handed down from the entry gate and hidden under a long
+  /// press on Settings' version line. Null when there is nothing behind it,
+  /// which is the case whenever the debug screen opened this shell itself.
+  final VoidCallback? onOpenDebug;
 
   @override
   ConsumerState<HomeShell> createState() => _HomeShellState();
@@ -25,6 +30,9 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell>
     with RideOrchestration {
+  @override
+  VoidCallback? get debugDoor => widget.onOpenDebug;
+
   @override
   void initState() {
     super.initState();

@@ -16,6 +16,7 @@ import 'services/ride_service_client.dart';
 import 'services/wind_down.dart';
 import 'state/journey_providers.dart';
 import 'state/ride_providers.dart';
+import 'theme/app_theme.dart';
 import 'theme/palette.dart';
 import 'widgets/slide_to_start.dart';
 import 'widgets/status_chip.dart';
@@ -34,43 +35,9 @@ class CommuteGuardianDebugApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = ThemeData(brightness: Brightness.dark, useMaterial3: true);
     return MaterialApp(
-      title: 'Commute Guardian (Phase 0 debug)',
-      theme: base.copyWith(
-        scaffoldBackgroundColor: Palette.ground,
-        colorScheme: base.colorScheme.copyWith(
-          surface: Palette.ground,
-          primary: Palette.text,
-          onSurface: Palette.text,
-        ),
-        textTheme: base.textTheme.apply(
-          bodyColor: Palette.text,
-          displayColor: Palette.text,
-        ),
-        // The pickers and the search sheet's field: dark wells recessed into
-        // the glass surfaces, no hard borders.
-        inputDecorationTheme: InputDecorationTheme(
-          filled: true,
-          fillColor: Palette.groundDeep,
-          labelStyle: TextStyle(color: Palette.textDim(0.6)),
-          hintStyle: TextStyle(color: Palette.textDim(0.4)),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: BorderSide.none,
-          ),
-        ),
-        snackBarTheme: SnackBarThemeData(
-          // Opaque: a snackbar floats over whatever is on screen, and a
-          // translucent fill would pick up the content behind it.
-          backgroundColor: Palette.surfaceSolid,
-          contentTextStyle: const TextStyle(color: Palette.text),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-      ),
+      title: 'Commute Guardian',
+      theme: commuteGuardianTheme(),
       home: const _EntryGate(),
     );
   }
@@ -1354,9 +1321,9 @@ class _EntryGate extends ConsumerWidget {
       loading: () => const Scaffold(body: SizedBox.shrink()),
       // If the flag cannot be read, show the app rather than trapping the
       // rider in onboarding they may have already done.
-      error: (_, _) => const RideDebugScreen(),
+      error: (_, _) => _home(context),
       data: (done) => done
-          ? const RideDebugScreen()
+          ? _home(context)
           : OnboardingScreen(
               onDone: () async {
                 await ref.read(appDatabaseProvider).markOnboardingSeen();
@@ -1365,4 +1332,17 @@ class _EntryGate extends ConsumerWidget {
             ),
     );
   }
+
+  /// SCREEN 1 IS THE APP'S HOME, as of 4 Aug 2026, which is what the Phase 2
+  /// exit criterion asks for: a rider who has never seen the debug screen can
+  /// install, onboard, pick a destination, ride, be woken, arrive and end
+  /// without it appearing once.
+  ///
+  /// The debug screen is still there and still runs every bench, one long press
+  /// on Settings' version line away. Demoted, never deleted.
+  Widget _home(BuildContext context) => HomeShell(
+        onOpenDebug: () => Navigator.of(context).push<void>(
+          MaterialPageRoute(builder: (_) => const RideDebugScreen()),
+        ),
+      );
 }

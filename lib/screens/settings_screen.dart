@@ -62,6 +62,7 @@ class SettingsScreen extends StatelessWidget {
     required this.onShareAnonymousUsage,
     required this.onLanguage,
     this.onPreviewPulse,
+    this.onVersionLongPress,
   });
 
   final AppSettings settings;
@@ -83,6 +84,15 @@ class SettingsScreen extends StatelessWidget {
   final ValueChanged<bool> onShareAnonymousUsage;
   final ValueChanged<AppLanguage> onLanguage;
   final VoidCallback? onPreviewPulse;
+
+  /// The way back to the debug screen, hidden under a long press on the version
+  /// line, which is where a dev door has always belonged and where no rider will
+  /// find it by accident.
+  ///
+  /// The debug screen is DEMOTED, never deleted: every bench in this project
+  /// runs through it, and the ride that has to verify the whole build is still
+  /// ahead of us.
+  final VoidCallback? onVersionLongPress;
 
   static const _intervals = [0, 2, 3, 5, 10];
 
@@ -107,11 +117,20 @@ class SettingsScreen extends StatelessWidget {
                   _privacyCard(),
                   const SizedBox(height: 20),
                   Center(
-                    child: Text(
-                      versionLine,
-                      style: TextStyle(
-                        fontSize: TypeScale.caption,
-                        color: Palette.textDim(0.4),
+                    child: GestureDetector(
+                      onLongPress: onVersionLongPress,
+                      // Opaque, so the press lands on the padding around a
+                      // short line of text rather than only on the glyphs.
+                      behavior: HitTestBehavior.opaque,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          versionLine,
+                          style: TextStyle(
+                            fontSize: TypeScale.caption,
+                            color: Palette.textDim(0.4),
+                          ),
+                        ),
                       ),
                     ),
                   ),
