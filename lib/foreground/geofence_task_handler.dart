@@ -273,9 +273,21 @@ class GeofenceTaskHandler extends TaskHandler {
       },
       onAutoOff: () => _autoOff(),
     );
+    // The ride's own start time, from the store, so the four-hour backstop
+    // survives an OS recreation. Reading the clock inside the chain would give
+    // a forgotten ride a fresh four hours every time the service restarted,
+    // and a restart is not hypothetical: the 30 Jul swipe bench proved the
+    // service comes back about a second after the app is swiped away.
+    final startedAtMs = await FlutterForegroundTask.getData<int>(
+      key: rideStartedAtKey,
+    );
+
     await _chain!.start(
       originId: originId,
       destinationId: destinationId,
+      rideStartedAt: startedAtMs == null || startedAtMs <= 0
+          ? null
+          : DateTime.fromMillisecondsSinceEpoch(startedAtMs),
       pulseIntervalS:
           await FlutterForegroundTask.getData<int>(key: pulseIntervalKey) ?? 0,
       pulseVibrate:

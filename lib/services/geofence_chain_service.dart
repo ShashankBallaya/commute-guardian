@@ -16,9 +16,10 @@ import '../models/journey.dart';
 import '../models/station.dart';
 import 'announcement_templates.dart';
 import 'clip_library.dart';
-import 'ride_progress.dart';
 import 'pocket_pulse.dart';
 import 'pulse_output.dart';
+import 'ride_progress.dart';
+import 'ride_timeout.dart';
 import 'self_audio_interruption.dart';
 import 'wake_alert_output.dart';
 import 'wake_escalation.dart';
@@ -156,6 +157,9 @@ class GeofenceChainService {
   /// The last deadline published, so an Extend is noticed as a change.
   DateTime? _windDownEndsAt;
 
+  /// The four-hour backstop for a ride nobody ended. Null between rides.
+  RideTimeout? _rideTimeout;
+
   /// The last alight station published, so a move to an overshoot pin is
   /// noticed as a change. Null until WindDown exists.
   String? _alightStationId;
@@ -249,6 +253,10 @@ class GeofenceChainService {
     // dependency circular.
     int pulseIntervalS = 0,
     bool pulseVibrate = true,
+    // FROM THE STORE, never DateTime.now() here. A service the OS recreated
+    // mid-ride calls start() again, and a fresh clock would hand a forgotten
+    // ride another four hours, every time it was recreated.
+    DateTime? rideStartedAt,
   }) async {
     _logFile = await _createLogFile();
 
@@ -305,6 +313,7 @@ class GeofenceChainService {
       intervalS: pulseIntervalS,
       startedAt: DateTime.now(),
     );
+    _rideTimeout = RideTimeout(startedAt: rideStartedAt ?? DateTime.now());
     if (pulseIntervalS > 0) {
       _log(
         'PULSE every ${pulseIntervalS}s'
@@ -1180,6 +1189,7 @@ class GeofenceChainService {
 
     // A manual End mid-countdown must not leave phantom wind-down buttons.
     _windDown = null;
+    _rideTimeout = null;
     // The next ride starts with no opinion about where its rider gets off.
     _alightStationId = null;
     if (_windDownLive) {
@@ -1368,6 +1378,15 @@ class GeofenceChainService {
   void onTick(DateTime now) {
     _handleWindDownActions(_windDown?.onTick(now) ?? const []);
 
+    _handleTimeoutActions(
+      _rideTimeout?.onTick(
+            now,
+            wakeLadderLive: _wakeEscalation?.isLadderLive ?? false,
+            windDownLive: _windDownLive,
+          ) ??
+          const [],
+    );
+
     // Pocket Pulse rides the tick the other engines already use. `announcerBusy`
     // is passed rather than held, because it is a fact about right now: TTS
     // queued or speaking, or a clip queued or playing.
@@ -1458,6 +1477,23 @@ class GeofenceChainService {
                 ? 'PULSE ${reason.substring(6)}'
                 : 'PULSE $reason',
           );
+      }
+    }
+  }
+
+  /// The four-hour backstop's actions. It ends the ride down the SAME path the
+  /// wind-down auto-off uses, so there is one teardown, not two.
+  void _handleTimeoutActions(List<RideTimeoutAction> actions) {
+    for (final action in actions) {
+      switch (action) {
+        case RideTimeoutSpeak(:final text):
+          _log('TIMEOUT speaking the four-hour warning.');
+          unawaited(_speak(text));
+        case RideTimeoutEnd():
+          _log('TIMEOUT ending Travel Mode.');
+          onAutoOff?.call();
+        case RideTimeoutNote(:final reason):
+          _log('TIMEOUT $reason.');
       }
     }
   }
