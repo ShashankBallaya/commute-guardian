@@ -18,6 +18,7 @@ import 'announcement_templates.dart';
 import 'clip_library.dart';
 import 'pocket_pulse.dart';
 import 'pulse_output.dart';
+import 'ride_health.dart';
 import 'ride_progress.dart';
 import 'ride_timeout.dart';
 import 'self_audio_interruption.dart';
@@ -159,6 +160,10 @@ class GeofenceChainService {
 
   /// The four-hour backstop for a ride nobody ended. Null between rides.
   RideTimeout? _rideTimeout;
+
+  /// Two of the edge states, GPS_LOST and STALL. Notices only: it cannot move
+  /// the chain or touch an alert.
+  RideHealth? _rideHealth;
 
   /// The last alight station published, so a move to an overshoot pin is
   /// noticed as a change. Null until WindDown exists.
@@ -314,6 +319,7 @@ class GeofenceChainService {
       startedAt: DateTime.now(),
     );
     _rideTimeout = RideTimeout(startedAt: rideStartedAt ?? DateTime.now());
+    _rideHealth = RideHealth();
     if (pulseIntervalS > 0) {
       _log(
         'PULSE every ${pulseIntervalS}s'
@@ -1190,6 +1196,7 @@ class GeofenceChainService {
     // A manual End mid-countdown must not leave phantom wind-down buttons.
     _windDown = null;
     _rideTimeout = null;
+    _rideHealth = null;
     // The next ride starts with no opinion about where its rider gets off.
     _alightStationId = null;
     if (_windDownLive) {
@@ -1314,6 +1321,15 @@ class GeofenceChainService {
         ) ??
         const <Announcement>[];
 
+    // ONE definition of "usable", RideProgress's own accuracy ceiling, read off
+    // the engine rather than copied. A second copy of that number here would
+    // drift the day it is tuned, and the two would disagree about whether the
+    // stream is healthy while the chain refused to move.
+    _rideHealth?.onFix(
+      DateTime.now(),
+      usable: location.accuracy <= (_rideProgress?.maxAccuracyM ?? 150),
+    );
+
     // Position, published on CHANGE only. Sits here rather than inside the
     // announcement loop because the chain can advance without speaking (a
     // catch-up that resolves to a station already announced), and Screen 4 must
@@ -1349,6 +1365,31 @@ class GeofenceChainService {
       _handleWakeActions(
         _wakeEscalation?.onStationEvent(announcement, now) ?? const [],
       );
+      // The ride is provably moving. Approach and arrival for one station are
+      // both crossings here; the engine drops the near-zero segment between
+      // them rather than letting it drag the median down.
+      //
+      // The two facts it cannot work out for itself come from the JOURNEY, and
+      // both were found by replaying the six real logs through it: an
+      // interchange is an eighteen minute gap that is not a stall (18 Jul,
+      // Thane), and after the destination or an overshoot pin there are no more
+      // stations to cross at all (22 Jul, walking home from Shahad).
+      final journey = _journey;
+      _handleHealthActions(
+        _rideHealth?.onStationPassed(
+              now,
+              changeHere:
+                  journey?.interchanges.any(
+                    (i) => i.stationId == announcement.stationId,
+                  ) ??
+                  false,
+              endsWatch:
+                  announcement.kind == AnnouncementKind.overshoot ||
+                  (announcement.kind == AnnouncementKind.arrival &&
+                      announcement.stationId == journey?.destinationStationId),
+            ) ??
+            const [],
+      );
     }
 
     _handleWindDownActions(
@@ -1377,6 +1418,8 @@ class GeofenceChainService {
   /// handler. Drives the wind-down countdown and the wake ladder's clock.
   void onTick(DateTime now) {
     _handleWindDownActions(_windDown?.onTick(now) ?? const []);
+
+    _handleHealthActions(_rideHealth?.onTick(now) ?? const []);
 
     _handleTimeoutActions(
       _rideTimeout?.onTick(
@@ -1477,6 +1520,19 @@ class GeofenceChainService {
                 ? 'PULSE ${reason.substring(6)}'
                 : 'PULSE $reason',
           );
+      }
+    }
+  }
+
+  /// GPS_LOST and STALL. Notices, so the only thing that ever happens here is a
+  /// sentence and a log line.
+  void _handleHealthActions(List<RideHealthAction> actions) {
+    for (final action in actions) {
+      switch (action) {
+        case RideHealthSpeak(:final text):
+          unawaited(_speak(text));
+        case RideHealthNote(:final reason):
+          _log('HEALTH $reason.');
       }
     }
   }
