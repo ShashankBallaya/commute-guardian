@@ -188,20 +188,23 @@ void main() {
   });
 
   group('changing the interval mid-ride', () {
-    test('re-anchors from now, so the new cadence starts being true at once', () {
-      // A rider flipping crowd mode on wants 45 seconds NOW, not after the old
-      // three minutes drains.
-      final pulse = PocketPulse(intervalS: 180, startedAt: t0);
-      final switchAt = t0.add(const Duration(minutes: 1));
-      final chimes = chimesOver(
-        pulse,
-        span: const Duration(minutes: 4),
-        each: (p, now) {
-          if (now == switchAt) p.setInterval(45, now);
-        },
-      );
-      expect(chimes.first, switchAt.add(const Duration(seconds: 45)));
-    });
+    test(
+      're-anchors from now, so the new cadence starts being true at once',
+      () {
+        // A rider flipping crowd mode on wants 45 seconds NOW, not after the old
+        // three minutes drains.
+        final pulse = PocketPulse(intervalS: 180, startedAt: t0);
+        final switchAt = t0.add(const Duration(minutes: 1));
+        final chimes = chimesOver(
+          pulse,
+          span: const Duration(minutes: 4),
+          each: (p, now) {
+            if (now == switchAt) p.setInterval(45, now);
+          },
+        );
+        expect(chimes.first, switchAt.add(const Duration(seconds: 45)));
+      },
+    );
 
     test('setting the SAME interval does not reset the cadence', () {
       // The settings write-through path can fire more than once; it must not
@@ -237,7 +240,10 @@ void main() {
     // One line saying why, not eighty.
     final pulse = PocketPulse(intervalS: 45, startedAt: t0);
     final notes = <String>[
-      ...pulse.onWakeLadder(true, t0).whereType<PulseNote>().map((n) => n.reason),
+      ...pulse
+          .onWakeLadder(true, t0)
+          .whereType<PulseNote>()
+          .map((n) => n.reason),
     ];
     for (var s = 5; s <= 600; s += 5) {
       notes.addAll(

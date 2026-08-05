@@ -18,8 +18,16 @@ void main() {
   Future<AppDatabase> pumpHistory(
     WidgetTester tester, {
     required List<
-        ({String from, String to, DateTime start, DateTime end, int stations, bool reached})>
-        rides,
+      ({
+        String from,
+        String to,
+        DateTime start,
+        DateTime end,
+        int stations,
+        bool reached,
+      })
+    >
+    rides,
   }) async {
     final db = AppDatabase.inMemory();
     addTearDown(db.close);
@@ -37,9 +45,7 @@ void main() {
     }
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          appDatabaseProvider.overrideWith((ref) => db),
-        ],
+        overrides: [appDatabaseProvider.overrideWith((ref) => db)],
         child: const MaterialApp(home: HistoryScreen()),
       ),
     );
@@ -50,16 +56,19 @@ void main() {
   testWidgets('a ride reads as route, duration and what became of it', (
     tester,
   ) async {
-    await pumpHistory(tester, rides: [
-      (
-        from: 'Thane',
-        to: 'Kalyan',
-        start: DateTime(2026, 7, 22, 18, 35),
-        end: DateTime(2026, 7, 22, 19, 24),
-        stations: 8,
-        reached: true,
-      ),
-    ]);
+    await pumpHistory(
+      tester,
+      rides: [
+        (
+          from: 'Thane',
+          to: 'Kalyan',
+          start: DateTime(2026, 7, 22, 18, 35),
+          end: DateTime(2026, 7, 22, 19, 24),
+          stations: 8,
+          reached: true,
+        ),
+      ],
+    );
 
     expect(find.textContaining('Thane'), findsOneWidget);
     expect(find.text('49 min'), findsOneWidget);
@@ -67,7 +76,10 @@ void main() {
     // is why it survived the cut that dropped the battery readings. It sits
     // OUTSIDE the bullet run so it can carry its own emphasis.
     expect(
-      find.textContaining('Wed 22 Jul • 19:24 • 8 stations', findRichText: true),
+      find.textContaining(
+        'Wed 22 Jul • 19:24 • 8 stations',
+        findRichText: true,
+      ),
       findsOneWidget,
     );
     expect(find.textContaining('reached', findRichText: true), findsOneWidget);
@@ -78,24 +90,27 @@ void main() {
   ) async {
     // The exception is what gets the brightness. A rider scanning for the ride
     // that went wrong should not have to read past the ones that went right.
-    await pumpHistory(tester, rides: [
-      (
-        from: 'Thane',
-        to: 'Kalyan',
-        start: DateTime(2026, 7, 22, 18, 35),
-        end: DateTime(2026, 7, 22, 19, 24),
-        stations: 8,
-        reached: true,
-      ),
-      (
-        from: 'Shahad',
-        to: 'Ambivli',
-        start: DateTime(2026, 7, 23, 14, 51),
-        end: DateTime(2026, 7, 23, 14, 55),
-        stations: 2,
-        reached: false,
-      ),
-    ]);
+    await pumpHistory(
+      tester,
+      rides: [
+        (
+          from: 'Thane',
+          to: 'Kalyan',
+          start: DateTime(2026, 7, 22, 18, 35),
+          end: DateTime(2026, 7, 22, 19, 24),
+          stations: 8,
+          reached: true,
+        ),
+        (
+          from: 'Shahad',
+          to: 'Ambivli',
+          start: DateTime(2026, 7, 23, 14, 51),
+          end: DateTime(2026, 7, 23, 14, 55),
+          stations: 2,
+          reached: false,
+        ),
+      ],
+    );
 
     Color? outcomeColour(String label) {
       for (final t in tester.widgetList<Text>(find.byType(Text))) {
@@ -126,19 +141,25 @@ void main() {
   });
 
   testWidgets('a ride that did not get there says so', (tester) async {
-    await pumpHistory(tester, rides: [
-      (
-        from: 'Shahad',
-        to: 'Ambivli',
-        start: DateTime(2026, 7, 23, 14, 51),
-        end: DateTime(2026, 7, 23, 14, 55),
-        stations: 2,
-        reached: false,
-      ),
-    ]);
+    await pumpHistory(
+      tester,
+      rides: [
+        (
+          from: 'Shahad',
+          to: 'Ambivli',
+          start: DateTime(2026, 7, 23, 14, 51),
+          end: DateTime(2026, 7, 23, 14, 55),
+          stations: 2,
+          reached: false,
+        ),
+      ],
+    );
 
     expect(
-      find.textContaining('Thu 23 Jul • 14:55 • 2 stations', findRichText: true),
+      find.textContaining(
+        'Thu 23 Jul • 14:55 • 2 stations',
+        findRichText: true,
+      ),
       findsOneWidget,
     );
     expect(
@@ -154,16 +175,19 @@ void main() {
     // Seen on the 3T on 29 Jul: three bench runs all rendered "0 min", which
     // reads as a field that failed to load rather than a very short ride. A
     // rider who starts a journey and cancels on the platform gets this too.
-    await pumpHistory(tester, rides: [
-      (
-        from: 'Shahad',
-        to: 'Kalyan',
-        start: DateTime(2026, 7, 28, 22, 1, 5),
-        end: DateTime(2026, 7, 28, 22, 1, 49),
-        stations: 2,
-        reached: false,
-      ),
-    ]);
+    await pumpHistory(
+      tester,
+      rides: [
+        (
+          from: 'Shahad',
+          to: 'Kalyan',
+          start: DateTime(2026, 7, 28, 22, 1, 5),
+          end: DateTime(2026, 7, 28, 22, 1, 49),
+          stations: 2,
+          reached: false,
+        ),
+      ],
+    );
     expect(find.text('under a minute'), findsOneWidget);
     expect(find.text('0 min'), findsNothing);
   });
@@ -171,24 +195,27 @@ void main() {
   testWidgets('newest first, which is the whole point of a history', (
     tester,
   ) async {
-    await pumpHistory(tester, rides: [
-      (
-        from: 'Shahad',
-        to: 'Ambivli',
-        start: DateTime(2026, 7, 23, 14, 51),
-        end: DateTime(2026, 7, 23, 14, 55),
-        stations: 2,
-        reached: false,
-      ),
-      (
-        from: 'Shahad',
-        to: 'Thane',
-        start: DateTime(2026, 7, 23, 15, 0),
-        end: DateTime(2026, 7, 23, 15, 4),
-        stations: 2,
-        reached: false,
-      ),
-    ]);
+    await pumpHistory(
+      tester,
+      rides: [
+        (
+          from: 'Shahad',
+          to: 'Ambivli',
+          start: DateTime(2026, 7, 23, 14, 51),
+          end: DateTime(2026, 7, 23, 14, 55),
+          stations: 2,
+          reached: false,
+        ),
+        (
+          from: 'Shahad',
+          to: 'Thane',
+          start: DateTime(2026, 7, 23, 15, 0),
+          end: DateTime(2026, 7, 23, 15, 4),
+          stations: 2,
+          reached: false,
+        ),
+      ],
+    );
 
     // The approved frame had its top row out of order; the query does not.
     // Read through textSpan, not .data: the meta line is rich text since the
@@ -206,16 +233,19 @@ void main() {
   });
 
   testWidgets('an hour-long ride reads in hours', (tester) async {
-    await pumpHistory(tester, rides: [
-      (
-        from: 'CSMT',
-        to: 'Kasara',
-        start: DateTime(2026, 7, 20, 8, 0),
-        end: DateTime(2026, 7, 20, 10, 12),
-        stations: 37,
-        reached: true,
-      ),
-    ]);
+    await pumpHistory(
+      tester,
+      rides: [
+        (
+          from: 'CSMT',
+          to: 'Kasara',
+          start: DateTime(2026, 7, 20, 8, 0),
+          end: DateTime(2026, 7, 20, 10, 12),
+          stations: 37,
+          reached: true,
+        ),
+      ],
+    );
     expect(find.text('2 h 12 min'), findsOneWidget);
   });
 
@@ -249,8 +279,9 @@ void main() {
               File(StationRepository.assetPath).readAsStringSync(),
             ),
           ),
-          fixAcquirerProvider
-              .overrideWithValue(() async => throw StateError('no GPS')),
+          fixAcquirerProvider.overrideWithValue(
+            () async => throw StateError('no GPS'),
+          ),
           rideServiceClientProvider.overrideWithValue(FakeRideServiceClient()),
         ],
         child: const CommuteGuardianDebugApp(),

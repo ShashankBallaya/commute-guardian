@@ -23,11 +23,17 @@ void main() {
   test('the end of an interruption we ignored is ignored too', () {
     final filter = SelfAudioInterruptionFilter();
     filter.noteOwnAudioStarted(t0);
-    filter.shouldIgnore(begin: true, now: t0.add(const Duration(milliseconds: 150)));
+    filter.shouldIgnore(
+      begin: true,
+      now: t0.add(const Duration(milliseconds: 150)),
+    );
 
     // Otherwise the engine gets a call that ended without ever beginning.
     expect(
-      filter.shouldIgnore(begin: false, now: t0.add(const Duration(seconds: 4))),
+      filter.shouldIgnore(
+        begin: false,
+        now: t0.add(const Duration(seconds: 4)),
+      ),
       isTrue,
     );
   });
@@ -55,7 +61,10 @@ void main() {
     filter.shouldIgnore(begin: true, now: t0.add(const Duration(seconds: 5)));
 
     expect(
-      filter.shouldIgnore(begin: false, now: t0.add(const Duration(seconds: 30))),
+      filter.shouldIgnore(
+        begin: false,
+        now: t0.add(const Duration(seconds: 30)),
+      ),
       isFalse,
     );
   });
@@ -63,7 +72,10 @@ void main() {
   test('a real call after an ignored one is still delivered', () {
     final filter = SelfAudioInterruptionFilter();
     filter.noteOwnAudioStarted(t0);
-    filter.shouldIgnore(begin: true, now: t0.add(const Duration(milliseconds: 200)));
+    filter.shouldIgnore(
+      begin: true,
+      now: t0.add(const Duration(milliseconds: 200)),
+    );
     filter.shouldIgnore(begin: false, now: t0.add(const Duration(seconds: 2)));
 
     // The rider really does take a call a minute later.
@@ -115,10 +127,7 @@ void _sustainedToneTests() {
     // Ladder acked, tone stopped. The rider's phone rings a minute later.
     filter.noteSustainedOwnAudioEnded();
     expect(
-      filter.shouldIgnore(
-        begin: true,
-        now: t0.add(const Duration(minutes: 1)),
-      ),
+      filter.shouldIgnore(begin: true, now: t0.add(const Duration(minutes: 1))),
       isFalse,
       reason: 'on a call means awake; the filter must not swallow that',
     );

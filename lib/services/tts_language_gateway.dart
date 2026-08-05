@@ -41,7 +41,9 @@ class TtsLanguageGateway {
       final found = AppLanguage.values
           .where((l) => subtags.contains(l.tag.split('-').first))
           .toSet();
-      return found.isEmpty ? {AppLanguage.english} : {...found, AppLanguage.english};
+      return found.isEmpty
+          ? {AppLanguage.english}
+          : {...found, AppLanguage.english};
     } catch (_) {
       return {AppLanguage.english};
     }

@@ -13,11 +13,12 @@ import 'package:flutter_test/flutter_test.dart';
 JourneyPlanner _planner() {
   final raw = File('assets/stations/mumbai_suburban.json').readAsStringSync();
   final doc = jsonDecode(raw) as Map<String, dynamic>;
-  final stations = (doc['stations'] as List)
-      .cast<Map<String, dynamic>>()
-      .map(Station.fromJson);
-  final lines =
-      (doc['lines'] as List).cast<Map<String, dynamic>>().map(Line.fromJson);
+  final stations = (doc['stations'] as List).cast<Map<String, dynamic>>().map(
+    Station.fromJson,
+  );
+  final lines = (doc['lines'] as List).cast<Map<String, dynamic>>().map(
+    Line.fromJson,
+  );
   return JourneyPlanner(
     stationsById: {for (final s in stations) s.id: s},
     linesById: {for (final l in lines) l.id: l},
@@ -36,20 +37,32 @@ List<String> _ids(Iterable<Station> stations) =>
     stations.map((s) => s.id).toList();
 
 void main() {
-  test('Kalyan to Thane is one line, no change, with Mulund as the overshoot', () {
-    final journey = _planner().plan(originId: 'kalyan', destinationId: 'thane');
+  test(
+    'Kalyan to Thane is one line, no change, with Mulund as the overshoot',
+    () {
+      final journey = _planner().plan(
+        originId: 'kalyan',
+        destinationId: 'thane',
+      );
 
-    // The exact 8 stations of the 12 Jul field ride. The overshoot pin is no
-    // longer a chain member: the chain ends at the destination and pins are
-    // carried separately.
-    expect(_ids(journey.chain), [
-      'kalyan', 'thakurli', 'dombivli', 'kopar', 'diva',
-      'mumbra', 'kalwa', 'thane',
-    ]);
-    expect(journey.destinationStationId, 'thane');
-    expect(journey.overshootStationIds, ['mulund']);
-    expect(journey.interchanges, isEmpty);
-  });
+      // The exact 8 stations of the 12 Jul field ride. The overshoot pin is no
+      // longer a chain member: the chain ends at the destination and pins are
+      // carried separately.
+      expect(_ids(journey.chain), [
+        'kalyan',
+        'thakurli',
+        'dombivli',
+        'kopar',
+        'diva',
+        'mumbra',
+        'kalwa',
+        'thane',
+      ]);
+      expect(journey.destinationStationId, 'thane');
+      expect(journey.overshootStationIds, ['mulund']);
+      expect(journey.interchanges, isEmpty);
+    },
+  );
 
   test('Kalyan to Digha reproduces the hand-authored field-ride chain', () {
     // This is the guarantee that let the `harbour_ride_kalyan_digha` fake line be
@@ -58,8 +71,15 @@ void main() {
     final journey = _planner().plan(originId: 'kalyan', destinationId: 'digha');
 
     expect(_ids(journey.chain), [
-      'kalyan', 'thakurli', 'dombivli', 'kopar', 'diva',
-      'mumbra', 'kalwa', 'thane', 'digha',
+      'kalyan',
+      'thakurli',
+      'dombivli',
+      'kopar',
+      'diva',
+      'mumbra',
+      'kalwa',
+      'thane',
+      'digha',
     ]);
     expect(journey.destinationStationId, 'digha');
     expect(journey.overshootStationIds, ['airoli']);
@@ -93,7 +113,10 @@ void main() {
   });
 
   test('a destination at the end of a line has no overshoot pin', () {
-    final journey = _planner().plan(originId: 'kalyan', destinationId: 'kasara');
+    final journey = _planner().plan(
+      originId: 'kalyan',
+      destinationId: 'kasara',
+    );
 
     expect(journey.chain.last.id, 'kasara');
     expect(journey.overshootStationIds, isEmpty);
@@ -129,11 +152,12 @@ void main() {
     // rider sits still. The debug build announced "Change at Kalyan onto Central"
     // to a rider already on Central, which would have put them on a platform for
     // no reason.
-    final journey = _planner().plan(originId: 'shahad', destinationId: 'dombivli');
+    final journey = _planner().plan(
+      originId: 'shahad',
+      destinationId: 'dombivli',
+    );
 
-    expect(_ids(journey.chain), [
-      'shahad', 'kalyan', 'thakurli', 'dombivli',
-    ]);
+    expect(_ids(journey.chain), ['shahad', 'kalyan', 'thakurli', 'dombivli']);
     expect(journey.interchanges, isEmpty);
     expect(journey.overshootStationIds, ['kopar']);
 
@@ -149,8 +173,10 @@ void main() {
     // Shahad -> Ulhasnagar as "no change of train", and would have let the
     // rider sleep through a change they had to make. Hence explicit
     // throughServices pairs in the data instead.
-    final journey =
-        _planner().plan(originId: 'shahad', destinationId: 'ulhasnagar');
+    final journey = _planner().plan(
+      originId: 'shahad',
+      destinationId: 'ulhasnagar',
+    );
 
     expect(journey.interchanges, hasLength(1));
     final change = journey.interchanges.single;
@@ -170,13 +196,13 @@ void main() {
   test('the through service works in both directions', () {
     // Up the trunk and onto the Kasara branch: still one train, still silent
     // at Kalyan.
-    final journey =
-        _planner().plan(originId: 'dombivli', destinationId: 'shahad');
+    final journey = _planner().plan(
+      originId: 'dombivli',
+      destinationId: 'shahad',
+    );
 
     expect(journey.interchanges, isEmpty);
-    expect(_ids(journey.chain), [
-      'dombivli', 'thakurli', 'kalyan', 'shahad',
-    ]);
+    expect(_ids(journey.chain), ['dombivli', 'thakurli', 'kalyan', 'shahad']);
     expect(journey.overshootStationIds, ['ambivli']);
   });
 
@@ -202,8 +228,10 @@ void main() {
   });
 
   test('a journey along one line never invents a change', () {
-    final journey =
-        _planner().plan(originId: 'churchgate', destinationId: 'borivali');
+    final journey = _planner().plan(
+      originId: 'churchgate',
+      destinationId: 'borivali',
+    );
 
     expect(journey.interchanges, isEmpty);
     expect(journey.chain.first.id, 'churchgate');
@@ -228,47 +256,62 @@ void main() {
     );
   });
 
-  test('Central to Western goes over the Dadar foot overbridge, not the MEMU', () {
-    // The 13 Jul field report: Shahad -> Borivali planned via the hourly
-    // Diva-Vasai MEMU, because Dadar Central and Dadar Western were two
-    // unconnected stations and the human route did not exist in the graph.
-    final journey =
-        _planner().plan(originId: 'shahad', destinationId: 'borivali');
+  test(
+    'Central to Western goes over the Dadar foot overbridge, not the MEMU',
+    () {
+      // The 13 Jul field report: Shahad -> Borivali planned via the hourly
+      // Diva-Vasai MEMU, because Dadar Central and Dadar Western were two
+      // unconnected stations and the human route did not exist in the graph.
+      final journey = _planner().plan(
+        originId: 'shahad',
+        destinationId: 'borivali',
+      );
 
-    final ids = _ids(journey.chain);
-    expect(ids, isNot(contains('vasai_road')));
-    expect(ids.indexOf('dadar_western'), ids.indexOf('dadar') + 1,
-        reason: 'the walk crosses from Dadar Central straight to Dadar Western');
+      final ids = _ids(journey.chain);
+      expect(ids, isNot(contains('vasai_road')));
+      expect(
+        ids.indexOf('dadar_western'),
+        ids.indexOf('dadar') + 1,
+        reason: 'the walk crosses from Dadar Central straight to Dadar Western',
+      );
 
-    expect(journey.interchanges, hasLength(1));
-    final change = journey.interchanges.single;
-    expect(change.stationId, 'dadar');
-    expect(change.walkToStationName, 'Dadar Western');
-    expect(
-      journey.arrivalAnnouncements['dadar'],
-      'You have reached Dadar. Get off the train and walk across to '
-      'Dadar Western, then board the Western train towards Dahanu Road to '
-      'continue to your destination.',
-    );
-  });
+      expect(journey.interchanges, hasLength(1));
+      final change = journey.interchanges.single;
+      expect(change.stationId, 'dadar');
+      expect(change.walkToStationName, 'Dadar Western');
+      expect(
+        journey.arrivalAnnouncements['dadar'],
+        'You have reached Dadar. Get off the train and walk across to '
+        'Dadar Western, then board the Western train towards Dahanu Road to '
+        'continue to your destination.',
+      );
+    },
+  );
 
   test('low-frequency MEMU lines are a last resort, not a shortcut', () {
     // Vasai Road is on the Western line, so it is reachable without the MEMU:
     // the planner must go over Dadar even though the MEMU would save a change.
-    final viaWestern =
-        _planner().plan(originId: 'dombivli', destinationId: 'vasai_road');
+    final viaWestern = _planner().plan(
+      originId: 'dombivli',
+      destinationId: 'vasai_road',
+    );
     expect(_ids(viaWestern.chain), isNot(contains('kharbao')));
     expect(_ids(viaWestern.chain), contains('dadar_western'));
 
     // Kharbao is ONLY on the MEMU line, so the fallback must still route there,
     // and via the nearest boarding point (Kopar), not past it and back.
-    final forced =
-        _planner().plan(originId: 'dombivli', destinationId: 'kharbao');
+    final forced = _planner().plan(
+      originId: 'dombivli',
+      destinationId: 'kharbao',
+    );
     final ids = _ids(forced.chain);
     expect(ids, contains('kharbao'));
     expect(forced.interchanges.single.stationId, 'kopar');
-    expect(ids.toSet(), hasLength(ids.length),
-        reason: 'a chain that doubles back visits a station twice');
+    expect(
+      ids.toSet(),
+      hasLength(ids.length),
+      reason: 'a chain that doubles back visits a station twice',
+    );
   });
 
   test('any plannable pair yields a sane chain (sampled sweep)', () {
@@ -285,15 +328,20 @@ void main() {
       final destinationId = ids[rng.nextInt(ids.length)];
       if (originId == destinationId) continue;
 
-      final journey =
-          planner.plan(originId: originId, destinationId: destinationId);
+      final journey = planner.plan(
+        originId: originId,
+        destinationId: destinationId,
+      );
       final chainIds = _ids(journey.chain);
       final label = '$originId -> $destinationId';
 
       expect(chainIds.first, originId, reason: label);
       expect(chainIds, contains(destinationId), reason: label);
-      expect(chainIds.toSet(), hasLength(chainIds.length),
-          reason: '$label visits a station twice: $chainIds');
+      expect(
+        chainIds.toSet(),
+        hasLength(chainIds.length),
+        reason: '$label visits a station twice: $chainIds',
+      );
       for (final interchange in journey.interchanges) {
         expect(chainIds, contains(interchange.stationId), reason: label);
       }

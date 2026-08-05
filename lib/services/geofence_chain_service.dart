@@ -112,7 +112,7 @@ class GeofenceChainService {
   /// AN EXTEND MOVES THE DEADLINE WITHOUT CHANGING [live], so anything watching
   /// only liveness would show the old countdown for ten more minutes.
   final void Function(bool live, DateTime? endsAt, Duration window)?
-      onWindDownLive;
+  onWindDownLive;
 
   /// The auto-off countdown expired (or [End now] was pressed): the ride is
   /// over and the whole service should tear itself down. Owned by the
@@ -137,6 +137,7 @@ class GeofenceChainService {
   WakeEscalation? _wakeEscalation;
   WakeAlertOutput? _wakeOutput;
   WindDown? _windDown;
+
   /// The last rung published, so a climb is noticed as a change.
   int _wakeLadderRung = 0;
 
@@ -271,10 +272,14 @@ class GeofenceChainService {
     // calls as our own alarm. stop() clears it, but a restart that never went
     // through stop() would not.
     _selfInterruption.noteSustainedOwnAudioEnded();
-    _wakeOutput =
-        WakeAlertOutput(log: _log, onIosToneCommand: onIosToneCommand);
-    _pulseOutput =
-        PulseOutput(log: _log, interruptionFilter: _selfInterruption);
+    _wakeOutput = WakeAlertOutput(
+      log: _log,
+      onIosToneCommand: onIosToneCommand,
+    );
+    _pulseOutput = PulseOutput(
+      log: _log,
+      interruptionFilter: _selfInterruption,
+    );
 
     // The interval crosses the isolate boundary through the STORE, the same
     // way the Sarvam flags do, because settings live in drift and the service
@@ -287,14 +292,15 @@ class GeofenceChainService {
       startedAt: DateTime.now(),
     );
     if (pulseIntervalS > 0) {
-      _log('PULSE every ${pulseIntervalS}s'
-          '${_pulseVibrate ? ", with vibration" : ""}.');
+      _log(
+        'PULSE every ${pulseIntervalS}s'
+        '${_pulseVibrate ? ", with vibration" : ""}.',
+      );
     }
 
     if (sarvamClips && Platform.isAndroid) {
       final dir = await getExternalStorageDirectory();
-      final root =
-          dir == null ? null : Directory('${dir.path}/clips/en-IN');
+      final root = dir == null ? null : Directory('${dir.path}/clips/en-IN');
       final clips = root != null && await root.exists()
           ? ClipLibrary.open(root)
           : null;
@@ -302,8 +308,10 @@ class GeofenceChainService {
         _clips = clips;
         _log('CLIPS enabled from ${root!.path}, ${clips.length} in manifest');
       } else if (root != null && await root.exists()) {
-        _log('CLIPS pack has no readable manifest.json, using device TTS. '
-            'Regenerate with build_clip_pack.py --manifest-only and push it.');
+        _log(
+          'CLIPS pack has no readable manifest.json, using device TTS. '
+          'Regenerate with build_clip_pack.py --manifest-only and push it.',
+        );
       } else {
         _log('CLIPS requested but no pack found, using device TTS.');
       }
@@ -366,9 +374,7 @@ class GeofenceChainService {
       }
     }
 
-    _log(
-      'Planned journey: ${journey.chain.map((s) => s.name).join(' -> ')}',
-    );
+    _log('Planned journey: ${journey.chain.map((s) => s.name).join(' -> ')}');
     for (final interchange in journey.interchanges) {
       _log(
         'Change trains at ${interchange.stationId} onto '
@@ -452,23 +458,25 @@ class GeofenceChainService {
   /// the nicer voice, never the information.
   void _enqueueClip(File clip, {required String floorText}) {
     _pendingClips++;
-    _clipChain = _clipChain.then((_) async {
-      try {
-        _log('CLIP ${clip.uri.pathSegments.last}');
-        await _playClipFile(clip);
-      } catch (error) {
-        _log('CLIP failed, using device TTS: $error');
-        await _speak(floorText);
-      } finally {
-        _pendingClips--;
-      }
-      // Nothing may escape into the chain itself. A rejected future here
-      // poisons every clip queued after it for the rest of the ride, which
-      // would silence announcements one by one instead of dropping a single
-      // one to the floor.
-    }).catchError((Object error) {
-      _log('CLIP chain error, queue continues: $error');
-    });
+    _clipChain = _clipChain
+        .then((_) async {
+          try {
+            _log('CLIP ${clip.uri.pathSegments.last}');
+            await _playClipFile(clip);
+          } catch (error) {
+            _log('CLIP failed, using device TTS: $error');
+            await _speak(floorText);
+          } finally {
+            _pendingClips--;
+          }
+          // Nothing may escape into the chain itself. A rejected future here
+          // poisons every clip queued after it for the rest of the ride, which
+          // would silence announcements one by one instead of dropping a single
+          // one to the floor.
+        })
+        .catchError((Object error) {
+          _log('CLIP chain error, queue continues: $error');
+        });
   }
 
   /// Plays one clip file through the announcement duck: music dips while
@@ -542,18 +550,20 @@ class GeofenceChainService {
   /// a navigation prompt takes, and we must not duck ourselves.
   static final AudioSessionConfiguration _duckProfile =
       const AudioSessionConfiguration.speech().copyWith(
-    avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.duckOthers |
-        AVAudioSessionCategoryOptions.mixWithOthers,
-    avAudioSessionMode: AVAudioSessionMode.voicePrompt,
-    avAudioSessionSetActiveOptions:
-        AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation,
-    androidAudioFocusGainType: AndroidAudioFocusGainType.gainTransientMayDuck,
-    androidAudioAttributes: const AndroidAudioAttributes(
-      contentType: AndroidAudioContentType.speech,
-      usage: AndroidAudioUsage.assistanceNavigationGuidance,
-    ),
-    androidWillPauseWhenDucked: false,
-  );
+        avAudioSessionCategoryOptions:
+            AVAudioSessionCategoryOptions.duckOthers |
+            AVAudioSessionCategoryOptions.mixWithOthers,
+        avAudioSessionMode: AVAudioSessionMode.voicePrompt,
+        avAudioSessionSetActiveOptions:
+            AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation,
+        androidAudioFocusGainType:
+            AndroidAudioFocusGainType.gainTransientMayDuck,
+        androidAudioAttributes: const AndroidAudioAttributes(
+          contentType: AndroidAudioContentType.speech,
+          usage: AndroidAudioUsage.assistanceNavigationGuidance,
+        ),
+        androidWillPauseWhenDucked: false,
+      );
 
   /// The ladder seized the session exclusively (tone context has no
   /// mixWithOthers on iOS, and the UI-side native seizure owns Now Playing).
@@ -715,7 +725,7 @@ class GeofenceChainService {
           // for itself.
           ? 'Audio lost (iOS interruption), nothing sounding.'
           : 'Audio lost (iOS interruption) with a ladder live, '
-              'the tone watchdog will re-seize.',
+                'the tone watchdog will re-seize.',
     );
   }
 
@@ -950,8 +960,9 @@ class GeofenceChainService {
       return;
     }
     final trigger = chain[targetIndex - 1];
-    _wakeTestCeiling =
-        targetIndex + 1 < chain.length ? chain[targetIndex + 1] : null;
+    _wakeTestCeiling = targetIndex + 1 < chain.length
+        ? chain[targetIndex + 1]
+        : null;
     _wakeTestCeilingAt = DateTime.now().add(_wakeTestTimeout);
     _log('WAKE test: synthesizing arrival at ${trigger.name}.');
     _handleWakeActions(
@@ -1042,11 +1053,7 @@ class GeofenceChainService {
           _pocketPulse?.onWakeLadder(live, DateTime.now()) ?? const [],
         );
       }
-      onWakeLadderLive?.call(
-        live,
-        rung,
-        _wakeEscalation?.isClimbing ?? true,
-      );
+      onWakeLadderLive?.call(live, rung, _wakeEscalation?.isClimbing ?? true);
     }
   }
 
@@ -1064,8 +1071,9 @@ class GeofenceChainService {
       return;
     }
     _log('WIND_DOWN test requested.');
-    final destination = journey.chain
-        .firstWhere((s) => s.id == journey.destinationStationId);
+    final destination = journey.chain.firstWhere(
+      (s) => s.id == journey.destinationStationId,
+    );
     final now = DateTime.now();
     // The arrival itself, which the real path fires beside the announcement.
     // Without it this bench skipped straight to the countdown and never
@@ -1210,14 +1218,12 @@ class GeofenceChainService {
   /// the on-screen log list is lost to Activity recreation during a long
   /// backgrounded ride.
   Future<File> _createLogFile() async {
-    final dir = Platform.isAndroid
-        ? await getExternalStorageDirectory()
-        : null;
+    final dir = Platform.isAndroid ? await getExternalStorageDirectory() : null;
     final base = dir ?? await getApplicationDocumentsDirectory();
     final stamp = DateTime.now().toIso8601String().replaceAll(
-          RegExp(r'[:.]'),
-          '-',
-        );
+      RegExp(r'[:.]'),
+      '-',
+    );
     final file = File('${base.path}/geofence_log_$stamp.txt');
     return file.create(recursive: true);
   }
@@ -1274,7 +1280,8 @@ class GeofenceChainService {
     // RideProgress, fed by every raw fix, is the single source of spoken
     // announcements: it still fires a station the native geofence engine
     // jumped or a blackout hid (see ride_progress.dart).
-    final announcements = _rideProgress?.onFix(
+    final announcements =
+        _rideProgress?.onFix(
           lat: location.latitude,
           lng: location.longitude,
           accuracyM: location.accuracy,

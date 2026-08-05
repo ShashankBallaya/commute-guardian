@@ -103,6 +103,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget build(BuildContext context) {
     final nearest = ref.watch(nearestStationProvider);
     final destinations = ref.watch(recentDestinationsProvider);
+    // valueOrNull, not when(): saved routes are an ENHANCEMENT of the recent
+    // list, so a database that will not answer this query must cost the rider
+    // their saved cards and nothing else. The screen still works.
+    final saved = ref.watch(savedRoutesProvider);
 
     return Scaffold(
       body: SafeArea(
@@ -168,9 +172,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   // History is a convenience, never the product. If the database
                   // will not answer, the rider can still start a journey.
                   error: (_, _) => _NewJourneyButton(onTap: widget.onNew),
+                  // STILL KEYED TO JOURNEYS COMPLETED, never to routes saved.
+                  // A saved route cannot exist without a completed journey
+                  // (Screen 5 is the only place one is created), so reading the
+                  // saved list here would answer the same question less
+                  // directly and reintroduce the 16 Jul hole if that ever
+                  // changed.
                   data: (rides) => rides.isEmpty
                       ? _FirstRun(onStart: widget.onNew)
-                      : _Recents(
+                      : _Cards(
+                          saved: saved.valueOrNull ?? const [],
                           rides: rides,
                           onStartTo: widget.onStartTo,
                           onNew: widget.onNew,
@@ -266,42 +277,96 @@ class _FirstRun extends StatelessWidget {
   }
 }
 
-/// State 2. Destinations the rider has actually ridden to, newest first.
-class _Recents extends StatelessWidget {
-  const _Recents({
+/// States 2 and 3, which are one list with a divider in it.
+///
+/// SAVED FIRST, THEN RECENTS, THREE CARDS TOTAL. Saved routes are the rider's
+/// own answer to "where do I go", so they outrank a list the app inferred. The
+/// cap is what keeps the cards in the thumb zone; past three the last card is
+/// no longer reachable one-handed, which is the whole layout's reason for
+/// being.
+///
+/// A DESTINATION IS NEVER OFFERED TWICE. Saving Kalyan as Home and then riding
+/// there would otherwise put Kalyan on the screen as both "Home" and "Kalyan",
+/// two cards that do exactly the same thing, and the rider would have to work
+/// out whether they differ. They do not.
+class _Cards extends StatelessWidget {
+  const _Cards({
+    required this.saved,
     required this.rides,
     required this.onStartTo,
     required this.onNew,
   });
 
+  static const _slots = 3;
+
+  final List<SavedRoute> saved;
   final List<JourneyRecord> rides;
   final void Function(String destinationStationId) onStartTo;
   final VoidCallback onNew;
 
   @override
   Widget build(BuildContext context) {
+    final shown = saved.take(_slots).toList();
+    final savedIds = {for (final route in shown) route.destinationStationId};
+    final recents = [
+      for (final ride in rides)
+        if (!savedIds.contains(ride.destinationId)) ride,
+    ].take(_slots - shown.length);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Recent',
-          style: TextStyle(
-            fontSize: TypeScale.caption,
-            letterSpacing: 0.4,
-            color: Palette.textDim(0.45),
-          ),
-        ),
-        const SizedBox(height: 10),
-        for (final ride in rides) ...[
-          _DestinationCard(
-            ride: ride,
-            onTap: () => onStartTo(ride.destinationId),
-          ),
+        if (shown.isNotEmpty) ...[
+          const _Eyebrow('Saved'),
           const SizedBox(height: 10),
+          for (final route in shown) ...[
+            _DestinationCard(
+              cardKey: Key('saved_route_card_${route.label.toLowerCase()}'),
+              // The LABEL leads, because that is the word the rider chose and
+              // the one they recognise at a glance on a platform. The station
+              // is underneath it, quiet, because it is the fact that has to be
+              // checkable before a tap starts a ride.
+              title: route.label,
+              detail: route.destinationName,
+              onTap: () => onStartTo(route.destinationStationId),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ],
+        if (recents.isNotEmpty) ...[
+          if (shown.isNotEmpty) const SizedBox(height: 6),
+          const _Eyebrow('Recent'),
+          const SizedBox(height: 10),
+          for (final ride in recents) ...[
+            _DestinationCard(
+              cardKey: Key('destination_card_${ride.destinationId}'),
+              title: ride.destinationName,
+              onTap: () => onStartTo(ride.destinationId),
+            ),
+            const SizedBox(height: 10),
+          ],
         ],
         const SizedBox(height: 6),
         _NewJourneyButton(onTap: onNew),
       ],
+    );
+  }
+}
+
+class _Eyebrow extends StatelessWidget {
+  const _Eyebrow(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: TypeScale.caption,
+        letterSpacing: 0.4,
+        color: Palette.textDim(0.45),
+      ),
     );
   }
 }
@@ -311,15 +376,26 @@ class _Recents extends StatelessWidget {
 /// single action that starts or ends a journey, and with several cards on
 /// screen none of them may claim it.
 class _DestinationCard extends StatelessWidget {
-  const _DestinationCard({required this.ride, required this.onTap});
+  const _DestinationCard({
+    required this.cardKey,
+    required this.title,
+    required this.onTap,
+    this.detail,
+  });
 
-  final JourneyRecord ride;
+  final Key cardKey;
+  final String title;
+
+  /// The station under a saved route's label. Null on a recent card, where the
+  /// title already IS the station.
+  final String? detail;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final detail = this.detail;
     return Pressable(
-      key: Key('destination_card_${ride.destinationId}'),
+      key: cardKey,
       onTap: onTap,
       child: Container(
         decoration: Palette.glassCard(radius: 20),
@@ -330,13 +406,27 @@ class _DestinationCard extends StatelessWidget {
         child: Row(
           children: [
             Expanded(
-              child: Text(
-                ride.destinationName,
-                style: const TextStyle(
-                  fontSize: TypeScale.title,
-                  fontWeight: FontWeight.w700,
-                  color: Palette.text,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: TypeScale.title,
+                      fontWeight: FontWeight.w700,
+                      color: Palette.text,
+                    ),
+                  ),
+                  if (detail != null)
+                    Text(
+                      detail,
+                      style: TextStyle(
+                        fontSize: TypeScale.label,
+                        color: Palette.textDim(0.55),
+                      ),
+                    ),
+                ],
               ),
             ),
             // Right chevron means launches. A down chevron is banned for

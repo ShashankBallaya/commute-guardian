@@ -52,7 +52,7 @@ class WindDownNote extends WindDownAction {
 /// definition.
 class WindDown {
   WindDown({required this.destination, this.overshootStations = const []})
-      : _exitStation = destination;
+    : _exitStation = destination;
 
   /// Build the engine from the journey it runs for. Everything this needs is
   /// already on [Journey], and every caller (the service and the replay tool)
@@ -61,10 +61,11 @@ class WindDown {
   /// happened once: the replay tool stopped passing the overshoot pins and
   /// went silently blind to every overshoot for two commits.
   factory WindDown.forJourney(Journey journey) => WindDown(
-        destination: journey.chain
-            .firstWhere((s) => s.id == journey.destinationStationId),
-        overshootStations: journey.overshootStations,
-      );
+    destination: journey.chain.firstWhere(
+      (s) => s.id == journey.destinationStationId,
+    ),
+    overshootStations: journey.overshootStations,
+  );
 
   final Station destination;
 
@@ -340,8 +341,7 @@ class WindDown {
       _reanchored = true;
     }
 
-    final distanceM =
-        _distanceM(lat, lng, _exitStation.lat, _exitStation.lng);
+    final distanceM = _distanceM(lat, lng, _exitStation.lat, _exitStation.lng);
 
     final canReanchor = _reanchorPending && !_reanchored;
     if ((!_alightSeen || canReanchor) &&
@@ -421,7 +421,8 @@ class WindDown {
     // already guarded by walkedM <= walkReachM, which a gap-jump past 150 m
     // in a second fails on its own. Requiring continuity would also reject a
     // sparse but genuine walk.
-    final exitingOnFoot = speedMps >= 0 &&
+    final exitingOnFoot =
+        speedMps >= 0 &&
         speedMps <= walkingSpeedMaxMps &&
         walkedM > exitWalkM &&
         walkedM <= walkReachM;
@@ -485,16 +486,12 @@ class WindDown {
 
   /// Great-circle distance in metres (haversine), duplicated from the
   /// sibling engines on purpose: each stays a self-contained pure module.
-  static double _distanceM(
-    double lat1,
-    double lng1,
-    double lat2,
-    double lng2,
-  ) {
+  static double _distanceM(double lat1, double lng1, double lat2, double lng2) {
     const earthRadiusM = 6371000.0;
     final dLat = _toRad(lat2 - lat1);
     final dLng = _toRad(lng2 - lng1);
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(_toRad(lat1)) *
             math.cos(_toRad(lat2)) *
             math.sin(dLng / 2) *

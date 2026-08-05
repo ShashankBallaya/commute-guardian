@@ -20,12 +20,14 @@ Directory _pack(
   final dir = Directory.systemTemp.createTempSync('clip_pack');
   addTearDown(() => dir.deleteSync(recursive: true));
   for (final key in clips.keys) {
-    File('${dir.path}${Platform.pathSeparator}$key.wav')
-        .writeAsBytesSync(const [0]);
+    File(
+      '${dir.path}${Platform.pathSeparator}$key.wav',
+    ).writeAsBytesSync(const [0]);
   }
   if (withManifest) {
-    File('${dir.path}${Platform.pathSeparator}manifest.json')
-        .writeAsStringSync(jsonEncode(manifest ?? clips));
+    File(
+      '${dir.path}${Platform.pathSeparator}manifest.json',
+    ).writeAsStringSync(jsonEncode(manifest ?? clips));
   }
   return dir;
 }
@@ -34,8 +36,11 @@ void main() {
   test('template-matching sentences map to their clip kinds', () {
     expect(
       announcementClipKind(
-        announcement:
-            _a(AnnouncementKind.approach, 'thane', 'Now approaching Thane.'),
+        announcement: _a(
+          AnnouncementKind.approach,
+          'thane',
+          'Now approaching Thane.',
+        ),
         stationName: 'Thane',
       ),
       ClipKind.approach,
@@ -44,24 +49,33 @@ void main() {
     // the approach clip.
     expect(
       announcementClipKind(
-        announcement:
-            _a(AnnouncementKind.arrival, 'kalwa', 'Now approaching Kalwa.'),
+        announcement: _a(
+          AnnouncementKind.arrival,
+          'kalwa',
+          'Now approaching Kalwa.',
+        ),
         stationName: 'Kalwa',
       ),
       ClipKind.approach,
     );
     expect(
       announcementClipKind(
-        announcement: _a(AnnouncementKind.arrival, 'nerul',
-            'You have arrived at your destination, Nerul.'),
+        announcement: _a(
+          AnnouncementKind.arrival,
+          'nerul',
+          'You have arrived at your destination, Nerul.',
+        ),
         stationName: 'Nerul',
       ),
       ClipKind.destination,
     );
     expect(
       announcementClipKind(
-        announcement:
-            _a(AnnouncementKind.passed, 'rabale', 'You have passed Rabale.'),
+        announcement: _a(
+          AnnouncementKind.passed,
+          'rabale',
+          'You have passed Rabale.',
+        ),
         stationName: 'Rabale',
       ),
       ClipKind.passed,
@@ -69,10 +83,11 @@ void main() {
     expect(
       announcementClipKind(
         announcement: _a(
-            AnnouncementKind.overshoot,
-            'shahad',
-            'You have passed your stop. It is alright. Please alight here, '
-            'at Shahad.'),
+          AnnouncementKind.overshoot,
+          'shahad',
+          'You have passed your stop. It is alright. Please alight here, '
+              'at Shahad.',
+        ),
         stationName: 'Shahad',
       ),
       ClipKind.overshoot,
@@ -85,11 +100,12 @@ void main() {
     expect(
       announcementClipKind(
         announcement: _a(
-            AnnouncementKind.arrival,
-            'thane',
-            'You have reached Thane. Change here to the Trans Harbour line. '
-            'Get off the train, go to platform number 9, 10, or 10 A, then '
-            'board the Trans Harbour train to continue to your destination.'),
+          AnnouncementKind.arrival,
+          'thane',
+          'You have reached Thane. Change here to the Trans Harbour line. '
+              'Get off the train, go to platform number 9, 10, or 10 A, then '
+              'board the Trans Harbour train to continue to your destination.',
+        ),
         stationName: 'Thane',
       ),
       isNull,
@@ -98,8 +114,11 @@ void main() {
     // must not match either: the byte-identical rule is per station.
     expect(
       announcementClipKind(
-        announcement:
-            _a(AnnouncementKind.approach, 'thane', 'Now approaching Kalwa.'),
+        announcement: _a(
+          AnnouncementKind.approach,
+          'thane',
+          'Now approaching Kalwa.',
+        ),
         stationName: 'Thane',
       ),
       isNull,
@@ -111,8 +130,11 @@ void main() {
       _pack({'thane__approach': 'Now approaching Thane.'}),
     );
     expect(
-      library!.clipFor('thane', ClipKind.approach,
-          expectedSentence: 'Now approaching Thane.'),
+      library!.clipFor(
+        'thane',
+        ClipKind.approach,
+        expectedSentence: 'Now approaching Thane.',
+      ),
       isNotNull,
     );
     expect(library.length, 1);
@@ -123,8 +145,9 @@ void main() {
     // must yield nothing rather than trust its filenames.
     expect(
       ClipLibrary.open(
-        _pack({'thane__approach': 'Now approaching Thane.'},
-            withManifest: false),
+        _pack({
+          'thane__approach': 'Now approaching Thane.',
+        }, withManifest: false),
       ),
       isNull,
     );
@@ -133,8 +156,9 @@ void main() {
   test('a malformed manifest is refused like an absent one', () {
     final dir = Directory.systemTemp.createTempSync('clip_pack_bad');
     addTearDown(() => dir.deleteSync(recursive: true));
-    File('${dir.path}${Platform.pathSeparator}manifest.json')
-        .writeAsStringSync('{not json');
+    File(
+      '${dir.path}${Platform.pathSeparator}manifest.json',
+    ).writeAsStringSync('{not json');
     expect(ClipLibrary.open(dir), isNull);
   });
 
@@ -149,8 +173,11 @@ void main() {
       ),
     );
     expect(
-      library!.clipFor('shahad', ClipKind.approach,
-          expectedSentence: 'Now approaching Shahad.'),
+      library!.clipFor(
+        'shahad',
+        ClipKind.approach,
+        expectedSentence: 'Now approaching Shahad.',
+      ),
       isNull,
     );
   });
@@ -160,8 +187,11 @@ void main() {
       _pack(const {}, manifest: {'thane__approach': 'Now approaching Thane.'}),
     );
     expect(
-      library!.clipFor('thane', ClipKind.approach,
-          expectedSentence: 'Now approaching Thane.'),
+      library!.clipFor(
+        'thane',
+        ClipKind.approach,
+        expectedSentence: 'Now approaching Thane.',
+      ),
       isNull,
     );
   });

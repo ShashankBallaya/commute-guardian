@@ -30,7 +30,8 @@ void main() {
           settings: settings,
           availableLanguages: languages,
           versionLine: 'Commute Guardian 1.0.0 (1)',
-          readiness: readiness ??
+          readiness:
+              readiness ??
               const [
                 ReadinessItem(
                   label: 'Location, always',
@@ -225,10 +226,10 @@ void main() {
     final crimsonBoxes = tester
         .widgetList<Container>(find.byType(Container))
         .where((c) {
-      final decoration = c.decoration;
-      return decoration is BoxDecoration &&
-          decoration.color == const Color(0xFF55131D);
-    });
+          final decoration = c.decoration;
+          return decoration is BoxDecoration &&
+              decoration.color == const Color(0xFF55131D);
+        });
     expect(crimsonBoxes, isEmpty);
   });
 }

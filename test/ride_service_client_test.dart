@@ -13,14 +13,15 @@ void main() {
     test('a ride log line becomes a log event', () {
       final events = parseServiceData({'message': 'CLIP shahad__approach.wav'});
       expect(events, hasLength(1));
-      expect((events.single as ServiceLogged).message,
-          'CLIP shahad__approach.wav');
+      expect(
+        (events.single as ServiceLogged).message,
+        'CLIP shahad__approach.wav',
+      );
     });
 
     test('the wake ladder and wind-down flags carry both polarities', () {
       expect(
-        (parseServiceData({'wakeLadderLive': true}).single
-                as WakeLadderChanged)
+        (parseServiceData({'wakeLadderLive': true}).single as WakeLadderChanged)
             .live,
         isTrue,
       );
@@ -41,11 +42,19 @@ void main() {
       // Screen 5 draws real seconds. Reconstructing the deadline on the UI side
       // would show a fresh minute to a rider who has five seconds left, and
       // would miss an Extend entirely.
-      final counting = parseServiceData({
-        'windDownLive': true,
-        'windDownEndsAtMs': DateTime.utc(2026, 8, 4, 12, 30).millisecondsSinceEpoch,
-        'windDownWindowS': 600,
-      }).single as WindDownChanged;
+      final counting =
+          parseServiceData({
+                'windDownLive': true,
+                'windDownEndsAtMs': DateTime.utc(
+                  2026,
+                  8,
+                  4,
+                  12,
+                  30,
+                ).millisecondsSinceEpoch,
+                'windDownWindowS': 600,
+              }).single
+              as WindDownChanged;
       expect(counting.live, isTrue);
       expect(counting.endsAt, DateTime.utc(2026, 8, 4, 12, 30).toLocal());
       expect(counting.window, const Duration(minutes: 10));
@@ -55,16 +64,20 @@ void main() {
       // The store has no null, so it holds 0 for "nothing is counting". Both
       // spellings have to mean the same thing or a finished countdown would
       // come back as a deadline in 1970.
-      final sent = parseServiceData({
-        'windDownLive': false,
-        'windDownEndsAtMs': null,
-      }).single as WindDownChanged;
+      final sent =
+          parseServiceData({
+                'windDownLive': false,
+                'windDownEndsAtMs': null,
+              }).single
+              as WindDownChanged;
       expect(sent.endsAt, isNull);
 
-      final stored = parseServiceData({
-        'windDownLive': false,
-        'windDownEndsAtMs': 0,
-      }).single as WindDownChanged;
+      final stored =
+          parseServiceData({
+                'windDownLive': false,
+                'windDownEndsAtMs': 0,
+              }).single
+              as WindDownChanged;
       expect(stored.endsAt, isNull);
     });
 
@@ -90,8 +103,11 @@ void main() {
 
     test('a tone command defaults to full volume when none is sent', () {
       final withVolume =
-          parseServiceData({'toneCommand': 'startTone', 'toneVolume': 0.3})
-              .single as ToneCommanded;
+          parseServiceData({
+                'toneCommand': 'startTone',
+                'toneVolume': 0.3,
+              }).single
+              as ToneCommanded;
       expect(withVolume.command, 'startTone');
       expect(withVolume.volume, 0.3);
 
@@ -104,17 +120,21 @@ void main() {
     });
 
     test('rideEnded fires only when true, never merely present', () {
-      expect(parseServiceData({'rideEnded': true}).single,
-          isA<RideEndedByService>());
+      expect(
+        parseServiceData({'rideEnded': true}).single,
+        isA<RideEndedByService>(),
+      );
       expect(parseServiceData({'rideEnded': false}), isEmpty);
     });
 
     test('a fix needs all three parts, or it is not a fix', () {
-      final fix = parseServiceData({
-        'fixLat': 19.2358216,
-        'fixLng': 73.1308101,
-        'fixAccuracyM': 13,
-      }).single as ServiceFix;
+      final fix =
+          parseServiceData({
+                'fixLat': 19.2358216,
+                'fixLng': 73.1308101,
+                'fixAccuracyM': 13,
+              }).single
+              as ServiceFix;
       expect(fix.lat, 19.2358216);
       expect(fix.lng, 73.1308101);
       expect(fix.accuracyM, 13.0);
@@ -142,8 +162,10 @@ void main() {
       expect(parseServiceData('a bare string'), isEmpty);
       expect(parseServiceData(42), isEmpty);
       expect(parseServiceData(<String, dynamic>{}), isEmpty);
-      expect(parseServiceData({'somethingNewer': 'from a future service'}),
-          isEmpty);
+      expect(
+        parseServiceData({'somethingNewer': 'from a future service'}),
+        isEmpty,
+      );
     });
   });
 }

@@ -2,7 +2,6 @@ import 'package:commute_guardian/data/app_database.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-
   late AppDatabase db;
 
   setUp(() => db = AppDatabase.inMemory());
@@ -104,26 +103,25 @@ void main() {
     expect(row.batteryEndPct, isNull);
   });
 
-
   group('saved routes', () {
-    test('a saved route keeps a label and a destination, and no origin', () async {
-      await db.saveRoute(
-        label: 'Home',
-        destinationStationId: 'kalyan',
-        destinationName: 'Kalyan',
-      );
+    test(
+      'a saved route keeps a label and a destination, and no origin',
+      () async {
+        await db.saveRoute(
+          label: 'Home',
+          destinationStationId: 'kalyan',
+          destinationName: 'Kalyan',
+        );
 
-      final routes = await db.allSavedRoutes();
-      expect(routes, hasLength(1));
-      expect(routes.single.label, 'Home');
-      expect(routes.single.destinationStationId, 'kalyan');
-      // There is deliberately no origin column: the same "Home" starts from
-      // Dadar in the morning and Kalyan at night, so origin is detected live.
-      expect(
-        routes.single.toJson().keys,
-        isNot(contains('originStationId')),
-      );
-    });
+        final routes = await db.allSavedRoutes();
+        expect(routes, hasLength(1));
+        expect(routes.single.label, 'Home');
+        expect(routes.single.destinationStationId, 'kalyan');
+        // There is deliberately no origin column: the same "Home" starts from
+        // Dadar in the morning and Kalyan at night, so origin is detected live.
+        expect(routes.single.toJson().keys, isNot(contains('originStationId')));
+      },
+    );
 
     test('newest first, which is the order Screen 1 shows them in', () async {
       await db.saveRoute(
@@ -137,11 +135,41 @@ void main() {
         destinationName: 'CSMT',
       );
 
-      expect(
-        (await db.allSavedRoutes()).map((r) => r.label),
-        ['Work', 'Home'],
-      );
+      expect((await db.allSavedRoutes()).map((r) => r.label), ['Work', 'Home']);
     });
+
+    test(
+      'SAVING A LABEL AGAIN REPLACES IT, it does not add a second',
+      () async {
+        // Screen 5 offers exactly two names, and there is no edit screen and no
+        // delete gesture, so this is the only way a rider whose Home moves can
+        // ever correct it: ride to the new one and tap Home again.
+        await db.saveRoute(
+          label: 'Home',
+          destinationStationId: 'kalyan',
+          destinationName: 'Kalyan',
+        );
+        await db.saveRoute(
+          label: 'Home',
+          destinationStationId: 'shahad',
+          destinationName: 'Shahad',
+        );
+
+        final routes = await db.allSavedRoutes();
+        expect(routes, hasLength(1));
+        expect(routes.single.destinationStationId, 'shahad');
+        // And it does not disturb the other slot.
+        await db.saveRoute(
+          label: 'Work',
+          destinationStationId: 'csmt',
+          destinationName: 'CSMT',
+        );
+        expect((await db.allSavedRoutes()).map((r) => r.label), [
+          'Work',
+          'Home',
+        ]);
+      },
+    );
 
     test('a route can be removed', () async {
       await db.saveRoute(

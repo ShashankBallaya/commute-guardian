@@ -23,12 +23,12 @@ enum ClipKind {
   /// The en-IN sentence for a station, exactly as the device TTS floor
   /// speaks it and exactly as the clip was cut.
   String render(String stationName) => switch (this) {
-        ClipKind.approach => 'Now approaching $stationName.',
-        ClipKind.passed => 'You have passed $stationName.',
-        ClipKind.overshoot =>
-          'You have passed your stop. It is alright. Please alight here, '
-              'at $stationName.',
-        ClipKind.destination =>
-          'You have arrived at your destination, $stationName.',
-      };
+    ClipKind.approach => 'Now approaching $stationName.',
+    ClipKind.passed => 'You have passed $stationName.',
+    ClipKind.overshoot =>
+      'You have passed your stop. It is alright. Please alight here, '
+          'at $stationName.',
+    ClipKind.destination =>
+      'You have arrived at your destination, $stationName.',
+  };
 }

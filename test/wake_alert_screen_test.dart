@@ -101,7 +101,8 @@ void main() {
       final container = tester.widget<AnimatedContainer>(
         find.byType(AnimatedContainer),
       );
-      return ((container.decoration! as BoxDecoration).boxShadow!.first.color).a;
+      return ((container.decoration! as BoxDecoration).boxShadow!.first.color)
+          .a;
     }
 
     await tester.pumpWidget(
@@ -176,7 +177,11 @@ void main() {
       findsOneWidget,
       reason: 'the alert must still be on screen',
     );
-    expect(popped, isTrue, reason: 'the route consumed the back, it did not fall through');
+    expect(
+      popped,
+      isTrue,
+      reason: 'the route consumed the back, it did not fall through',
+    );
     expect(
       acks,
       isEmpty,

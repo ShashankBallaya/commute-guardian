@@ -85,14 +85,20 @@ void main() {
       tester.getCenter(find.byType(Pressable)),
     );
     await tester.pump(const Duration(milliseconds: 150));
-    expect(currentScale(tester), 1.0, reason: 'no movement under reduced motion');
+    expect(
+      currentScale(tester),
+      1.0,
+      reason: 'no movement under reduced motion',
+    );
 
     await press.up();
     await tester.pumpAndSettle();
     expect(taps, 1, reason: 'the tap still works');
   });
 
-  testWidgets('a row tints while held and clears when released', (tester) async {
+  testWidgets('a row tints while held and clears when released', (
+    tester,
+  ) async {
     var taps = 0;
     await tester.pumpWidget(
       Directionality(

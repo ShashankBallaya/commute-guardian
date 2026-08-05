@@ -40,15 +40,18 @@ Future<void> _pumpScreen(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        stationRepositoryProvider
-            .overrideWith((ref) async => StationRepository.parse(raw)),
+        stationRepositoryProvider.overrideWith(
+          (ref) async => StationRepository.parse(raw),
+        ),
         // Fails like an indoor timeout does. The real plugin cannot answer in
         // the fake-async zone; without this the chip hangs on "Locating...".
-        fixAcquirerProvider
-            .overrideWithValue(() async => throw StateError('no GPS under test')),
+        fixAcquirerProvider.overrideWithValue(
+          () async => throw StateError('no GPS under test'),
+        ),
         // No isolate under test, so no plugin channels either.
-        rideServiceClientProvider
-            .overrideWithValue(service ?? FakeRideServiceClient()),
+        rideServiceClientProvider.overrideWithValue(
+          service ?? FakeRideServiceClient(),
+        ),
         // Always in-memory: the real factory needs path_provider, which no
         // widget test can answer.
         //
@@ -234,7 +237,9 @@ void main() {
     await _pick(tester, 'Destination', 'Digha Gaon');
 
     expect(
-      find.textContaining('Change at Thane onto Trans Harbour (platform 9, 10, or 10 A)'),
+      find.textContaining(
+        'Change at Thane onto Trans Harbour (platform 9, 10, or 10 A)',
+      ),
       findsOneWidget,
     );
   });
@@ -275,45 +280,48 @@ void main() {
   });
 
   testWidgets(
-      'a screen born mid-ride shows the running ride, with no user action', (
-    tester,
-  ) async {
-    // THE 15 JUL BUG, as a test. Android killed and recreated the activity
-    // mid-ride, and the rebuilt screen came up with a blank destination and no
-    // route while End journey was correctly offered: the widget's state died
-    // with it and nothing re-read the ride. This pumps a screen that has NEVER
-    // seen the ride start, exactly as a recreated process has not.
-    //
-    // Nothing below taps anything. That is the assertion.
-    await _pumpScreen(
-      tester,
-      service: FakeRideServiceClient(
-        running: true,
-        originId: 'kalyan',
-        destinationId: 'thane',
-      ),
-    );
+    'a screen born mid-ride shows the running ride, with no user action',
+    (tester) async {
+      // THE 15 JUL BUG, as a test. Android killed and recreated the activity
+      // mid-ride, and the rebuilt screen came up with a blank destination and no
+      // route while End journey was correctly offered: the widget's state died
+      // with it and nothing re-read the ride. This pumps a screen that has NEVER
+      // seen the ride start, exactly as a recreated process has not.
+      //
+      // Nothing below taps anything. That is the assertion.
+      await _pumpScreen(
+        tester,
+        service: FakeRideServiceClient(
+          running: true,
+          originId: 'kalyan',
+          destinationId: 'thane',
+        ),
+      );
 
-    // The pickers show the ride the service is running.
-    expect(
-      tester.widget<TextField>(find.widgetWithText(TextField, 'Origin')).controller?.text,
-      'Kalyan',
-    );
-    expect(
-      tester
-          .widget<TextField>(find.widgetWithText(TextField, 'Destination'))
-          .controller
-          ?.text,
-      'Thane',
-    );
+      // The pickers show the ride the service is running.
+      expect(
+        tester
+            .widget<TextField>(find.widgetWithText(TextField, 'Origin'))
+            .controller
+            ?.text,
+        'Kalyan',
+      );
+      expect(
+        tester
+            .widget<TextField>(find.widgetWithText(TextField, 'Destination'))
+            .controller
+            ?.text,
+        'Thane',
+      );
 
-    // The route came back too, which is the half that was blank on 15 Jul.
-    expect(find.textContaining('8 stations'), findsOneWidget);
+      // The route came back too, which is the half that was blank on 15 Jul.
+      expect(find.textContaining('8 stations'), findsOneWidget);
 
-    // And the screen knows a ride is live: End is offered, Start is not.
-    expect(find.text('End journey'), findsOneWidget);
-    expect(find.text('Start Travel Mode'), findsNothing);
-  });
+      // And the screen knows a ride is live: End is offered, Start is not.
+      expect(find.text('End journey'), findsOneWidget);
+      expect(find.text('Start Travel Mode'), findsNothing);
+    },
+  );
 
   testWidgets('arriving opens Screen 5, before any countdown exists', (
     tester,
@@ -346,6 +354,73 @@ void main() {
     expect(find.textContaining("You've arrived at Kalyan"), findsNothing);
   });
 
+  testWidgets('saving at journey end writes the route the service rode', (
+    tester,
+  ) async {
+    // The whole path, end to end: arrive, name it, and it is on disk. The
+    // destination comes from the LIVE ride rather than the draft, the same rule
+    // recordRide follows, because the picker can replan mid-ride while the
+    // service keeps riding the chain it was handed.
+    final db = AppDatabase.inMemory();
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+    );
+    await _pumpScreen(tester, service: service, history: db);
+    service.emit(const DestinationReached());
+    await tester.pumpAndSettle();
+
+    // Screen 1 is underneath, holding this query open, so the same staleness
+    // that hid a finished ride from Recents would hide the saved route from
+    // the cards it exists to fill.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ArrivalScreen)),
+    );
+    final sub = container.listen(savedRoutesProvider, (_, _) {});
+    addTearDown(sub.close);
+    expect(await container.read(savedRoutesProvider.future), isEmpty);
+
+    await tester.tap(find.byKey(const Key('save_route_home')));
+    await tester.pumpAndSettle();
+
+    expect(
+      (await container.read(savedRoutesProvider.future)).map((r) => r.label),
+      ['Home'],
+    );
+
+    final saved = await db.allSavedRoutes();
+    expect(saved, hasLength(1));
+    expect(saved.single.label, 'Home');
+    expect(saved.single.destinationStationId, 'thane');
+    expect(saved.single.destinationName, 'Thane');
+  });
+
+  testWidgets('a destination already saved is not asked about again', (
+    tester,
+  ) async {
+    // The read happens BEFORE the screen is pushed, which is exactly the kind
+    // of await that gets dropped in a refactor. Without it the rider is asked
+    // to save a route they saved last week, every single time they ride it.
+    final db = AppDatabase.inMemory();
+    await db.saveRoute(
+      label: 'Work',
+      destinationStationId: 'thane',
+      destinationName: 'Thane',
+    );
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+    );
+    await _pumpScreen(tester, service: service, history: db);
+    service.emit(const DestinationReached());
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ArrivalScreen), findsOneWidget);
+    expect(find.text('Save this route?'), findsNothing);
+  });
+
   testWidgets('End now closes Screen 5 and nothing underneath it', (
     tester,
   ) async {
@@ -374,29 +449,34 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(ArrivalScreen), findsNothing);
-    expect(find.byType(RideDebugScreen), findsOneWidget,
-        reason: 'the host must survive its arrival screen closing');
-  });
-
-  testWidgets('an arrival opens exactly one Screen 5, however many fixes land',
-      (tester) async {
-    final service = FakeRideServiceClient(
-      running: true,
-      originId: 'kalyan',
-      destinationId: 'thane',
+    expect(
+      find.byType(RideDebugScreen),
+      findsOneWidget,
+      reason: 'the host must survive its arrival screen closing',
     );
-    await _pumpScreen(tester, service: service);
-
-    // A service can repeat itself across a reconnect, and the store seeds the
-    // same truth the stream announces. Two arrival screens stacked on each
-    // other would leave a rider tapping End now twice.
-    service.emit(const DestinationReached());
-    await tester.pumpAndSettle();
-    service.emit(const DestinationReached());
-    await tester.pumpAndSettle();
-
-    expect(find.byType(ArrivalScreen), findsOneWidget);
   });
+
+  testWidgets(
+    'an arrival opens exactly one Screen 5, however many fixes land',
+    (tester) async {
+      final service = FakeRideServiceClient(
+        running: true,
+        originId: 'kalyan',
+        destinationId: 'thane',
+      );
+      await _pumpScreen(tester, service: service);
+
+      // A service can repeat itself across a reconnect, and the store seeds the
+      // same truth the stream announces. Two arrival screens stacked on each
+      // other would leave a rider tapping End now twice.
+      service.emit(const DestinationReached());
+      await tester.pumpAndSettle();
+      service.emit(const DestinationReached());
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ArrivalScreen), findsOneWidget);
+    },
+  );
 
   testWidgets('a screen born mid-alarm can still answer the alarm', (
     tester,
@@ -444,6 +524,43 @@ void main() {
 
     expect(find.text("I'm awake"), findsNothing);
     expect(service.commands, isNot(contains('setMediaSession:true')));
+  });
+
+  testWidgets('THE RIDE JUST FINISHED IS ON SCREEN 1 WITHOUT A RESTART', (
+    tester,
+  ) async {
+    // Screen 1 sits UNDERNEATH the ride and is never disposed while it runs, so
+    // its autoDispose query keeps the answer it read before the ride started.
+    // The destination the rider just rode to was therefore missing from Recents
+    // until the app was killed: the card they would have tapped next was the
+    // one that was not there.
+    //
+    // The listener is what makes this test able to fail. A bare read of an
+    // autoDispose provider rebuilds it every time and is always fresh; holding
+    // a subscription open is what a mounted Screen 1 does.
+    final db = AppDatabase.inMemory();
+    addTearDown(db.close);
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+      startedAt: DateTime(2026, 8, 5, 18, 30),
+    );
+    await _pumpScreen(tester, service: service, history: db);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(RideDebugScreen)),
+    );
+    final sub = container.listen(recentDestinationsProvider, (_, _) {});
+    addTearDown(sub.close);
+    expect(await container.read(recentDestinationsProvider.future), isEmpty);
+
+    await tester.longPress(find.text('End journey'));
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    final recents = await container.read(recentDestinationsProvider.future);
+    expect(recents.map((r) => r.destinationName), ['Thane']);
   });
 
   testWidgets('a ride whose UI died still gets its history row', (
@@ -516,8 +633,7 @@ void main() {
     // it would hold the quietest glow through the loudest alarm.
     service.emit(const WakeLadderChanged(true, rung: 3, climbing: false));
     await tester.pumpAndSettle();
-    final screen =
-        tester.widget<WakeAlertScreen>(find.byType(WakeAlertScreen));
+    final screen = tester.widget<WakeAlertScreen>(find.byType(WakeAlertScreen));
     expect(screen.rung, 3);
     expect(screen.climbing, isFalse);
   });
@@ -585,7 +701,10 @@ void main() {
 
     expect(find.text('End journey'), findsNothing);
     expect(
-      tester.widget<TextField>(find.widgetWithText(TextField, 'Origin')).controller?.text,
+      tester
+          .widget<TextField>(find.widgetWithText(TextField, 'Origin'))
+          .controller
+          ?.text,
       isEmpty,
     );
   });

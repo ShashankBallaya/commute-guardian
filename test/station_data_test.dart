@@ -33,9 +33,13 @@ void main() {
     for (final s in stations) {
       final code = s['code'] as String;
       expect(code, isNotEmpty, reason: '${s['id']} has no station code');
-      expect(byCode, isNot(contains(code)),
-          reason: '${s['id']} and ${byCode[code]} both claim code $code, so they '
-              'are the same station. Merge them.');
+      expect(
+        byCode,
+        isNot(contains(code)),
+        reason:
+            '${s['id']} and ${byCode[code]} both claim code $code, so they '
+            'are the same station. Merge them.',
+      );
       byCode[code] = s['id'] as String;
     }
   });
@@ -43,14 +47,20 @@ void main() {
   test('every station has a name in English, Hindi and Marathi', () {
     for (final s in stations) {
       for (final key in ['name', 'nameHi', 'nameMr']) {
-        expect(s[key], isA<String>().having((v) => v.isNotEmpty, 'non-empty', true),
-            reason: '${s['id']} is missing $key');
+        expect(
+          s[key],
+          isA<String>().having((v) => v.isNotEmpty, 'non-empty', true),
+          reason: '${s['id']} is missing $key',
+        );
       }
       // A Devanagari name that is really just the English name means the fallback
       // table in build_stations.py has a hole.
       for (final key in ['nameHi', 'nameMr']) {
-        expect(s[key], isNot(s['name']),
-            reason: '${s['id']} $key is not translated');
+        expect(
+          s[key],
+          isNot(s['name']),
+          reason: '${s['id']} $key is not translated',
+        );
       }
     }
   });
@@ -75,8 +85,11 @@ void main() {
   test('no line visits the same station twice', () {
     for (final line in lines) {
       final ids = (line['stationIds'] as List).cast<String>();
-      expect(ids.toSet().length, ids.length,
-          reason: 'line ${line['id']} has a duplicate station');
+      expect(
+        ids.toSet().length,
+        ids.length,
+        reason: 'line ${line['id']} has a duplicate station',
+      );
     }
   });
 
@@ -86,13 +99,16 @@ void main() {
       for (var i = 0; i < ids.length - 1; i++) {
         final a = byId[ids[i]]!;
         final b = byId[ids[i + 1]]!;
-        final gap = _haversineM(a, b) -
-            (a['radiusM'] as int) -
-            (b['radiusM'] as int);
-        expect(gap, greaterThan(0),
-            reason: 'line ${line['id']}: ${ids[i]} and ${ids[i + 1]} have '
-                'overlapping fences. A fix landing in both announces two stations '
-                'at once and the chain cannot tell where the rider actually is.');
+        final gap =
+            _haversineM(a, b) - (a['radiusM'] as int) - (b['radiusM'] as int);
+        expect(
+          gap,
+          greaterThan(0),
+          reason:
+              'line ${line['id']}: ${ids[i]} and ${ids[i + 1]} have '
+              'overlapping fences. A fix landing in both announces two stations '
+              'at once and the chain cannot tell where the rider actually is.',
+        );
       }
     }
   });
@@ -105,9 +121,13 @@ void main() {
         // Under 400m means two stations are pinned to the same spot; over 13km
         // means one is pinned to the wrong place or the line is mis-ordered.
         // The widest real gap on this network is Vangaon to Dahanu Road, 12.2km.
-        expect(d, inInclusiveRange(400, 13000),
-            reason: 'line ${line['id']}: ${ids[i]} to ${ids[i + 1]} is '
-                '${d.round()}m');
+        expect(
+          d,
+          inInclusiveRange(400, 13000),
+          reason:
+              'line ${line['id']}: ${ids[i]} to ${ids[i + 1]} is '
+              '${d.round()}m',
+        );
       }
     }
   });
@@ -157,10 +177,14 @@ void main() {
         if (d >= 800) continue;
         final pair = ([a['id'] as String, b['id'] as String]..sort()).join('|');
         if (adjacent.contains(pair)) continue;
-        expect(knownComplexes, contains(pair),
-            reason: '${a['id']} and ${b['id']} are ${d.round()}m apart but no line '
-                'connects them. Either they are the same station mapped twice, or '
-                'one has the wrong coordinates.');
+        expect(
+          knownComplexes,
+          contains(pair),
+          reason:
+              '${a['id']} and ${b['id']} are ${d.round()}m apart but no line '
+              'connects them. Either they are the same station mapped twice, or '
+              'one has the wrong coordinates.',
+        );
       }
     }
   });
@@ -190,8 +214,9 @@ void main() {
     // (unknown ids just never match), and a pair with no shared station is
     // physically meaningless: there is no junction for the train to run through.
     final linesByIdJson = {for (final l in lines) l['id'] as String: l};
-    final through = (doc['throughServices'] as List)
-        .map((pair) => (pair as List).cast<String>());
+    final through = (doc['throughServices'] as List).map(
+      (pair) => (pair as List).cast<String>(),
+    );
 
     expect(through, isNotEmpty);
     for (final pair in through) {
@@ -200,9 +225,9 @@ void main() {
       final b = linesByIdJson[pair[1]];
       expect(a, isNotNull, reason: '${pair[0]} is not a line');
       expect(b, isNotNull, reason: '${pair[1]} is not a line');
-      final shared = (a!['stationIds'] as List)
-          .toSet()
-          .intersection((b!['stationIds'] as List).toSet());
+      final shared = (a!['stationIds'] as List).toSet().intersection(
+        (b!['stationIds'] as List).toSet(),
+      );
       expect(
         shared,
         isNotEmpty,
@@ -221,28 +246,43 @@ void main() {
       'currey_road|lower_parel',
       'matunga|matunga_road',
     };
-    final walks = (doc['walkInterchanges'] as List)
-        .map((pair) => (pair as List).cast<String>());
+    final walks = (doc['walkInterchanges'] as List).map(
+      (pair) => (pair as List).cast<String>(),
+    );
 
     expect(walks, isNotEmpty);
     for (final pair in walks) {
       final key = ([pair[0], pair[1]]..sort()).join('|');
-      expect(knownComplexes, contains(key),
-          reason: '$key is not a verified foot-overbridge pair');
+      expect(
+        knownComplexes,
+        contains(key),
+        reason: '$key is not a verified foot-overbridge pair',
+      );
     }
   });
 
   test('every line can be spoken and lists its interchange platforms', () {
     for (final line in lines) {
-      expect(line['shortName'], isNotEmpty,
-          reason: '${line['id']} has no spoken short name');
+      expect(
+        line['shortName'],
+        isNotEmpty,
+        reason: '${line['id']} has no spoken short name',
+      );
       // Platforms are sparse by design, but every station they name must exist.
       for (final stationId in (line['platforms'] as Map).keys) {
-        expect(byId.containsKey(stationId), isTrue,
-            reason: '${line['id']} names a platform at unknown station $stationId');
-        expect((line['stationIds'] as List), contains(stationId),
-            reason: '${line['id']} names a platform at $stationId, '
-                'which is not on that line');
+        expect(
+          byId.containsKey(stationId),
+          isTrue,
+          reason:
+              '${line['id']} names a platform at unknown station $stationId',
+        );
+        expect(
+          (line['stationIds'] as List),
+          contains(stationId),
+          reason:
+              '${line['id']} names a platform at $stationId, '
+              'which is not on that line',
+        );
       }
     }
   });
@@ -254,7 +294,7 @@ double _haversineM(Map<String, dynamic> a, Map<String, dynamic> b) {
   final lat2 = (b['lat'] as double) * pi / 180;
   final dLat = lat2 - lat1;
   final dLng = ((b['lng'] as double) - (a['lng'] as double)) * pi / 180;
-  final h = pow(sin(dLat / 2), 2) +
-      cos(lat1) * cos(lat2) * pow(sin(dLng / 2), 2);
+  final h =
+      pow(sin(dLat / 2), 2) + cos(lat1) * cos(lat2) * pow(sin(dLng / 2), 2);
   return 2 * earthRadiusM * asin(sqrt(h));
 }

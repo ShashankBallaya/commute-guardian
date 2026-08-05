@@ -22,17 +22,17 @@ void main() {
   });
 
   fl.Location fixAt(double lat, double lng) => fl.Location(
-        latitude: lat,
-        longitude: lng,
-        accuracy: 10,
-        altitude: 0,
-        heading: 0,
-        speed: 0,
-        speedAccuracy: 0,
-        millisecondsSinceEpoch: 0,
-        timestamp: DateTime(2026, 7, 29),
-        isMock: false,
-      );
+    latitude: lat,
+    longitude: lng,
+    accuracy: 10,
+    altitude: 0,
+    heading: 0,
+    speed: 0,
+    speedAccuracy: 0,
+    millisecondsSinceEpoch: 0,
+    timestamp: DateTime(2026, 7, 29),
+    isMock: false,
+  );
 
   // Shahad.
   const shahadLat = 19.2403;
@@ -47,8 +47,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          stationRepositoryProvider
-              .overrideWith((ref) async => StationRepository.parse(stationsJson)),
+          stationRepositoryProvider.overrideWith(
+            (ref) async => StationRepository.parse(stationsJson),
+          ),
           if (acquirer != null) fixAcquirerProvider.overrideWithValue(acquirer),
         ],
         child: MaterialApp(
@@ -137,10 +138,13 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          stationRepositoryProvider
-              .overrideWith((ref) async => StationRepository.parse(stationsJson)),
+          stationRepositoryProvider.overrideWith(
+            (ref) async => StationRepository.parse(stationsJson),
+          ),
           // Never resolves: holds the flow in state A so it can be read.
-          fixAcquirerProvider.overrideWithValue(() => Completer<fl.Location>().future),
+          fixAcquirerProvider.overrideWithValue(
+            () => Completer<fl.Location>().future,
+          ),
         ],
         child: const MaterialApp(
           home: PreparingFlow(
@@ -157,7 +161,10 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.textContaining('To Kalyan', findRichText: true), findsOneWidget);
+    expect(
+      find.textContaining('To Kalyan', findRichText: true),
+      findsOneWidget,
+    );
     expect(find.text('Getting ready'), findsOneWidget);
   });
 
@@ -167,10 +174,12 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          stationRepositoryProvider
-              .overrideWith((ref) async => StationRepository.parse(stationsJson)),
-          fixAcquirerProvider
-              .overrideWithValue(() async => throw StateError('no GPS')),
+          stationRepositoryProvider.overrideWith(
+            (ref) async => StationRepository.parse(stationsJson),
+          ),
+          fixAcquirerProvider.overrideWithValue(
+            () async => throw StateError('no GPS'),
+          ),
         ],
         child: const MaterialApp(
           home: PreparingFlow(
@@ -256,10 +265,12 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          stationRepositoryProvider
-              .overrideWith((ref) async => StationRepository.parse(stationsJson)),
-          fixAcquirerProvider
-              .overrideWithValue(() => Completer<fl.Location>().future),
+          stationRepositoryProvider.overrideWith(
+            (ref) async => StationRepository.parse(stationsJson),
+          ),
+          fixAcquirerProvider.overrideWithValue(
+            () => Completer<fl.Location>().future,
+          ),
         ],
         child: MaterialApp(
           home: Builder(

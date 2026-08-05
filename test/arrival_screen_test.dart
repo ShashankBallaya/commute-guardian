@@ -149,6 +149,28 @@ void main() {
     expect(find.text('End now'), findsOneWidget);
   });
 
+  testWidgets('THE TAP ON HOME CHANGES SOMETHING, and says what', (
+    tester,
+  ) async {
+    // A card that sits there with both buttons still offered reads as a press
+    // that did not land, and this rider is walking down a platform rather than
+    // watching for a database write. The confirmation names the label back,
+    // because "Saved" alone tells them nothing they can act on later.
+    final (_, saves) = await pumpArrival(tester);
+
+    await tester.tap(find.byKey(const Key('save_route_home')));
+    await tester.pumpAndSettle();
+
+    expect(saves, ['Home']);
+    expect(find.text('Save this route?'), findsNothing);
+    expect(
+      find.text('Saved as Home. One tap from home next time.'),
+      findsOneWidget,
+    );
+    // The way out of the screen is untouched by any of it.
+    expect(find.text('End now'), findsOneWidget);
+  });
+
   testWidgets('a route already saved is not asked about again', (tester) async {
     await pumpArrival(tester, offerSave: false);
     expect(find.text('Save this route?'), findsNothing);

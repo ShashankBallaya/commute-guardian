@@ -78,8 +78,10 @@ class ClipLibrary {
   /// manifest. A malformed manifest is the same as an absent one: refusing
   /// every clip is the safe direction.
   static ClipLibrary? open(Directory root) {
-    final manifest = File('${root.path}${Platform.pathSeparator}'
-        'manifest.json');
+    final manifest = File(
+      '${root.path}${Platform.pathSeparator}'
+      'manifest.json',
+    );
     if (!manifest.existsSync()) return null;
     try {
       final decoded = jsonDecode(manifest.readAsStringSync());

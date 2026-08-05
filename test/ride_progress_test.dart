@@ -8,7 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// The code is irrelevant to RideProgress, which keys off the station id, so these
 /// fixtures just reuse the id.
-Station _s(String id, String name, double lat, double lng, int radiusM) => Station(
+Station _s(String id, String name, double lat, double lng, int radiusM) =>
+    Station(
       id: id,
       code: id.toUpperCase(),
       name: name,
@@ -56,24 +57,24 @@ final _returnChain = <Station>[
 ];
 
 RideProgress _returnRide() => RideProgress(
-      chain: _returnChain,
-      destinationStationId: 'kalyan',
-      arrivalAnnouncements: const {
-        'thane': 'You have reached Thane. Change here to the Central line.',
-        'kalyan': 'You have arrived at your destination, Kalyan.',
-      },
-    );
+  chain: _returnChain,
+  destinationStationId: 'kalyan',
+  arrivalAnnouncements: const {
+    'thane': 'You have reached Thane. Change here to the Central line.',
+    'kalyan': 'You have arrived at your destination, Kalyan.',
+  },
+);
 
 RideProgress _newRide() => RideProgress(
-      chain: _chain,
-      destinationStationId: 'digha',
-      overshootStations: [_airoli],
-      approachRadiusM: const {'thane': 1200, 'digha': 1000},
-      arrivalAnnouncements: const {
-        'thane': 'You have reached Thane. Change here for the Trans Harbour line.',
-        'digha': 'You have arrived at your destination, Digha.',
-      },
-    );
+  chain: _chain,
+  destinationStationId: 'digha',
+  overshootStations: [_airoli],
+  approachRadiusM: const {'thane': 1200, 'digha': 1000},
+  arrivalAnnouncements: const {
+    'thane': 'You have reached Thane. Change here for the Trans Harbour line.',
+    'digha': 'You have arrived at your destination, Digha.',
+  },
+);
 
 void main() {
   test('a fix outside every fence returns no announcements', () {
@@ -106,75 +107,92 @@ void main() {
     expect(second, isEmpty);
   });
 
-  test('a two-stage station announces approach on the outer fence, then arrival',
-      () {
-    final ride = _newRide();
+  test(
+    'a two-stage station announces approach on the outer fence, then arrival',
+    () {
+      final ride = _newRide();
 
-    // ~850 m short of Thane: inside the 1200 m approach fence, outside the
-    // 500 m inner fence (the real iPhone approach-trigger fix from the log).
-    final approach = ride.onFix(lat: 19.18867, lng: 72.98350, accuracyM: 30);
-    expect(approach, hasLength(1));
-    expect(approach.single.stationId, 'thane');
-    expect(approach.single.kind, AnnouncementKind.approach);
+      // ~850 m short of Thane: inside the 1200 m approach fence, outside the
+      // 500 m inner fence (the real iPhone approach-trigger fix from the log).
+      final approach = ride.onFix(lat: 19.18867, lng: 72.98350, accuracyM: 30);
+      expect(approach, hasLength(1));
+      expect(approach.single.stationId, 'thane');
+      expect(approach.single.kind, AnnouncementKind.approach);
 
-    // Now at the Thane platform: inside the inner fence.
-    final arrival = ride.onFix(lat: 19.1864830, lng: 72.9757664, accuracyM: 20);
-    expect(arrival, hasLength(1));
-    expect(arrival.single.stationId, 'thane');
-    expect(arrival.single.kind, AnnouncementKind.arrival);
-  });
+      // Now at the Thane platform: inside the inner fence.
+      final arrival = ride.onFix(
+        lat: 19.1864830,
+        lng: 72.9757664,
+        accuracyM: 20,
+      );
+      expect(arrival, hasLength(1));
+      expect(arrival.single.stationId, 'thane');
+      expect(arrival.single.kind, AnnouncementKind.arrival);
+    },
+  );
 
-  test('approaching Thane from Kalwa does not count as having passed Thane', () {
-    final ride = _newRide();
+  test(
+    'approaching Thane from Kalwa does not count as having passed Thane',
+    () {
+      final ride = _newRide();
 
-    // Established at Kalwa, the station before the interchange.
-    ride.onFix(lat: 19.1952243, lng: 72.9963331, accuracyM: 20);
+      // Established at Kalwa, the station before the interchange.
+      ride.onFix(lat: 19.1952243, lng: 72.9963331, accuracyM: 20);
 
-    // The real 12 Jul fix (both phones) at which the ride wrongly spoke the
-    // full "You have reached Thane, get off the train" script: still 1.19 km
-    // SHORT of Thane, on the Kalwa approach. The chain doubles back at Thane
-    // (in from the east on the Central line, out to the east again toward
-    // Digha), so a fix short of Thane sits on the same side as the next
-    // station and must not be mistaken for one past it.
-    final result = ride.onFix(lat: 19.18931, lng: 72.98669, accuracyM: 10);
+      // The real 12 Jul fix (both phones) at which the ride wrongly spoke the
+      // full "You have reached Thane, get off the train" script: still 1.19 km
+      // SHORT of Thane, on the Kalwa approach. The chain doubles back at Thane
+      // (in from the east on the Central line, out to the east again toward
+      // Digha), so a fix short of Thane sits on the same side as the next
+      // station and must not be mistaken for one past it.
+      final result = ride.onFix(lat: 19.18931, lng: 72.98669, accuracyM: 10);
 
-    expect(
-      result.where((a) => a.kind == AnnouncementKind.arrival),
-      isEmpty,
-      reason: 'the train is 1.19 km short of Thane; it has not arrived',
-    );
-    expect(result, hasLength(1));
-    expect(result.single.stationId, 'thane');
-    expect(result.single.kind, AnnouncementKind.approach);
+      expect(
+        result.where((a) => a.kind == AnnouncementKind.arrival),
+        isEmpty,
+        reason: 'the train is 1.19 km short of Thane; it has not arrived',
+      );
+      expect(result, hasLength(1));
+      expect(result.single.stationId, 'thane');
+      expect(result.single.kind, AnnouncementKind.approach);
 
-    // Pulling into the Thane platform is what announces the interchange.
-    final arrival = ride.onFix(lat: 19.1864830, lng: 72.9757664, accuracyM: 20);
-    expect(arrival, hasLength(1));
-    expect(arrival.single.stationId, 'thane');
-    expect(arrival.single.kind, AnnouncementKind.arrival);
-  });
+      // Pulling into the Thane platform is what announces the interchange.
+      final arrival = ride.onFix(
+        lat: 19.1864830,
+        lng: 72.9757664,
+        accuracyM: 20,
+      );
+      expect(arrival, hasLength(1));
+      expect(arrival.single.stationId, 'thane');
+      expect(arrival.single.kind, AnnouncementKind.arrival);
+    },
+  );
 
-  test('a fence jumped between fixes still announces, late (Kalwa backstop)', () {
-    final ride = _newRide();
+  test(
+    'a fence jumped between fixes still announces, late (Kalwa backstop)',
+    () {
+      final ride = _newRide();
 
-    // Established at Mumbra.
-    ride.onFix(lat: 19.18979, lng: 73.02325, accuracyM: 20);
+      // Established at Mumbra.
+      ride.onFix(lat: 19.18979, lng: 73.02325, accuracyM: 20);
 
-    // Next usable fix is already ~800 m past Kalwa toward Thane (the real
-    // OnePlus 3 min 12 s gap): never inside Kalwa's 400 m fence.
-    final result = ride.onFix(lat: 19.19090, lng: 72.99028, accuracyM: 30);
+      // Next usable fix is already ~800 m past Kalwa toward Thane (the real
+      // OnePlus 3 min 12 s gap): never inside Kalwa's 400 m fence.
+      final result = ride.onFix(lat: 19.19090, lng: 72.99028, accuracyM: 30);
 
-    expect(
-      result.map((a) => a.stationId),
-      contains('kalwa'),
-      reason: 'Kalwa was jumped by the native engine; the backstop must catch it',
-    );
-    // Spoken as history, not as a live claim: the train is provably beyond
-    // Kalwa, and "Now approaching Kalwa" here misled on the 13 Jul ride.
-    final kalwa = result.firstWhere((a) => a.stationId == 'kalwa');
-    expect(kalwa.kind, AnnouncementKind.passed);
-    expect(kalwa.text, 'You have passed Kalwa.');
-  });
+      expect(
+        result.map((a) => a.stationId),
+        contains('kalwa'),
+        reason:
+            'Kalwa was jumped by the native engine; the backstop must catch it',
+      );
+      // Spoken as history, not as a live claim: the train is provably beyond
+      // Kalwa, and "Now approaching Kalwa" here misled on the 13 Jul ride.
+      final kalwa = result.firstWhere((a) => a.stationId == 'kalwa');
+      expect(kalwa.kind, AnnouncementKind.passed);
+      expect(kalwa.text, 'You have passed Kalwa.');
+    },
+  );
 
   test('catching up several stations speaks the jumped ones as passed and the '
       'one the train is at normally (13 Jul blackout)', () {
@@ -191,16 +209,27 @@ void main() {
     expect(result[0].kind, AnnouncementKind.passed);
     expect(result[0].text, 'You have passed Thakurli.');
     expect(result[1].stationId, 'dombivli');
-    expect(result[1].kind, AnnouncementKind.arrival,
-        reason: 'the train really is at Dombivli, so the live text is honest');
+    expect(
+      result[1].kind,
+      AnnouncementKind.arrival,
+      reason: 'the train really is at Dombivli, so the live text is honest',
+    );
   });
 
   test('a low-accuracy fix is ignored and does not advance progress', () {
     final ride = _newRide();
-    ride.onFix(lat: 19.18979, lng: 73.02325, accuracyM: 20); // established at Mumbra
+    ride.onFix(
+      lat: 19.18979,
+      lng: 73.02325,
+      accuracyM: 20,
+    ); // established at Mumbra
 
     // A blackout fix sitting on Kalwa but with 600 m accuracy: rejected.
-    final blackout = ride.onFix(lat: 19.1952243, lng: 72.9963331, accuracyM: 600);
+    final blackout = ride.onFix(
+      lat: 19.1952243,
+      lng: 72.9963331,
+      accuracyM: 600,
+    );
     expect(blackout, isEmpty);
 
     // A good fix at Kalwa now still announces it, proving the blackout fix
@@ -211,7 +240,11 @@ void main() {
 
   test('an implausible position jump is ignored (Bangalore outlier)', () {
     final ride = _newRide();
-    ride.onFix(lat: 19.18979, lng: 73.02325, accuracyM: 20); // established at Mumbra
+    ride.onFix(
+      lat: 19.18979,
+      lng: 73.02325,
+      accuracyM: 20,
+    ); // established at Mumbra
 
     // The real Android log spike: a confident (98 m) fix ~840 km away.
     final outlier = ride.onFix(lat: 12.65091, lng: 77.21702, accuracyM: 98);
@@ -237,13 +270,19 @@ void main() {
     // deduped the real arrival into silence. Elimination alone must not pass
     // a station on one fix.
     final falseFix = ride.onFix(lat: 19.19028, lng: 72.99541, accuracyM: 143);
-    expect(falseFix, isEmpty,
-        reason: 'one eliminative fix must wait for corroboration');
+    expect(
+      falseFix,
+      isEmpty,
+      reason: 'one eliminative fix must wait for corroboration',
+    );
 
     // The real next fix (21:18:59, 28 m) is back inside the Digha fence: it
     // contradicts the pending claim, which must be discarded, not spoken.
-    final contradiction =
-        ride.onFix(lat: 19.18021, lng: 72.99507, accuracyM: 28);
+    final contradiction = ride.onFix(
+      lat: 19.18021,
+      lng: 72.99507,
+      accuracyM: 28,
+    );
     expect(contradiction, isEmpty);
 
     // The train then really reaches Thane (the real ENTER fix, 21:21:26).
@@ -253,8 +292,10 @@ void main() {
     expect(arrival, hasLength(1));
     expect(arrival.single.stationId, 'thane');
     expect(arrival.single.kind, AnnouncementKind.arrival);
-    expect(arrival.single.text,
-        'You have reached Thane. Change here to the Central line.');
+    expect(
+      arrival.single.text,
+      'You have reached Thane. Change here to the Central line.',
+    );
   });
 
   test('agreeing on-track fixes on the Digha to Thane curve still cannot '
@@ -274,8 +315,11 @@ void main() {
     final first = ride.onFix(lat: 19.19025, lng: 72.99497, accuracyM: 61);
     final second = ride.onFix(lat: 19.19028, lng: 72.99495, accuracyM: 39);
     expect(first, isEmpty);
-    expect(second, isEmpty,
-        reason: 'the fix is not beyond Thane, so Thane is not passed');
+    expect(
+      second,
+      isEmpty,
+      reason: 'the fix is not beyond Thane, so Thane is not passed',
+    );
 
     // The real arrival then speaks the interchange script.
     final arrival = ride.onFix(lat: 19.18742, lng: 72.98037, accuracyM: 29);
@@ -345,7 +389,11 @@ void main() {
   test('reaching the overshoot pin past the destination is an overshoot '
       'warning', () {
     final ride = _newRide();
-    ride.onFix(lat: 19.1807762, lng: 72.9944301, accuracyM: 20); // at Digha (destination)
+    ride.onFix(
+      lat: 19.1807762,
+      lng: 72.9944301,
+      accuracyM: 20,
+    ); // at Digha (destination)
 
     // Rode on to Airoli, the pin one past the alighting point.
     final result = ride.onFix(lat: 19.1585231, lng: 72.9994023, accuracyM: 20);
@@ -356,7 +404,10 @@ void main() {
     // The warning fires as the train reaches the station, so it must tell the
     // rider to get off HERE, by name. "Alight at the next station" reads as an
     // instruction to stay on for one more stop.
-    expect(airoli.text, 'You have passed your stop. It is alright. Please alight here, at Airoli.');
+    expect(
+      airoli.text,
+      'You have passed your stop. It is alright. Please alight here, at Airoli.',
+    );
   });
 
   test('a TERMINUS destination is netted on whichever branch the train took '
@@ -368,26 +419,34 @@ void main() {
     // Coords are OSM station nodes from the bundled JSON, the independent
     // source of truth.
     final shahad = _s('shahad', 'Shahad', 19.2435838, 73.1580746, 350);
-    final vithalwadi = _s('vithalwadi', 'Vithalwadi', 19.2284195, 73.1491076, 400);
+    final vithalwadi = _s(
+      'vithalwadi',
+      'Vithalwadi',
+      19.2284195,
+      73.1491076,
+      400,
+    );
 
     RideProgress terminusRide() => RideProgress(
-          chain: [
-            _s('thane', 'Thane', 19.1864830, 72.9757664, 500),
-            _s('kalwa', 'Kalwa', 19.1952243, 72.9963331, 400),
-            _s('thakurli', 'Thakurli', 19.2262813, 73.0980174, 400),
-            _s('kalyan', 'Kalyan', 19.2358216, 73.1308101, 500),
-          ],
-          destinationStationId: 'kalyan',
-          overshootStations: [shahad, vithalwadi],
-        );
+      chain: [
+        _s('thane', 'Thane', 19.1864830, 72.9757664, 500),
+        _s('kalwa', 'Kalwa', 19.1952243, 72.9963331, 400),
+        _s('thakurli', 'Thakurli', 19.2262813, 73.0980174, 400),
+        _s('kalyan', 'Kalyan', 19.2358216, 73.1308101, 500),
+      ],
+      destinationStationId: 'kalyan',
+      overshootStations: [shahad, vithalwadi],
+    );
 
     // Kasara branch: the rider wakes in Shahad.
     final kasaraRide = terminusRide();
     kasaraRide.onFix(lat: 19.2358216, lng: 73.1308101, accuracyM: 20); // Kalyan
-    final atShahad =
-        kasaraRide.onFix(lat: 19.2435838, lng: 73.1580746, accuracyM: 20);
-    final shahadWarning =
-        atShahad.firstWhere((a) => a.stationId == 'shahad');
+    final atShahad = kasaraRide.onFix(
+      lat: 19.2435838,
+      lng: 73.1580746,
+      accuracyM: 20,
+    );
+    final shahadWarning = atShahad.firstWhere((a) => a.stationId == 'shahad');
     expect(shahadWarning.kind, AnnouncementKind.overshoot);
     expect(
       shahadWarning.text,
@@ -397,10 +456,14 @@ void main() {
     // Karjat branch: a different train, the other pin, same protection.
     final karjatRide = terminusRide();
     karjatRide.onFix(lat: 19.2358216, lng: 73.1308101, accuracyM: 20); // Kalyan
-    final atVithalwadi =
-        karjatRide.onFix(lat: 19.2284195, lng: 73.1491076, accuracyM: 20);
-    final vithalwadiWarning =
-        atVithalwadi.firstWhere((a) => a.stationId == 'vithalwadi');
+    final atVithalwadi = karjatRide.onFix(
+      lat: 19.2284195,
+      lng: 73.1491076,
+      accuracyM: 20,
+    );
+    final vithalwadiWarning = atVithalwadi.firstWhere(
+      (a) => a.stationId == 'vithalwadi',
+    );
     expect(vithalwadiWarning.kind, AnnouncementKind.overshoot);
     expect(
       vithalwadiWarning.text,
@@ -424,13 +487,15 @@ void main() {
         _s('kalyan', 'Kalyan', 19.2358216, 73.1308101, 500),
       ],
       destinationStationId: 'kalyan',
-      overshootStations: [
-        _s('shahad', 'Shahad', 19.2435838, 73.1580746, 350),
-      ],
+      overshootStations: [_s('shahad', 'Shahad', 19.2435838, 73.1580746, 350)],
     );
     ride.onFix(lat: 19.1864830, lng: 72.9757664, accuracyM: 20); // at Thane
 
-    final atShahad = ride.onFix(lat: 19.2435838, lng: 73.1580746, accuracyM: 20);
+    final atShahad = ride.onFix(
+      lat: 19.2435838,
+      lng: 73.1580746,
+      accuracyM: 20,
+    );
 
     // It must warn, and it must NOT invent arrivals for Kalwa, Thakurli or
     // Kalyan, which the train did pass but which no fix ever evidenced.

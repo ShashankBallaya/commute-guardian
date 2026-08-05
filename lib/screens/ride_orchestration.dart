@@ -450,6 +450,56 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // Cleared whether or not the write landed, so a later teardown cannot
     // resurrect a journey that has already been dealt with.
     await service.clearRideRecordSeed();
+    // Screen 1 is UNDERNEATH the ride, never disposed while it runs, so its
+    // autoDispose query is still alive and still holding the answer it read
+    // before the ride started. Without this the destination the rider just
+    // rode to is missing from Recents until the app is killed, and the card
+    // they would have tapped next is the one that is not there.
+    ref.invalidate(recentDestinationsProvider);
+  }
+
+  /// Whether this destination is already one of the rider's saved routes.
+  ///
+  /// A failed read answers "not saved", which offers the card again rather
+  /// than hiding it. Offering twice costs a tap; hiding it wrongly costs the
+  /// rider the only moment the app ever asks.
+  Future<bool> _isSaved(String destinationId) async {
+    try {
+      final saved = await ref.read(appDatabaseProvider).allSavedRoutes();
+      return saved.any((route) => route.destinationStationId == destinationId);
+    } catch (error) {
+      onOrchestrationLog('Saved routes read failed: $error');
+      return false;
+    }
+  }
+
+  /// Keeps a destination under a name the rider chose, from Screen 5.
+  ///
+  /// The label is the identity: saving Home twice replaces it (see
+  /// AppDatabase.saveRoute), so this is also how a rider whose Home moves
+  /// corrects it. Failure is logged and swallowed: the ride is over, the
+  /// screen has already confirmed, and there is nothing useful to ask a rider
+  /// walking down a platform to do about a database write.
+  Future<void> saveRoute({
+    required String label,
+    required String destinationId,
+    required String destinationName,
+  }) async {
+    try {
+      await ref
+          .read(appDatabaseProvider)
+          .saveRoute(
+            label: label,
+            destinationStationId: destinationId,
+            destinationName: destinationName,
+          );
+      onOrchestrationLog('Saved route "$label" to $destinationName');
+    } catch (error) {
+      onOrchestrationLog('Saved route failed: $error');
+      return;
+    }
+    if (!mounted) return;
+    ref.invalidate(savedRoutesProvider);
   }
 
   /// The journey the service is riding, replanned from the stored ids.
@@ -655,6 +705,13 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       '${stationName(live.originId)} → ${stationName(live.destinationId)}',
     ].join(' • ');
 
+    // READ ONCE, BEFORE THE PUSH, and deliberately not watched. The question
+    // is whether the rider had already saved this destination when they
+    // arrived; watching it would take the card away in the same frame their
+    // own tap answered it, which is the confirmation's job.
+    final alreadySaved = await _isSaved(live.destinationId);
+    if (!mounted) return;
+
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (routeContext) => Consumer(
@@ -690,6 +747,17 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
                 }
               },
               onExtend: counting ? service.windDownExtend : null,
+              // Null hides the card, which is what a route already saved
+              // should do. The screen asks for the label; the destination is
+              // the one the service actually rode, never the draft, for the
+              // same reason recordRide replans from the persisted ids.
+              onSaveRoute: alreadySaved
+                  ? null
+                  : (label) => saveRoute(
+                      label: label,
+                      destinationId: live.destinationId,
+                      destinationName: here,
+                    ),
             );
           },
         ),

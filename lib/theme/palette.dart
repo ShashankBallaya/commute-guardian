@@ -73,11 +73,11 @@ abstract final class Palette {
   /// nothing about the intent and only stops the shadow bleeding through. The
   /// ground is flat, so there is never anything behind a card worth seeing.
   static BoxDecoration glassCard({double radius = 20}) => BoxDecoration(
-        color: surfaceGlass,
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: hairline),
-        boxShadow: const [
-          BoxShadow(color: shadow, blurRadius: 24, offset: Offset(0, 8)),
-        ],
-      );
+    color: surfaceGlass,
+    borderRadius: BorderRadius.circular(radius),
+    border: Border.all(color: hairline),
+    boxShadow: const [
+      BoxShadow(color: shadow, blurRadius: 24, offset: Offset(0, 8)),
+    ],
+  );
 }

@@ -55,18 +55,18 @@ class LiveRide {
   final int reachedIndex;
 
   LiveRide withIndex(int index) => LiveRide(
-        originId: originId,
-        destinationId: destinationId,
-        destinationReached: destinationReached,
-        reachedIndex: index,
-      );
+    originId: originId,
+    destinationId: destinationId,
+    destinationReached: destinationReached,
+    reachedIndex: index,
+  );
 
   LiveRide get arrived => LiveRide(
-        originId: originId,
-        destinationId: destinationId,
-        destinationReached: true,
-        reachedIndex: reachedIndex,
-      );
+    originId: originId,
+    destinationId: destinationId,
+    destinationReached: true,
+    reachedIndex: reachedIndex,
+  );
 }
 
 /// The running ride, or null when none is running.
@@ -80,8 +80,9 @@ class LiveRideNotifier extends AsyncNotifier<LiveRide?> {
     // Without this subscription the projection would be correct on arrival and
     // then frozen, and the service ending a ride on its own (wind-down
     // auto-off) would leave the screen claiming a ride that stopped.
-    final subscription =
-        ref.watch(rideServiceClientProvider).events.listen((event) {
+    final subscription = ref.watch(rideServiceClientProvider).events.listen((
+      event,
+    ) {
       if (event is RideEndedByService) unawaited(refresh());
       // Advance in place rather than re-reading the store: the store is the
       // seed and the survivor, the stream is the low-latency path, and a full
@@ -137,8 +138,9 @@ class LiveRideNotifier extends AsyncNotifier<LiveRide?> {
   }
 }
 
-final liveRideProvider =
-    AsyncNotifierProvider<LiveRideNotifier, LiveRide?>(LiveRideNotifier.new);
+final liveRideProvider = AsyncNotifierProvider<LiveRideNotifier, LiveRide?>(
+  LiveRideNotifier.new,
+);
 
 /// Whether a ride is running at all. Loading counts as "not running", which is
 /// what the screen assumed before this provider existed.
@@ -194,8 +196,10 @@ class RideAlerts {
 class RideAlertsNotifier extends Notifier<RideAlerts> {
   @override
   RideAlerts build() {
-    final subscription =
-        ref.watch(rideServiceClientProvider).events.listen(_onEvent);
+    final subscription = ref
+        .watch(rideServiceClientProvider)
+        .events
+        .listen(_onEvent);
     ref.onDispose(subscription.cancel);
     // The store read is async and this notifier is not, so the seed lands a
     // frame or two later. That is fine: false then true is a button appearing,
@@ -219,8 +223,9 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
       state = RideAlerts(
         wakeLadderLive: state.wakeLadderLive || persisted.wakeLadderLive,
         wakeRung: state.wakeLadderLive ? state.wakeRung : persisted.wakeRung,
-        wakeClimbing:
-            state.wakeLadderLive ? state.wakeClimbing : persisted.wakeClimbing,
+        wakeClimbing: state.wakeLadderLive
+            ? state.wakeClimbing
+            : persisted.wakeClimbing,
         windDownLive: state.windDownLive || persisted.windDownLive,
         // The event, if one arrived while the read was in flight, is fresher.
         windDownEndsAt: state.windDownEndsAt ?? persisted.windDownEndsAt,
@@ -287,8 +292,9 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
   }
 }
 
-final rideAlertsProvider =
-    NotifierProvider<RideAlertsNotifier, RideAlerts>(RideAlertsNotifier.new);
+final rideAlertsProvider = NotifierProvider<RideAlertsNotifier, RideAlerts>(
+  RideAlertsNotifier.new,
+);
 
 // ---------------------------------------------------------------------------
 // Finished rides
@@ -318,8 +324,9 @@ final appDatabaseProvider = Provider<AppDatabase>((ref) {
 /// time it opens. That is the "reads fresh on every open" behaviour the sheet
 /// already had, with nothing left to remember. No invalidation wiring, and no
 /// permanent query subscription for a screen that is rarely on.
-final rideHistoryProvider =
-    FutureProvider.autoDispose<List<JourneyRecord>>((ref) {
+final rideHistoryProvider = FutureProvider.autoDispose<List<JourneyRecord>>((
+  ref,
+) {
   return ref.watch(appDatabaseProvider).recent();
 });
 
@@ -335,15 +342,14 @@ final rideHistoryProvider =
 /// hang on journeys COMPLETED, never on routes saved.
 final recentDestinationsProvider =
     FutureProvider.autoDispose<List<JourneyRecord>>((ref) {
-  return ref.watch(appDatabaseProvider).recentDestinations();
-});
+      return ref.watch(appDatabaseProvider).recentDestinations();
+    });
 
 /// Routes the rider chose to keep, newest first.
 ///
 /// Screen 1's third state hangs on this. autoDispose for the same reason as
 /// the history query: these screens are visited, not watched.
-final savedRoutesProvider =
-    FutureProvider.autoDispose<List<SavedRoute>>((ref) {
+final savedRoutesProvider = FutureProvider.autoDispose<List<SavedRoute>>((ref) {
   return ref.watch(appDatabaseProvider).allSavedRoutes();
 });
 

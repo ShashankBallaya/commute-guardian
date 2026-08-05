@@ -44,12 +44,11 @@ class AudioOutputGateway {
   /// never a ride that does not start.
   // ignore_for_file: experimental_member_use
   static bool _reachesEars(AudioDeviceType type) => switch (type) {
-        AudioDeviceType.wiredHeadset ||
-        AudioDeviceType.wiredHeadphones ||
-        AudioDeviceType.bluetoothA2dp ||
-        AudioDeviceType.bluetoothSco ||
-        AudioDeviceType.usbAudio =>
-          true,
-        _ => false,
-      };
+    AudioDeviceType.wiredHeadset ||
+    AudioDeviceType.wiredHeadphones ||
+    AudioDeviceType.bluetoothA2dp ||
+    AudioDeviceType.bluetoothSco ||
+    AudioDeviceType.usbAudio => true,
+    _ => false,
+  };
 }

@@ -35,17 +35,18 @@ WindDown _newWindDown() =>
     WindDown(destination: _digha, overshootStations: [_airoli]);
 
 Announcement _airoliOvershoot() => const Announcement(
-      stationId: 'airoli',
-      kind: AnnouncementKind.overshoot,
-      text: 'You have passed your stop. It is alright. Please alight here, '
-          'at Airoli.',
-    );
+  stationId: 'airoli',
+  kind: AnnouncementKind.overshoot,
+  text:
+      'You have passed your stop. It is alright. Please alight here, '
+      'at Airoli.',
+);
 
 Announcement _dighaArrival() => const Announcement(
-      stationId: 'digha',
-      kind: AnnouncementKind.arrival,
-      text: 'You have arrived at your destination, Digha Gaon.',
-    );
+  stationId: 'digha',
+  kind: AnnouncementKind.arrival,
+  text: 'You have arrived at your destination, Digha Gaon.',
+);
 
 /// Metres per degree of latitude, so a fixture can say "180 m north of the
 /// platform" instead of a magic coordinate nobody can check.
@@ -76,8 +77,7 @@ void _alightAt(WindDown windDown, Station station, DateTime at) {
   );
 }
 
-void _alight(WindDown windDown, DateTime at) =>
-    _alightAt(windDown, _digha, at);
+void _alight(WindDown windDown, DateTime at) => _alightAt(windDown, _digha, at);
 
 void _alightAtAiroli(WindDown windDown, DateTime at) =>
     _alightAt(windDown, _airoli, at);
@@ -161,7 +161,10 @@ void main() {
     );
     expect(beforeArrival, silent);
 
-    windDown.onStationEvent(_dighaArrival(), _t0.add(const Duration(minutes: 1)));
+    windDown.onStationEvent(
+      _dighaArrival(),
+      _t0.add(const Duration(minutes: 1)),
+    );
 
     // The alight dwell: the train stopped at the platform (inside the
     // fence, walking speed). Without this, exit fixes never count.
@@ -339,8 +342,11 @@ void main() {
         speedMps: 1.5,
         now: _t0.add(Duration(minutes: 3, seconds: i * 5)),
       );
-      expect(crawl, silent,
-          reason: 'a crawling train 2 km out is not a platform exit');
+      expect(
+        crawl,
+        silent,
+        reason: 'a crawling train 2 km out is not a platform exit',
+      );
     }
     expect(windDown.isCountingDown, isFalse);
   });
@@ -365,45 +371,46 @@ void main() {
     expect(windDown.isCountingDown, isFalse);
   });
 
-  test('the countdown expires 60 seconds after detection into an end action',
-      () {
-    final windDown = _newWindDown();
-    windDown.onStationEvent(_dighaArrival(), _t0);
-    _alight(windDown, _t0.add(const Duration(minutes: 1)));
-    windDown.onFix(
-      lat: _outsideLat,
-      lng: _outsideLng,
-      accuracyM: 20,
-      speedMps: 1.4,
-      now: _t0.add(const Duration(minutes: 3)),
-    );
-    final detected = _t0.add(const Duration(minutes: 3, seconds: 5));
-    windDown.onFix(
-      lat: _outsideLat,
-      lng: _outsideLng,
-      accuracyM: 20,
-      speedMps: 1.4,
-      now: detected,
-    );
+  test(
+    'the countdown expires 60 seconds after detection into an end action',
+    () {
+      final windDown = _newWindDown();
+      windDown.onStationEvent(_dighaArrival(), _t0);
+      _alight(windDown, _t0.add(const Duration(minutes: 1)));
+      windDown.onFix(
+        lat: _outsideLat,
+        lng: _outsideLng,
+        accuracyM: 20,
+        speedMps: 1.4,
+        now: _t0.add(const Duration(minutes: 3)),
+      );
+      final detected = _t0.add(const Duration(minutes: 3, seconds: 5));
+      windDown.onFix(
+        lat: _outsideLat,
+        lng: _outsideLng,
+        accuracyM: 20,
+        speedMps: 1.4,
+        now: detected,
+      );
 
-    expect(
-      windDown.onTick(detected.add(const Duration(seconds: 59))),
-      silent,
-    );
+      expect(
+        windDown.onTick(detected.add(const Duration(seconds: 59))),
+        silent,
+      );
 
-    final expiry = windDown.onTick(detected.add(const Duration(seconds: 60)));
-    expect(expiry, hasLength(1));
-    expect(expiry.single, isA<WindDownEnd>());
+      final expiry = windDown.onTick(detected.add(const Duration(seconds: 60)));
+      expect(expiry, hasLength(1));
+      expect(expiry.single, isA<WindDownEnd>());
 
-    // The end fires once; the shell's teardown takes it from here.
-    expect(
-      windDown.onTick(detected.add(const Duration(seconds: 65))),
-      silent,
-    );
-  });
+      // The end fires once; the shell's teardown takes it from here.
+      expect(
+        windDown.onTick(detected.add(const Duration(seconds: 65))),
+        silent,
+      );
+    },
+  );
 
-  test('End now skips the wait; it does nothing when no countdown is live',
-      () {
+  test('End now skips the wait; it does nothing when no countdown is live', () {
     final windDown = _newWindDown();
 
     // Pressing the button with nothing live must not end anything.
@@ -426,16 +433,15 @@ void main() {
       now: _t0.add(const Duration(minutes: 3, seconds: 5)),
     );
 
-    final ended = windDown.endNow(_t0.add(const Duration(minutes: 3, seconds: 20)));
+    final ended = windDown.endNow(
+      _t0.add(const Duration(minutes: 3, seconds: 20)),
+    );
     expect(ended, hasLength(1));
     expect(ended.single, isA<WindDownEnd>());
     expect(windDown.isCountingDown, isFalse);
 
     // The countdown died with it: expiry never double-fires.
-    expect(
-      windDown.onTick(_t0.add(const Duration(minutes: 5))),
-      silent,
-    );
+    expect(windDown.onTick(_t0.add(const Duration(minutes: 5))), silent);
   });
 
   test('Extend pushes the deadline 10 minutes from the press and speaks an '
@@ -541,9 +547,13 @@ void main() {
       speedMps: 12,
       now: _t0.add(const Duration(seconds: 40)),
     );
-    expect(departing, silent,
-        reason: 'train-speed movement must keep Travel Mode (and the '
-            'overshoot net) alive');
+    expect(
+      departing,
+      silent,
+      reason:
+          'train-speed movement must keep Travel Mode (and the '
+          'overshoot net) alive',
+    );
 
     // Walking-speed fixes later (the train crawling through a curve, or
     // the 13 Jul next-station crawl) must never trigger: recovery from a
@@ -621,8 +631,11 @@ void main() {
       now: _t0.add(const Duration(minutes: 4, seconds: 5)),
     );
     expect(walk1, silent);
-    expect(walk2, silent,
-        reason: 'an unknown-speed fix never anchored, so nothing can arm');
+    expect(
+      walk2,
+      silent,
+      reason: 'an unknown-speed fix never anchored, so nothing can arm',
+    );
     expect(windDown.isCountingDown, isFalse);
   });
 
@@ -655,8 +668,11 @@ void main() {
       now: _t0.add(const Duration(minutes: 1, seconds: 1)),
     );
     expect(jump1, silent);
-    expect(jump2, silent,
-        reason: '150 m in 1 s is not a walk; the exit must not arm');
+    expect(
+      jump2,
+      silent,
+      reason: '150 m in 1 s is not a walk; the exit must not arm',
+    );
     expect(windDown.isCountingDown, isFalse);
   });
 
@@ -700,9 +716,13 @@ void main() {
       now: _t0.add(const Duration(minutes: 2, seconds: 6)),
     );
     expect(first, silent);
-    expect(second, hasLength(1),
-        reason: 'the genuine walk-off must fire; the gap artifact must not '
-            'have disarmed it');
+    expect(
+      second,
+      hasLength(1),
+      reason:
+          'the genuine walk-off must fire; the gap artifact must not '
+          'have disarmed it',
+    );
     expect(windDown.isCountingDown, isTrue);
   });
 
@@ -751,10 +771,7 @@ void main() {
     expect(windDown.isCountingDown, isFalse);
 
     // The dead countdown never fires its end.
-    expect(
-      windDown.onTick(_t0.add(const Duration(minutes: 5))),
-      silent,
-    );
+    expect(windDown.onTick(_t0.add(const Duration(minutes: 5))), silent);
   });
 
   test('the real 18 Jul Kalyan walk-out fires the countdown inside the '
@@ -784,42 +801,51 @@ void main() {
 
     // 22:06:31, the train standing at the platform: the alight anchor.
     windDown.onFix(
-        lat: 19.23544, lng: 73.13129, accuracyM: 28, speedMps: 0.1, now: _t0);
+      lat: 19.23544,
+      lng: 73.13129,
+      accuracyM: 28,
+      speedMps: 0.1,
+      now: _t0,
+    );
 
     // 22:08:48, ~100 m into the walk: not far enough yet.
     final early = windDown.onFix(
-        lat: 19.23567,
-        lng: 73.13223,
-        accuracyM: 7,
-        speedMps: 1.2,
-        now: _t0.add(const Duration(minutes: 2)));
+      lat: 19.23567,
+      lng: 73.13223,
+      accuracyM: 7,
+      speedMps: 1.2,
+      now: _t0.add(const Duration(minutes: 2)),
+    );
     expect(early, silent);
 
     // 22:09:44, a near-stationary dip at the stairs, still inside the
     // fence. If this re-anchored, the rest of the walk would measure from
     // here and never reach 150 m: the anchor must stay frozen.
     windDown.onFix(
-        lat: 19.23594,
-        lng: 73.13243,
-        accuracyM: 5,
-        speedMps: 0.4,
-        now: _t0.add(const Duration(minutes: 3)));
+      lat: 19.23594,
+      lng: 73.13243,
+      accuracyM: 5,
+      speedMps: 0.4,
+      now: _t0.add(const Duration(minutes: 3)),
+    );
 
     // 22:10:51 and 22:10:58, ~165 to 170 m from the anchor, both still
     // ~250 m INSIDE the fence: the countdown must start here.
     final first = windDown.onFix(
-        lat: 19.23634,
-        lng: 73.13254,
-        accuracyM: 9,
-        speedMps: 1.4,
-        now: _t0.add(const Duration(minutes: 4)));
+      lat: 19.23634,
+      lng: 73.13254,
+      accuracyM: 9,
+      speedMps: 1.4,
+      now: _t0.add(const Duration(minutes: 4)),
+    );
     expect(first, silent);
     final second = windDown.onFix(
-        lat: 19.23644,
-        lng: 73.13252,
-        accuracyM: 11,
-        speedMps: 1.3,
-        now: _t0.add(const Duration(minutes: 4, seconds: 7)));
+      lat: 19.23644,
+      lng: 73.13252,
+      accuracyM: 11,
+      speedMps: 1.3,
+      now: _t0.add(const Duration(minutes: 4, seconds: 7)),
+    );
     expect(second, hasLength(1));
     expect(second.single, isA<WindDownSpeak>());
     expect(windDown.isCountingDown, isTrue);
@@ -924,28 +950,30 @@ void main() {
     expect(result.whereType<WindDownSpeak>(), hasLength(1));
   });
 
-  test('after the re-arm the old destination is no longer the exit station',
-      () {
-    final windDown = _newWindDown();
-    windDown.onStationEvent(_dighaArrival(), _t0);
-    windDown.onStationEvent(
-      _airoliOvershoot(),
-      _t0.add(const Duration(minutes: 6)),
-    );
+  test(
+    'after the re-arm the old destination is no longer the exit station',
+    () {
+      final windDown = _newWindDown();
+      windDown.onStationEvent(_dighaArrival(), _t0);
+      windDown.onStationEvent(
+        _airoliOvershoot(),
+        _t0.add(const Duration(minutes: 6)),
+      );
 
-    // A dwell and a walk back at Digha: the anchor moved to Airoli, so these
-    // are just a rider wandering 2.7 km from the station that now matters.
-    final atDigha = _t0.add(const Duration(minutes: 7));
-    _alight(windDown, atDigha);
-    final result = windDown.onFix(
-      lat: _outsideLat,
-      lng: _outsideLng,
-      accuracyM: 20,
-      speedMps: 1.3,
-      now: atDigha.add(const Duration(seconds: 90)),
-    );
-    expect(result, silent);
-  });
+      // A dwell and a walk back at Digha: the anchor moved to Airoli, so these
+      // are just a rider wandering 2.7 km from the station that now matters.
+      final atDigha = _t0.add(const Duration(minutes: 7));
+      _alight(windDown, atDigha);
+      final result = windDown.onFix(
+        lat: _outsideLat,
+        lng: _outsideLng,
+        accuracyM: 20,
+        speedMps: 1.3,
+        now: atDigha.add(const Duration(seconds: 90)),
+      );
+      expect(result, silent);
+    },
+  );
 
   test('a non-overshoot station event after arrival still disarms wind-down '
       'permanently (the rider stayed on the train)', () {

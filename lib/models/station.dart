@@ -41,13 +41,13 @@ class Station {
   }
 
   factory Station.fromJson(Map<String, dynamic> json) => Station(
-        id: json['id'] as String,
-        code: json['code'] as String,
-        name: json['name'] as String,
-        nameHi: json['nameHi'] as String,
-        nameMr: json['nameMr'] as String,
-        lat: (json['lat'] as num).toDouble(),
-        lng: (json['lng'] as num).toDouble(),
-        radiusM: json['radiusM'] as int,
-      );
+    id: json['id'] as String,
+    code: json['code'] as String,
+    name: json['name'] as String,
+    nameHi: json['nameHi'] as String,
+    nameMr: json['nameMr'] as String,
+    lat: (json['lat'] as num).toDouble(),
+    lng: (json['lng'] as num).toDouble(),
+    radiusM: json['radiusM'] as int,
+  );
 }

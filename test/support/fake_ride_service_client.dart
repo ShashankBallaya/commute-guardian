@@ -67,14 +67,14 @@ class FakeRideServiceClient implements RideServiceClient {
 
   @override
   Future<PersistedRide> readPersistedRide() async => PersistedRide(
-        originId: originId,
-        destinationId: destinationId,
-        destinationReached: destinationReached,
-        startedAt: startedAt,
-        startBatteryPct: startBatteryPct,
-        wakeLadderLive: wakeLadderLive,
-        windDownLive: windDownLive,
-      );
+    originId: originId,
+    destinationId: destinationId,
+    destinationReached: destinationReached,
+    startedAt: startedAt,
+    startBatteryPct: startBatteryPct,
+    wakeLadderLive: wakeLadderLive,
+    windDownLive: windDownLive,
+  );
 
   @override
   Future<void> clearRideRecordSeed() async {

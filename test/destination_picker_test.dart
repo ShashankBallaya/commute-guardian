@@ -47,16 +47,15 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          stationRepositoryProvider
-              .overrideWith((ref) async => StationRepository.parse(stationsJson)),
+          stationRepositoryProvider.overrideWith(
+            (ref) async => StationRepository.parse(stationsJson),
+          ),
           appDatabaseProvider.overrideWith((ref) {
             ref.onDispose(db.close);
             return db;
           }),
         ],
-        child: MaterialApp(
-          home: DestinationPickerScreen(onPicked: picked.add),
-        ),
+        child: MaterialApp(home: DestinationPickerScreen(onPicked: picked.add)),
       ),
     );
     await tester.pumpAndSettle();

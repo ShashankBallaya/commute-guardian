@@ -169,7 +169,10 @@ void main() {
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
 
-    final longest = repo.planner.plan(originId: 'thane', destinationId: 'kasara');
+    final longest = repo.planner.plan(
+      originId: 'thane',
+      destinationId: 'kasara',
+    );
     await tester.pumpWidget(
       MaterialApp(
         home: TravelModeScreen(
@@ -201,7 +204,10 @@ void main() {
     addTearDown(tester.view.reset);
 
     // Thane to Kasara is one of the longest legs on the network.
-    final longest = repo.planner.plan(originId: 'thane', destinationId: 'kasara');
+    final longest = repo.planner.plan(
+      originId: 'thane',
+      destinationId: 'kasara',
+    );
     await tester.pumpWidget(
       MaterialApp(
         home: TravelModeScreen(

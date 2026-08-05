@@ -73,7 +73,8 @@ class JourneyPlanner {
     // An hourly MEMU is not a route anyone would choose, so plan without the
     // low-frequency lines first and fall back to them only when a station is
     // unreachable any other way (Kharbao, Nilaje and friends live on them).
-    final legs = _findLegs(originId, destinationId, allowLowFrequency: false) ??
+    final legs =
+        _findLegs(originId, destinationId, allowLowFrequency: false) ??
         _findLegs(originId, destinationId, allowLowFrequency: true);
     if (legs == null) {
       throw ArgumentError('No route from $originId to $destinationId');
@@ -111,8 +112,9 @@ class JourneyPlanner {
 
       // Done if any of them is the destination. Take the shortest, since they all
       // cost the same number of changes.
-      final arrivals =
-          reached.where((r) => r.last.toId == destinationId).toList();
+      final arrivals = reached
+          .where((r) => r.last.toId == destinationId)
+          .toList();
       if (arrivals.isNotEmpty) {
         arrivals.sort(
           (a, b) => _stationsTravelled(a).compareTo(_stationsTravelled(b)),
@@ -257,8 +259,7 @@ class JourneyPlanner {
           fromLineId: from.id,
           toLineId: onto.id,
           toLineShortName: onto.shortName,
-          towardsStationName:
-              stationsById[_directionTerminalId(legs[i])]!.name,
+          towardsStationName: stationsById[_directionTerminalId(legs[i])]!.name,
           isSameNamedService: !walked && onto.shortName == from.shortName,
           walkToStationName: walkTo,
           platform: onto.platforms[legs[i].fromId],
@@ -271,8 +272,11 @@ class JourneyPlanner {
       originStationId: originId,
       destinationStationId: destinationId,
       overshootStations: [
-        for (final id in _overshootPins(legs.last, destinationId,
-            chainIds.toSet()))
+        for (final id in _overshootPins(
+          legs.last,
+          destinationId,
+          chainIds.toSet(),
+        ))
           stationsById[id]!,
       ],
       interchanges: interchanges,
@@ -358,25 +362,24 @@ class JourneyPlanner {
   }
 
   int _stationsTravelled(List<_Leg> legs) => legs.fold(
-        0,
-        (total, leg) => total + _segmentIds(leg.lineId, leg.fromId, leg.toId).length,
-      );
+    0,
+    (total, leg) =>
+        total + _segmentIds(leg.lineId, leg.fromId, leg.toId).length,
+  );
 
   Iterable<String> _linesThrough(String stationId, bool allowLowFrequency) =>
       linesById.values
-          .where((line) =>
-              (allowLowFrequency || !line.lowFrequency) &&
-              line.stationIds.contains(stationId))
+          .where(
+            (line) =>
+                (allowLowFrequency || !line.lowFrequency) &&
+                line.stationIds.contains(stationId),
+          )
           .map((line) => line.id);
 }
 
 /// A continuous ride on one line, from boarding it to leaving it.
 class _Leg {
-  const _Leg({
-    required this.lineId,
-    required this.fromId,
-    required this.toId,
-  });
+  const _Leg({required this.lineId, required this.fromId, required this.toId});
 
   final String lineId;
   final String fromId;

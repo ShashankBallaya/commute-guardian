@@ -48,7 +48,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: 'These files reach across the isolate boundary directly. Route '
+      reason:
+          'These files reach across the isolate boundary directly. Route '
           'the call through RideServiceClient instead, or add the file to the '
           'allowed set and say why in docs/design/riverpod-adoption.md.',
     );
@@ -56,8 +57,10 @@ void main() {
 
   test('the allowed files still exist, so the test cannot pass vacuously', () {
     expect(File('lib/services/ride_service_client.dart').existsSync(), isTrue);
-    expect(File('lib/foreground/geofence_task_handler.dart').existsSync(),
-        isTrue);
+    expect(
+      File('lib/foreground/geofence_task_handler.dart').existsSync(),
+      isTrue,
+    );
   });
 
   test('no widget holds ride or journey state in a field', () {
@@ -90,7 +93,8 @@ void main() {
     expect(
       found,
       isEmpty,
-      reason: 'Ride and journey state belongs in lib/state/, not in a widget '
+      reason:
+          'Ride and journey state belongs in lib/state/, not in a widget '
           'field. See docs/design/riverpod-adoption.md.',
     );
   });
@@ -98,7 +102,10 @@ void main() {
   test('the detector reads code and ignores prose', () {
     // Comments discuss the bridge constantly and must not trip the check;
     // the first draft of this test flagged two files for their doc comments.
-    expect(_containsBridgeCode('// FlutterForegroundTask is the bridge'), isFalse);
+    expect(
+      _containsBridgeCode('// FlutterForegroundTask is the bridge'),
+      isFalse,
+    );
     expect(_containsBridgeCode('/// hops over media_ack'), isFalse);
     expect(_containsBridgeCode('/* FlutterForegroundTask */'), isFalse);
     // Real code still trips it, both the import and the identifier.
@@ -108,10 +115,14 @@ void main() {
       ),
       isTrue,
     );
-    expect(_containsBridgeCode('await FlutterForegroundTask.stopService();'),
-        isTrue);
     expect(
-      _containsBridgeCode("const c = MethodChannel('commute_guardian/media_ack');"),
+      _containsBridgeCode('await FlutterForegroundTask.stopService();'),
+      isTrue,
+    );
+    expect(
+      _containsBridgeCode(
+        "const c = MethodChannel('commute_guardian/media_ack');",
+      ),
       isTrue,
     );
   });

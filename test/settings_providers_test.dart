@@ -63,16 +63,22 @@ void main() {
     expect(restored.pulseIntervalSeconds, 45);
   });
 
-  test('the language survives, because a wrong voice is a silent alarm',
-      () async {
-    final (first, db) = makeContainer();
-    await first.read(appSettingsProvider.future);
-    await first.read(appSettingsProvider.notifier).setLanguage(AppLanguage.marathi);
+  test(
+    'the language survives, because a wrong voice is a silent alarm',
+    () async {
+      final (first, db) = makeContainer();
+      await first.read(appSettingsProvider.future);
+      await first
+          .read(appSettingsProvider.notifier)
+          .setLanguage(AppLanguage.marathi);
 
-    final (second, _) = makeContainer(db);
-    expect((await second.read(appSettingsProvider.future)).language,
-        AppLanguage.marathi);
-  });
+      final (second, _) = makeContainer(db);
+      expect(
+        (await second.read(appSettingsProvider.future)).language,
+        AppLanguage.marathi,
+      );
+    },
+  );
 
   test('turning the pulse off persists as off, not as unset', () async {
     // The failure this guards: writing 0 and then reading it back through a
@@ -85,7 +91,10 @@ void main() {
     await notifier.setPulseInterval(0);
 
     final (second, _) = makeContainer(db);
-    expect((await second.read(appSettingsProvider.future)).pulseIntervalMinutes, 0);
+    expect(
+      (await second.read(appSettingsProvider.future)).pulseIntervalMinutes,
+      0,
+    );
   });
 
   test('the interval a ride STARTS with is handed over, not only changes', () {

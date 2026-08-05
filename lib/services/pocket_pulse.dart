@@ -42,7 +42,7 @@ class PulseNote extends PulseAction {
 /// The owner ratified that order on 30 Jul as Wake-up > Announcement > Pulse.
 class PocketPulse {
   PocketPulse({int? intervalS, DateTime? startedAt})
-      : _intervalS = (intervalS != null && intervalS > 0) ? intervalS : null {
+    : _intervalS = (intervalS != null && intervalS > 0) ? intervalS : null {
     if (_intervalS != null && startedAt != null) {
       _nextDueAt = startedAt.add(Duration(seconds: _intervalS!));
     }

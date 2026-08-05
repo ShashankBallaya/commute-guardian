@@ -32,10 +32,12 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
     return AppSettings(
       pulseIntervalMinutes:
           int.tryParse(await _db.flag(pulseIntervalKey) ?? '') ??
-              fallback.pulseIntervalMinutes,
+          fallback.pulseIntervalMinutes,
       crowdMode: await _boolFlag(crowdModeKey, fallback.crowdMode),
-      vibrateWithPulse:
-          await _boolFlag(vibrateWithPulseKey, fallback.vibrateWithPulse),
+      vibrateWithPulse: await _boolFlag(
+        vibrateWithPulseKey,
+        fallback.vibrateWithPulse,
+      ),
       announceEveryStation: await _boolFlag(
         announceEveryStationKey,
         fallback.announceEveryStation,
@@ -67,10 +69,10 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
   }
 
   Future<void> setPulseInterval(int minutes) => _set(
-        pulseIntervalKey,
-        '$minutes',
-        _now.copyWith(pulseIntervalMinutes: minutes),
-      );
+    pulseIntervalKey,
+    '$minutes',
+    _now.copyWith(pulseIntervalMinutes: minutes),
+  );
 
   Future<void> setCrowdMode(bool on) =>
       _set(crowdModeKey, '$on', _now.copyWith(crowdMode: on));
@@ -79,16 +81,16 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
       _set(vibrateWithPulseKey, '$on', _now.copyWith(vibrateWithPulse: on));
 
   Future<void> setAnnounceEveryStation(bool on) => _set(
-        announceEveryStationKey,
-        '$on',
-        _now.copyWith(announceEveryStation: on),
-      );
+    announceEveryStationKey,
+    '$on',
+    _now.copyWith(announceEveryStation: on),
+  );
 
   Future<void> setShareAnonymousUsage(bool on) => _set(
-        shareAnonymousUsageKey,
-        '$on',
-        _now.copyWith(shareAnonymousUsage: on),
-      );
+    shareAnonymousUsageKey,
+    '$on',
+    _now.copyWith(shareAnonymousUsage: on),
+  );
 
   Future<void> setLanguage(AppLanguage language) =>
       _set(languageKey, language.tag, _now.copyWith(language: language));
@@ -98,11 +100,12 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
 
 final appSettingsProvider =
     AsyncNotifierProvider<AppSettingsNotifier, AppSettings>(
-  AppSettingsNotifier.new,
-);
+      AppSettingsNotifier.new,
+    );
 
-final ttsLanguageGatewayProvider =
-    Provider<TtsLanguageGateway>((ref) => TtsLanguageGateway());
+final ttsLanguageGatewayProvider = Provider<TtsLanguageGateway>(
+  (ref) => TtsLanguageGateway(),
+);
 
 /// Which languages this device can actually speak. See the gateway for why the
 /// picker asks instead of assuming.

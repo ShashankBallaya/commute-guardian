@@ -148,9 +148,9 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
   /// judged on the device is the thing the entry gate now opens rather than a
   /// second copy of its wiring.
   Future<void> _previewHome() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const HomeShell()),
-    );
+    await Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute(builder: (_) => const HomeShell()));
   }
 
   /// Screen 4, as a preview. Uses the real planner and a mid-chain position, so
@@ -182,7 +182,6 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
     );
   }
 
-
   /// Screen 5, both states, as a preview.
   ///
   /// NOT WIRED, for the same reason Screen 3 is not: the wind-down path has a
@@ -207,10 +206,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
             ])
               ListTile(
                 key: Key('preview_screen5_$isCounting'),
-                title: Text(
-                  label,
-                  style: const TextStyle(color: Palette.text),
-                ),
+                title: Text(label, style: const TextStyle(color: Palette.text)),
                 onTap: () => Navigator.of(sheet).pop(isCounting),
               ),
           ],
@@ -227,8 +223,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
 
     // Declared OUTSIDE the builder, or Extend would set a new deadline and the
     // very rebuild it triggers would throw it away.
-    var endsAt =
-        counting ? DateTime.now().add(WindDown.countdown) : null;
+    var endsAt = counting ? DateTime.now().add(WindDown.countdown) : null;
     var window = WindDown.countdown;
 
     await Navigator.of(context).push<void>(
@@ -242,9 +237,9 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
             onEndNow: () => Navigator.of(context).maybePop(),
             onExtend: counting
                 ? () => setLocal(() {
-                      endsAt = DateTime.now().add(WindDown.extension);
-                      window = WindDown.extension;
-                    })
+                    endsAt = DateTime.now().add(WindDown.extension);
+                    window = WindDown.extension;
+                  })
                 : null,
             onSaveRoute: (_) => Navigator.of(context).maybePop(),
           ),
@@ -291,10 +286,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
             ].indexed)
               ListTile(
                 key: Key('preview_screen3_$index'),
-                title: Text(
-                  label,
-                  style: const TextStyle(color: Palette.text),
-                ),
+                title: Text(label, style: const TextStyle(color: Palette.text)),
                 onTap: () => Navigator.of(sheet).pop(index),
               ),
           ],
@@ -318,7 +310,8 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
   Future<void> _previewPreflight() async {
     final draft = ref.read(journeyDraftProvider);
     final repo = ref.read(stationRepositoryProvider).valueOrNull;
-    final destination = repo?.stationsById[draft.destinationId]?.name ?? 'Kalyan';
+    final destination =
+        repo?.stationsById[draft.destinationId]?.name ?? 'Kalyan';
 
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -645,136 +638,136 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
                           scrollDirection: Axis.horizontal,
                           child: Row(
                             children: [
-                      // History icon per the design system: the plain
-                      // clock-with-counterclockwise-arrow, never a stopwatch.
-                      SizedBox(
-                        width: 22,
-                        child: IconButton(
-                          key: const Key('history_button'),
-                          padding: EdgeInsets.zero,
-                          iconSize: 18,
-                          tooltip: 'Journey history',
-                          icon: Icon(
-                            Icons.history,
-                            color: Palette.textDim(0.6),
-                          ),
-                          onPressed: showHistory,
-                        ),
-                      ),
-                      // 8, not 14: the sixth preview icon (Screen 5) overflowed
-                      // this row by 28 px on the 3T.
-                      const SizedBox(width: 8),
-                      // Preview of the real Screen 1 while it is being built.
-                      // The debug screen stays the app's home until Screen 1
-                      // is approved on a device, so nothing half-finished can
-                      // block a bench or a ride.
-                      SizedBox(
-                        width: 22,
-                        child: IconButton(
-                          key: const Key('home_preview_button'),
-                          padding: EdgeInsets.zero,
-                          iconSize: 18,
-                          tooltip: 'Preview Screen 1',
-                          icon: Icon(
-                            Icons.home_outlined,
-                            color: Palette.textDim(0.6),
-                          ),
-                          onPressed: _previewHome,
-                        ),
-                      ),
-                      // 8, not 14: the sixth preview icon (Screen 5) overflowed
-                      // this row by 28 px on the 3T.
-                      const SizedBox(width: 8),
-                      // Preview of Screen 3 state A. Deliberately NOT wired
-                      // into the start path: that path is safety-critical and
-                      // has a verification ride pending, and on a normal ride
-                      // this screen does not appear at all (the fix is already
-                      // held by the time a destination is picked).
-                      // ONE entry for all four Screen 3 states. Three separate
-                      // icons filled this row and left no space for D; a
-                      // chooser scales and keeps the row readable.
-                      SizedBox(
-                        width: 22,
-                        child: IconButton(
-                          key: const Key('preparing_preview_button'),
-                          padding: EdgeInsets.zero,
-                          iconSize: 18,
-                          tooltip: 'Preview Screen 3',
-                          icon: Icon(
-                            Icons.hourglass_empty,
-                            color: Palette.textDim(0.6),
-                          ),
-                          onPressed: _previewScreen3,
-                        ),
-                      ),
-                      // 8, not 14: the sixth preview icon (Screen 5) overflowed
-                      // this row by 28 px on the 3T.
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 22,
-                        child: IconButton(
-                          key: const Key('travel_mode_preview_button'),
-                          padding: EdgeInsets.zero,
-                          iconSize: 18,
-                          tooltip: 'Preview Screen 4',
-                          icon: Icon(
-                            Icons.train_outlined,
-                            color: Palette.textDim(0.6),
-                          ),
-                          onPressed: _previewTravelMode,
-                        ),
-                      ),
-                      // 8, not 14: the sixth preview icon (Screen 5) overflowed
-                      // this row by 28 px on the 3T.
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 22,
-                        child: IconButton(
-                          key: const Key('arrival_preview_button'),
-                          padding: EdgeInsets.zero,
-                          iconSize: 18,
-                          tooltip: 'Preview Screen 5',
-                          icon: Icon(
-                            Icons.flag_outlined,
-                            color: Palette.textDim(0.6),
-                          ),
-                          onPressed: _previewScreen5,
-                        ),
-                      ),
-                      // 8, not 14: the sixth preview icon (Screen 5) overflowed
-                      // this row by 28 px on the 3T.
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 22,
-                        child: IconButton(
-                          key: const Key('wake_alert_preview_button'),
-                          padding: EdgeInsets.zero,
-                          iconSize: 18,
-                          tooltip: 'Preview the wake alert',
-                          icon: Icon(
-                            Icons.notifications_active_outlined,
-                            color: Palette.textDim(0.6),
-                          ),
-                          onPressed: _previewWakeAlert,
-                        ),
-                      ),
-                      // 8, not 14: the sixth preview icon (Screen 5) overflowed
-                      // this row by 28 px on the 3T.
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 22,
-                        child: IconButton(
-                          key: const Key('settings_preview_button'),
-                          padding: EdgeInsets.zero,
-                          iconSize: 18,
-                          tooltip: 'Preview Screen 6',
-                          icon: Icon(
-                            Icons.settings_outlined,
-                            color: Palette.textDim(0.6),
-                          ),
-                          onPressed: openSettings,
-                        ),
-                      ),
+                              // History icon per the design system: the plain
+                              // clock-with-counterclockwise-arrow, never a stopwatch.
+                              SizedBox(
+                                width: 22,
+                                child: IconButton(
+                                  key: const Key('history_button'),
+                                  padding: EdgeInsets.zero,
+                                  iconSize: 18,
+                                  tooltip: 'Journey history',
+                                  icon: Icon(
+                                    Icons.history,
+                                    color: Palette.textDim(0.6),
+                                  ),
+                                  onPressed: showHistory,
+                                ),
+                              ),
+                              // 8, not 14: the sixth preview icon (Screen 5) overflowed
+                              // this row by 28 px on the 3T.
+                              const SizedBox(width: 8),
+                              // Preview of the real Screen 1 while it is being built.
+                              // The debug screen stays the app's home until Screen 1
+                              // is approved on a device, so nothing half-finished can
+                              // block a bench or a ride.
+                              SizedBox(
+                                width: 22,
+                                child: IconButton(
+                                  key: const Key('home_preview_button'),
+                                  padding: EdgeInsets.zero,
+                                  iconSize: 18,
+                                  tooltip: 'Preview Screen 1',
+                                  icon: Icon(
+                                    Icons.home_outlined,
+                                    color: Palette.textDim(0.6),
+                                  ),
+                                  onPressed: _previewHome,
+                                ),
+                              ),
+                              // 8, not 14: the sixth preview icon (Screen 5) overflowed
+                              // this row by 28 px on the 3T.
+                              const SizedBox(width: 8),
+                              // Preview of Screen 3 state A. Deliberately NOT wired
+                              // into the start path: that path is safety-critical and
+                              // has a verification ride pending, and on a normal ride
+                              // this screen does not appear at all (the fix is already
+                              // held by the time a destination is picked).
+                              // ONE entry for all four Screen 3 states. Three separate
+                              // icons filled this row and left no space for D; a
+                              // chooser scales and keeps the row readable.
+                              SizedBox(
+                                width: 22,
+                                child: IconButton(
+                                  key: const Key('preparing_preview_button'),
+                                  padding: EdgeInsets.zero,
+                                  iconSize: 18,
+                                  tooltip: 'Preview Screen 3',
+                                  icon: Icon(
+                                    Icons.hourglass_empty,
+                                    color: Palette.textDim(0.6),
+                                  ),
+                                  onPressed: _previewScreen3,
+                                ),
+                              ),
+                              // 8, not 14: the sixth preview icon (Screen 5) overflowed
+                              // this row by 28 px on the 3T.
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 22,
+                                child: IconButton(
+                                  key: const Key('travel_mode_preview_button'),
+                                  padding: EdgeInsets.zero,
+                                  iconSize: 18,
+                                  tooltip: 'Preview Screen 4',
+                                  icon: Icon(
+                                    Icons.train_outlined,
+                                    color: Palette.textDim(0.6),
+                                  ),
+                                  onPressed: _previewTravelMode,
+                                ),
+                              ),
+                              // 8, not 14: the sixth preview icon (Screen 5) overflowed
+                              // this row by 28 px on the 3T.
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 22,
+                                child: IconButton(
+                                  key: const Key('arrival_preview_button'),
+                                  padding: EdgeInsets.zero,
+                                  iconSize: 18,
+                                  tooltip: 'Preview Screen 5',
+                                  icon: Icon(
+                                    Icons.flag_outlined,
+                                    color: Palette.textDim(0.6),
+                                  ),
+                                  onPressed: _previewScreen5,
+                                ),
+                              ),
+                              // 8, not 14: the sixth preview icon (Screen 5) overflowed
+                              // this row by 28 px on the 3T.
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 22,
+                                child: IconButton(
+                                  key: const Key('wake_alert_preview_button'),
+                                  padding: EdgeInsets.zero,
+                                  iconSize: 18,
+                                  tooltip: 'Preview the wake alert',
+                                  icon: Icon(
+                                    Icons.notifications_active_outlined,
+                                    color: Palette.textDim(0.6),
+                                  ),
+                                  onPressed: _previewWakeAlert,
+                                ),
+                              ),
+                              // 8, not 14: the sixth preview icon (Screen 5) overflowed
+                              // this row by 28 px on the 3T.
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                width: 22,
+                                child: IconButton(
+                                  key: const Key('settings_preview_button'),
+                                  padding: EdgeInsets.zero,
+                                  iconSize: 18,
+                                  tooltip: 'Preview Screen 6',
+                                  icon: Icon(
+                                    Icons.settings_outlined,
+                                    color: Palette.textDim(0.6),
+                                  ),
+                                  onPressed: openSettings,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -842,12 +835,12 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
 /// reserved for starting or ending a journey (see the palette rule in
 /// design-system decisions). Shared so the two cannot drift apart.
 ButtonStyle get _urgentButtonStyle => ElevatedButton.styleFrom(
-      backgroundColor: Palette.text,
-      foregroundColor: Palette.ground,
-      padding: const EdgeInsets.symmetric(vertical: 14),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 0,
-    );
+  backgroundColor: Palette.text,
+  foregroundColor: Palette.ground,
+  padding: const EdgeInsets.symmetric(vertical: 14),
+  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+  elevation: 0,
+);
 
 class _TestButton extends StatelessWidget {
   const _TestButton({
@@ -1341,8 +1334,8 @@ class _EntryGate extends ConsumerWidget {
   /// The debug screen is still there and still runs every bench, one long press
   /// on Settings' version line away. Demoted, never deleted.
   Widget _home(BuildContext context) => HomeShell(
-        onOpenDebug: () => Navigator.of(context).push<void>(
-          MaterialPageRoute(builder: (_) => const RideDebugScreen()),
-        ),
-      );
+    onOpenDebug: () => Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute(builder: (_) => const RideDebugScreen())),
+  );
 }

@@ -171,18 +171,20 @@ class GeofenceTaskHandler extends TaskHandler {
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
-    final originId = await FlutterForegroundTask.getData<String>(key: originIdKey);
-    final destinationId =
-        await FlutterForegroundTask.getData<String>(key: destinationIdKey);
+    final originId = await FlutterForegroundTask.getData<String>(
+      key: originIdKey,
+    );
+    final destinationId = await FlutterForegroundTask.getData<String>(
+      key: destinationIdKey,
+    );
     if (originId == null || destinationId == null) {
       return;
     }
     final sarvamGreeting =
         await FlutterForegroundTask.getData<bool>(key: sarvamGreetingKey) ??
-            false;
+        false;
     final sarvamClips =
-        await FlutterForegroundTask.getData<bool>(key: sarvamClipsKey) ??
-            false;
+        await FlutterForegroundTask.getData<bool>(key: sarvamClipsKey) ?? false;
 
     _chain = GeofenceChainService(
       onLog: _sendLog,
@@ -264,7 +266,8 @@ class GeofenceTaskHandler extends TaskHandler {
       pulseIntervalS:
           await FlutterForegroundTask.getData<int>(key: pulseIntervalKey) ?? 0,
       pulseVibrate:
-          await FlutterForegroundTask.getData<bool>(key: pulseVibrateKey) ?? true,
+          await FlutterForegroundTask.getData<bool>(key: pulseVibrateKey) ??
+          true,
     );
   }
 
@@ -353,7 +356,9 @@ class GeofenceTaskHandler extends TaskHandler {
           message.substring(wakeCallStatePrefix.length) == 'true',
         );
       case final String message when message.startsWith(wakeAudioNotePrefix):
-        _chain?.onNativeAudioNote(message.substring(wakeAudioNotePrefix.length));
+        _chain?.onNativeAudioNote(
+          message.substring(wakeAudioNotePrefix.length),
+        );
       case windDownEndNowId:
         _chain?.windDownEndNow();
       case windDownExtendId:

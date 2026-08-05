@@ -90,8 +90,9 @@ class Journey {
   /// proximity test need them.
   final List<Station> overshootStations;
 
-  List<String> get overshootStationIds =>
-      [for (final station in overshootStations) station.id];
+  List<String> get overshootStationIds => [
+    for (final station in overshootStations) station.id,
+  ];
 
   final List<Interchange> interchanges;
 
@@ -100,9 +101,9 @@ class Journey {
   /// These get a heads-up while there is still time to reach the doors; ordinary
   /// stations just get their single fence ping.
   Map<String, int> get approachRadiusM => {
-        for (final interchange in interchanges) interchange.stationId: 1200,
-        destinationStationId: 1000,
-      };
+    for (final interchange in interchanges) interchange.stationId: 1200,
+    destinationStationId: 1000,
+  };
 
   /// What to say on ARRIVING at each station that needs more than the default
   /// "Now approaching X" ping.
@@ -116,22 +117,26 @@ class Journey {
     for (final interchange in interchanges) {
       final name = byId[interchange.stationId]?.name ?? interchange.stationId;
       final platform = interchange.platform;
-      final toPlatform =
-          platform == null ? '' : 'go to platform number $platform, then ';
+      final toPlatform = platform == null
+          ? ''
+          : 'go to platform number $platform, then ';
       final String text;
       if (interchange.walkToStationName != null) {
-        text = 'You have reached $name. Get off the train and walk across to '
+        text =
+            'You have reached $name. Get off the train and walk across to '
             '${interchange.walkToStationName}, then ${toPlatform}board the '
             '${interchange.toLineShortName} train towards '
             '${interchange.towardsStationName} to continue to your '
             'destination.';
       } else if (interchange.isSameNamedService) {
-        text = 'You have reached $name. Change trains here. Get off the train, '
+        text =
+            'You have reached $name. Change trains here. Get off the train, '
             '${toPlatform}board the train towards '
             '${interchange.towardsStationName} to continue to your '
             'destination.';
       } else {
-        text = 'You have reached $name. Change here to the '
+        text =
+            'You have reached $name. Change here to the '
             '${interchange.toLineShortName} line. Get off the train, '
             '${toPlatform}board the ${interchange.toLineShortName} train to '
             'continue to your destination.';
@@ -139,7 +144,8 @@ class Journey {
       announcements[interchange.stationId] = text;
     }
 
-    final destination = byId[destinationStationId]?.name ?? destinationStationId;
+    final destination =
+        byId[destinationStationId]?.name ?? destinationStationId;
     announcements[destinationStationId] =
         'You have arrived at your destination, $destination.';
 

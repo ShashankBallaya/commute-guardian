@@ -62,16 +62,16 @@ class WakeEscalation {
   /// requires, then the destination (locked decision 6), in the chain order
   /// the planner emits. See [WindDown.forJourney] for why this is a factory.
   factory WakeEscalation.forJourney(Journey journey) => WakeEscalation(
-        chain: journey.chain,
-        interchangeStationIds: [
-          for (final interchange in journey.interchanges) interchange.stationId,
-        ],
-        destinationStationId: journey.destinationStationId,
-        walkInterchangeStationIds: {
-          for (final interchange in journey.interchanges)
-            if (interchange.walkToStationName != null) interchange.stationId,
-        },
-      );
+    chain: journey.chain,
+    interchangeStationIds: [
+      for (final interchange in journey.interchanges) interchange.stationId,
+    ],
+    destinationStationId: journey.destinationStationId,
+    walkInterchangeStationIds: {
+      for (final interchange in journey.interchanges)
+        if (interchange.walkToStationName != null) interchange.stationId,
+    },
+  );
 
   final List<Station> chain;
   final List<String> interchangeStationIds;
@@ -178,8 +178,7 @@ class WakeEscalation {
   bool get isClimbing => _rung < rungVolumes.length;
 
   bool get _hasTarget => _cursor < _targets.length;
-  int get _targetIndex =>
-      chain.indexWhere((s) => s.id == _targets[_cursor]);
+  int get _targetIndex => chain.indexWhere((s) => s.id == _targets[_cursor]);
   Station get _target => chain[_targetIndex];
   bool get _targetIsDestination => _targets[_cursor] == destinationStationId;
 
@@ -229,10 +228,7 @@ class WakeEscalation {
         announcement.stationId == chain[ceilingIndex].id) {
       final toneWasPlaying = _rung >= 1;
       _standDown();
-      return [
-        if (toneWasPlaying) const StopTone(),
-        const HardStop(),
-      ];
+      return [if (toneWasPlaying) const StopTone(), const HardStop()];
     }
 
     if (!_ladderLive &&
@@ -257,8 +253,7 @@ class WakeEscalation {
     if (accuracyM > maxAccuracyM) return const [];
     if (speedMps < minSpeedMps) return const [];
 
-    final etaS =
-        _distanceM(lat, lng, _target.lat, _target.lng) / speedMps;
+    final etaS = _distanceM(lat, lng, _target.lat, _target.lng) / speedMps;
     _lastFixAt = now;
     _lastEtaS = etaS;
     // Mid-call the seed still updates (silent, not deaf, so hang-up
@@ -308,16 +303,12 @@ class WakeEscalation {
   /// Great-circle distance in metres between two lat/lng points (haversine).
   /// Duplicated from RideProgress on purpose: each engine stays a
   /// self-contained pure module, the shape both already take.
-  static double _distanceM(
-    double lat1,
-    double lng1,
-    double lat2,
-    double lng2,
-  ) {
+  static double _distanceM(double lat1, double lng1, double lat2, double lng2) {
     const earthRadiusM = 6371000.0;
     final dLat = _toRad(lat2 - lat1);
     final dLng = _toRad(lng2 - lng1);
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(_toRad(lat1)) *
             math.cos(_toRad(lat2)) *
             math.sin(dLng / 2) *
@@ -362,7 +353,8 @@ class WakeEscalation {
       _rung = rungVolumes.length;
       _nextTransitionAt = now.add(rungInterval);
       final ceilingIndex = _ceilingIndex;
-      final pastCeiling = ceilingIndex > 0 &&
+      final pastCeiling =
+          ceilingIndex > 0 &&
           ceilingIndex < chain.length &&
           _passedDuringCall.contains(chain[ceilingIndex].id);
       return [
@@ -371,9 +363,9 @@ class WakeEscalation {
         Speak(
           pastCeiling
               ? 'While you were on your call, the train passed your stop, '
-                  '${_target.name}. Please get off the train now.'
+                    '${_target.name}. Please get off the train now.'
               : 'While you were on your call, the train reached your stop, '
-                  '${_target.name}. Get off the train now.',
+                    '${_target.name}. Get off the train now.',
         ),
       ];
     }
@@ -382,7 +374,8 @@ class WakeEscalation {
     // trigger station went by during the call (or the ladder was already
     // suspended mid-flight), tell the rider what the call swallowed and arm
     // the ladder from hang-up. The catch-up doubles as the check-in.
-    final triggerPassedDuringCall = targetIndex > 0 &&
+    final triggerPassedDuringCall =
+        targetIndex > 0 &&
         _passedDuringCall.contains(chain[targetIndex - 1].id);
     if (triggerPassedDuringCall || _suspendedLadder) {
       _suspendedLadder = false;
@@ -442,8 +435,7 @@ class WakeEscalation {
     // usable fix keeps running through a blackout. A train that was 200
     // seconds from the stop when GPS died is still arriving.
     if (!_ladderLive && _hasTarget && _lastFixAt != null) {
-      final remainingS =
-          _lastEtaS! - now.difference(_lastFixAt!).inSeconds;
+      final remainingS = _lastEtaS! - now.difference(_lastFixAt!).inSeconds;
       if (remainingS <= leadTimeS) {
         return _startLadder(now);
       }

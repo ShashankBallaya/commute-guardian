@@ -263,8 +263,7 @@ class RideServiceClient {
   /// The channel name must stay byte-identical to the one the native side
   /// registers. A typo here is invisible to every test and breaks the earphone
   /// ack only on a real device.
-  static const _mediaAckChannel =
-      MethodChannel('commute_guardian/media_ack');
+  static const _mediaAckChannel = MethodChannel('commute_guardian/media_ack');
 
   final _events = StreamController<ServiceEvent>.broadcast();
 
@@ -405,8 +404,7 @@ class RideServiceClient {
   void testTts() => FlutterForegroundTask.sendDataToTask('test_tts');
   void testWakeAlert() =>
       FlutterForegroundTask.sendDataToTask('test_wake_alert');
-  void testWindDown() =>
-      FlutterForegroundTask.sendDataToTask('test_wind_down');
+  void testWindDown() => FlutterForegroundTask.sendDataToTask('test_wind_down');
 
   /// The rider changed the pulse interval while a ride is running.
   ///
@@ -444,52 +442,43 @@ class RideServiceClient {
   /// Everything the store knows about the running ride. Safe to call when no
   /// ride is running: the ids come back null.
   Future<PersistedRide> readPersistedRide() async => PersistedRide(
-        originId:
-            await FlutterForegroundTask.getData<String>(key: originIdKey),
-        destinationId:
-            await FlutterForegroundTask.getData<String>(key: destinationIdKey),
-        destinationReached: await FlutterForegroundTask.getData<bool>(
-              key: destinationReachedKey,
-            ) ??
-            false,
-        reachedIndex: await FlutterForegroundTask.getData<int>(
-              key: reachedIndexKey,
-            ) ??
-            -1,
-        startedAt: _dateFromMillis(
-          await FlutterForegroundTask.getData<int>(key: rideStartedAtKey),
-        ),
-        startBatteryPct: _batteryFromStore(
-          await FlutterForegroundTask.getData<int>(key: rideStartBatteryKey),
-        ),
-        wakeLadderLive: await FlutterForegroundTask.getData<bool>(
-              key: wakeLadderLiveKey,
-            ) ??
-            false,
-        wakeRung:
-            await FlutterForegroundTask.getData<int>(key: wakeRungKey) ?? 0,
-        wakeClimbing:
-            await FlutterForegroundTask.getData<bool>(key: wakeClimbingKey) ??
-                true,
-        windDownLive: await FlutterForegroundTask.getData<bool>(
-              key: windDownLiveKey,
-            ) ??
-            false,
-        windDownEndsAt: _dateFromMillis(
-          await FlutterForegroundTask.getData<int>(key: windDownEndsAtKey),
-        ),
-        windDownWindow: Duration(
-          seconds: await FlutterForegroundTask.getData<int>(
-                key: windDownWindowKey,
-              ) ??
-              WindDown.countdown.inSeconds,
-        ),
-      );
+    originId: await FlutterForegroundTask.getData<String>(key: originIdKey),
+    destinationId: await FlutterForegroundTask.getData<String>(
+      key: destinationIdKey,
+    ),
+    destinationReached:
+        await FlutterForegroundTask.getData<bool>(key: destinationReachedKey) ??
+        false,
+    reachedIndex:
+        await FlutterForegroundTask.getData<int>(key: reachedIndexKey) ?? -1,
+    startedAt: _dateFromMillis(
+      await FlutterForegroundTask.getData<int>(key: rideStartedAtKey),
+    ),
+    startBatteryPct: _batteryFromStore(
+      await FlutterForegroundTask.getData<int>(key: rideStartBatteryKey),
+    ),
+    wakeLadderLive:
+        await FlutterForegroundTask.getData<bool>(key: wakeLadderLiveKey) ??
+        false,
+    wakeRung: await FlutterForegroundTask.getData<int>(key: wakeRungKey) ?? 0,
+    wakeClimbing:
+        await FlutterForegroundTask.getData<bool>(key: wakeClimbingKey) ?? true,
+    windDownLive:
+        await FlutterForegroundTask.getData<bool>(key: windDownLiveKey) ??
+        false,
+    windDownEndsAt: _dateFromMillis(
+      await FlutterForegroundTask.getData<int>(key: windDownEndsAtKey),
+    ),
+    windDownWindow: Duration(
+      seconds:
+          await FlutterForegroundTask.getData<int>(key: windDownWindowKey) ??
+          WindDown.countdown.inSeconds,
+    ),
+  );
 
-  static DateTime? _dateFromMillis(int? millis) =>
-      millis == null || millis <= 0
-          ? null
-          : DateTime.fromMillisecondsSinceEpoch(millis);
+  static DateTime? _dateFromMillis(int? millis) => millis == null || millis <= 0
+      ? null
+      : DateTime.fromMillisecondsSinceEpoch(millis);
 
   /// -1 is the store's way of saying the platform would not give a reading.
   static int? _batteryFromStore(int? pct) =>

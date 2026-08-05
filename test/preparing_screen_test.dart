@@ -43,10 +43,7 @@ void main() {
 
     // The last chance to catch a wrong pick, which matters when Kalyan and
     // Kalwa are one fat-finger apart in the picker.
-    expect(
-      find.textContaining('Shahad', findRichText: true),
-      findsOneWidget,
-    );
+    expect(find.textContaining('Shahad', findRichText: true), findsOneWidget);
     expect(find.text("We'll wake you up before Kalyan."), findsOneWidget);
   });
 
@@ -89,11 +86,14 @@ void main() {
     );
 
     // Two of three done.
-    await pumpPreparing(tester, steps: const [
-      PrepStep(label: 'Finding you', status: PrepStatus.done),
-      PrepStep(label: 'Watching for your stop', status: PrepStatus.done),
-      PrepStep(label: 'Direction', status: PrepStatus.pending),
-    ]);
+    await pumpPreparing(
+      tester,
+      steps: const [
+        PrepStep(label: 'Finding you', status: PrepStatus.done),
+        PrepStep(label: 'Watching for your stop', status: PrepStatus.done),
+        PrepStep(label: 'Direction', status: PrepStatus.pending),
+      ],
+    );
     ring = tester.widget<CircularProgressIndicator>(
       find.byType(CircularProgressIndicator),
     );
@@ -101,7 +101,8 @@ void main() {
     expect(
       ring.value,
       isNot(isNull),
-      reason: 'a null value is an indeterminate spinner, which would be theatre',
+      reason:
+          'a null value is an indeterminate spinner, which would be theatre',
     );
   });
 
@@ -111,10 +112,9 @@ void main() {
     await pumpPreparing(tester);
 
     Color dotColourNear(String label) {
-      final row = find.ancestor(
-        of: find.text(label),
-        matching: find.byType(Row),
-      ).first;
+      final row = find
+          .ancestor(of: find.text(label), matching: find.byType(Row))
+          .first;
       final box = tester.widget<Container>(
         find.descendant(of: row, matching: find.byType(Container)).first,
       );
@@ -208,7 +208,10 @@ void main() {
       // A rider does not care what the setting is called. They care that they
       // will sleep past their stop.
       await pumpC(tester);
-      expect(find.text("We can't wake you with the screen off"), findsOneWidget);
+      expect(
+        find.text("We can't wake you with the screen off"),
+        findsOneWidget,
+      );
     });
 
     testWidgets('the setting names appear as instructions in the body', (

@@ -98,6 +98,15 @@ class _ArrivalScreenState extends State<ArrivalScreen> {
   /// route the next time they finish it.
   bool _saveDismissed = false;
 
+  /// The label the rider just chose, or null if they have not.
+  ///
+  /// A tap on Home has to CHANGE something on the screen. Leaving the card sat
+  /// there with its two buttons still offered reads as a press that did not
+  /// land, and this rider is walking down a platform, not watching for a
+  /// database write. The card is replaced by the confirmation, in place, so
+  /// nothing below it moves.
+  String? _savedAs;
+
   @override
   void initState() {
     super.initState();
@@ -144,6 +153,7 @@ class _ArrivalScreenState extends State<ArrivalScreen> {
   Widget build(BuildContext context) {
     final remaining = _remaining;
     final showSave = widget.onSaveRoute != null && !_saveDismissed;
+    final savedAs = _savedAs;
 
     return Scaffold(
       body: SafeArea(
@@ -214,9 +224,15 @@ class _ArrivalScreenState extends State<ArrivalScreen> {
                   ),
                 ),
               ),
-              if (showSave) ...[
+              if (savedAs != null) ...[
+                _SavedConfirmation(label: savedAs),
+                const SizedBox(height: 16),
+              ] else if (showSave) ...[
                 _SaveRouteCard(
-                  onSave: widget.onSaveRoute!,
+                  onSave: (label) {
+                    setState(() => _savedAs = label);
+                    widget.onSaveRoute!(label);
+                  },
                   onDismiss: () {
                     setState(() => _saveDismissed = true);
                     widget.onDismissSave?.call();
@@ -513,6 +529,43 @@ class _SaveRouteCard extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// What a tap on Home or Work leaves behind.
+///
+/// It says where the route went, because "Saved" on its own tells a rider
+/// nothing they can act on later. Not a toast: a toast on this screen would be
+/// gone before a rider walking down a platform looked back at their phone, and
+/// it would slide over the End now button on its way out.
+class _SavedConfirmation extends StatelessWidget {
+  const _SavedConfirmation({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const Key('save_route_confirmation'),
+      decoration: Palette.glassCard(radius: 20),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle, color: Palette.dotGreen, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Saved as $label. One tap from home next time.',
+              style: TextStyle(
+                fontSize: TypeScale.body,
+                height: 1.3,
+                color: Palette.textDim(0.8),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// End now, and Extend when there is something to extend.

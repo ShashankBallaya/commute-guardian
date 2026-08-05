@@ -79,8 +79,8 @@ class JourneyDraftNotifier extends Notifier<JourneyDraft> {
 
 final journeyDraftProvider =
     NotifierProvider<JourneyDraftNotifier, JourneyDraft>(
-  JourneyDraftNotifier.new,
-);
+      JourneyDraftNotifier.new,
+    );
 
 // ---------------------------------------------------------------------------
 // The journey those imply
@@ -117,7 +117,9 @@ final plannedJourneyProvider = Provider<PlannedJourney>((ref) {
     );
   } catch (error) {
     return PlannedJourney(
-      error: error is ArgumentError ? '${error.message}' : 'Cannot plan this ride.',
+      error: error is ArgumentError
+          ? '${error.message}'
+          : 'Cannot plan this ride.',
     );
   }
 });
@@ -217,5 +219,5 @@ class NearestStationNotifier extends Notifier<NearestStation> {
 
 final nearestStationProvider =
     NotifierProvider<NearestStationNotifier, NearestStation>(
-  NearestStationNotifier.new,
-);
+      NearestStationNotifier.new,
+    );

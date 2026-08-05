@@ -74,9 +74,7 @@ void main() {
     final done = <String>[];
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [
-          permissionsGatewayProvider.overrideWithValue(permissions),
-        ],
+        overrides: [permissionsGatewayProvider.overrideWithValue(permissions)],
         child: MaterialApp(
           home: OnboardingScreen(onDone: () => done.add('done')),
         ),
@@ -209,10 +207,7 @@ void main() {
 /// The entry gate. What a rider sees when they open the app, which is the
 /// whole point of having built onboarding.
 void _entryGateTests() {
-  Future<AppDatabase> pumpApp(
-    WidgetTester tester, {
-    required bool seen,
-  }) async {
+  Future<AppDatabase> pumpApp(WidgetTester tester, {required bool seen}) async {
     final db = AppDatabase.inMemory();
     addTearDown(db.close);
     if (seen) await db.markOnboardingSeen();
@@ -227,8 +222,9 @@ void _entryGateTests() {
               File(StationRepository.assetPath).readAsStringSync(),
             ),
           ),
-          fixAcquirerProvider
-              .overrideWithValue(() async => throw StateError('no GPS')),
+          fixAcquirerProvider.overrideWithValue(
+            () async => throw StateError('no GPS'),
+          ),
           rideServiceClientProvider.overrideWithValue(FakeRideServiceClient()),
         ],
         child: const CommuteGuardianDebugApp(),
@@ -245,18 +241,20 @@ void _entryGateTests() {
     expect(find.byKey(const Key('onboarding_welcome')), findsOneWidget);
   });
 
-  testWidgets('a rider who has done it lands on Screen 1, not the debug screen',
-      (tester) async {
-    await pumpApp(tester, seen: true);
-    expect(find.byKey(const Key('onboarding_welcome')), findsNothing);
+  testWidgets(
+    'a rider who has done it lands on Screen 1, not the debug screen',
+    (tester) async {
+      await pumpApp(tester, seen: true);
+      expect(find.byKey(const Key('onboarding_welcome')), findsNothing);
 
-    // THE PHASE 2 EXIT CRITERION, as an assertion: a rider who has never seen
-    // the debug screen must not be shown it. It was the app's home until
-    // 4 Aug 2026, and nothing but this test stops it quietly becoming the home
-    // again the next time someone needs a bench in a hurry.
-    expect(find.byType(HomeScreen), findsOneWidget);
-    expect(find.byType(RideDebugScreen), findsNothing);
-  });
+      // THE PHASE 2 EXIT CRITERION, as an assertion: a rider who has never seen
+      // the debug screen must not be shown it. It was the app's home until
+      // 4 Aug 2026, and nothing but this test stops it quietly becoming the home
+      // again the next time someone needs a bench in a hurry.
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(find.byType(RideDebugScreen), findsNothing);
+    },
+  );
 
   testWidgets('finishing onboarding records it and does not ask again', (
     tester,

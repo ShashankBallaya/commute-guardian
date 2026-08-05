@@ -42,12 +42,12 @@ class RideProgress {
   /// for why every caller should use these rather than wire the fields up by
   /// hand: this is the engine the replay tool went blind on.
   factory RideProgress.forJourney(Journey journey) => RideProgress(
-        chain: journey.chain,
-        destinationStationId: journey.destinationStationId,
-        overshootStations: journey.overshootStations,
-        approachRadiusM: journey.approachRadiusM,
-        arrivalAnnouncements: journey.arrivalAnnouncements,
-      );
+    chain: journey.chain,
+    destinationStationId: journey.destinationStationId,
+    overshootStations: journey.overshootStations,
+    approachRadiusM: journey.approachRadiusM,
+    arrivalAnnouncements: journey.arrivalAnnouncements,
+  );
 
   final List<Station> chain;
   final String destinationStationId;
@@ -211,8 +211,7 @@ class RideProgress {
     }
 
     // Normal fence arrival for the nearest station.
-    if (nearestDist <= nearest.radiusM &&
-        _announcedArrivals.add(nearest.id)) {
+    if (nearestDist <= nearest.radiusM && _announcedArrivals.add(nearest.id)) {
       result.add(_arrival(nearest));
     }
 
@@ -245,7 +244,8 @@ class RideProgress {
     return Announcement(
       stationId: station.id,
       kind: AnnouncementKind.arrival,
-      text: arrivalAnnouncements[station.id] ??
+      text:
+          arrivalAnnouncements[station.id] ??
           ClipKind.approach.render(station.name),
     );
   }
@@ -314,16 +314,12 @@ class RideProgress {
   }
 
   /// Great-circle distance in metres between two lat/lng points (haversine).
-  static double _distanceM(
-    double lat1,
-    double lng1,
-    double lat2,
-    double lng2,
-  ) {
+  static double _distanceM(double lat1, double lng1, double lat2, double lng2) {
     const earthRadiusM = 6371000.0;
     final dLat = _toRad(lat2 - lat1);
     final dLng = _toRad(lng2 - lng1);
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(_toRad(lat1)) *
             math.cos(_toRad(lat2)) *
             math.sin(dLng / 2) *

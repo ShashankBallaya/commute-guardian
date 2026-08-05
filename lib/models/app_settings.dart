@@ -88,13 +88,12 @@ class AppSettings {
     bool? announceEveryStation,
     bool? shareAnonymousUsage,
     AppLanguage? language,
-  }) =>
-      AppSettings(
-        pulseIntervalMinutes: pulseIntervalMinutes ?? this.pulseIntervalMinutes,
-        crowdMode: crowdMode ?? this.crowdMode,
-        vibrateWithPulse: vibrateWithPulse ?? this.vibrateWithPulse,
-        announceEveryStation: announceEveryStation ?? this.announceEveryStation,
-        shareAnonymousUsage: shareAnonymousUsage ?? this.shareAnonymousUsage,
-        language: language ?? this.language,
-      );
+  }) => AppSettings(
+    pulseIntervalMinutes: pulseIntervalMinutes ?? this.pulseIntervalMinutes,
+    crowdMode: crowdMode ?? this.crowdMode,
+    vibrateWithPulse: vibrateWithPulse ?? this.vibrateWithPulse,
+    announceEveryStation: announceEveryStation ?? this.announceEveryStation,
+    shareAnonymousUsage: shareAnonymousUsage ?? this.shareAnonymousUsage,
+    language: language ?? this.language,
+  );
 }

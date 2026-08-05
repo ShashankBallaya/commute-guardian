@@ -83,8 +83,8 @@ class SelfAudioInterruptionFilter {
       return wasOurs;
     }
     final startedAt = _ownAudioStartedAt;
-    _ignoringCurrent = _sustained ||
-        (startedAt != null && now.difference(startedAt) < window);
+    _ignoringCurrent =
+        _sustained || (startedAt != null && now.difference(startedAt) < window);
     return _ignoringCurrent;
   }
 }

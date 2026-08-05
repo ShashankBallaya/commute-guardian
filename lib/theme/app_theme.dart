@@ -40,9 +40,7 @@ ThemeData commuteGuardianTheme() {
       backgroundColor: Palette.surfaceSolid,
       contentTextStyle: const TextStyle(color: Palette.text),
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
     ),
   );
 }

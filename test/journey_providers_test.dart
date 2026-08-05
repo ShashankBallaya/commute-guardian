@@ -36,10 +36,16 @@ void main() {
       expect(c.read(plannedJourneyProvider).error, isNull);
 
       c.read(journeyDraftProvider.notifier).setOrigin('kalyan');
-      expect(c.read(plannedJourneyProvider).journey, isNull,
-          reason: 'an origin alone is not a journey');
-      expect(c.read(plannedJourneyProvider).error, isNull,
-          reason: 'a half-filled draft is not an error, it is unfinished');
+      expect(
+        c.read(plannedJourneyProvider).journey,
+        isNull,
+        reason: 'an origin alone is not a journey',
+      );
+      expect(
+        c.read(plannedJourneyProvider).error,
+        isNull,
+        reason: 'a half-filled draft is not an error, it is unfinished',
+      );
     });
 
     test('plans as soon as both ends exist, and replans on a change', () {
@@ -102,29 +108,33 @@ void main() {
       expect(c.read(journeyDraftProvider).originId, 'kalyan');
     });
 
-    test('the turnaround keeps the origin and always clears the destination',
-        () {
-      final c = makeContainer();
-      final draft = c.read(journeyDraftProvider.notifier);
-      draft.setOrigin('kalyan');
-      draft.setDestination('thane');
+    test(
+      'the turnaround keeps the origin and always clears the destination',
+      () {
+        final c = makeContainer();
+        final draft = c.read(journeyDraftProvider.notifier);
+        draft.setOrigin('kalyan');
+        draft.setDestination('thane');
 
-      draft.resetAfterRide(originId: 'thane');
-      expect(c.read(journeyDraftProvider).originId, 'thane');
-      expect(c.read(journeyDraftProvider).destinationId, isNull);
-    });
+        draft.resetAfterRide(originId: 'thane');
+        expect(c.read(journeyDraftProvider).originId, 'thane');
+        expect(c.read(journeyDraftProvider).destinationId, isNull);
+      },
+    );
 
-    test('a ride that never arrived leaves the origin empty for the GPS fill',
-        () {
-      final c = makeContainer();
-      final draft = c.read(journeyDraftProvider.notifier);
-      draft.setOrigin('kalyan');
-      draft.setDestination('thane');
+    test(
+      'a ride that never arrived leaves the origin empty for the GPS fill',
+      () {
+        final c = makeContainer();
+        final draft = c.read(journeyDraftProvider.notifier);
+        draft.setOrigin('kalyan');
+        draft.setDestination('thane');
 
-      draft.resetAfterRide();
-      expect(c.read(journeyDraftProvider).originId, isNull);
-      expect(draft.defaultOriginTo('mumbra'), isTrue);
-    });
+        draft.resetAfterRide();
+        expect(c.read(journeyDraftProvider).originId, isNull);
+        expect(draft.defaultOriginTo('mumbra'), isTrue);
+      },
+    );
   });
 
   group('nearestStation.applyFix, the one gate for every fix', () {
@@ -155,25 +165,28 @@ void main() {
     test('a fix nowhere near the network admits it rather than guessing', () {
       final c = makeContainer();
       // Precise, and about 200 km inland from the Mumbai suburban network.
-      final named =
-          c.read(nearestStationProvider.notifier).applyFix(19.0, 75.0, 10);
+      final named = c
+          .read(nearestStationProvider.notifier)
+          .applyFix(19.0, 75.0, 10);
 
       expect(named, isFalse);
       expect(c.read(nearestStationProvider).state, GpsState.unavailable);
       expect(c.read(nearestStationProvider).stationName, isNull);
     });
 
-    test('the chip keeps reporting position mid-ride without moving the origin',
-        () {
-      final c = makeContainer();
-      final nearest = c.read(nearestStationProvider.notifier);
-      // The rider picked Kalyan, then the train reaches Thane. The chip must
-      // follow the train; the origin must not.
-      c.read(journeyDraftProvider.notifier).setOrigin('kalyan');
-      nearest.applyFix(19.1864830, 72.9757664, 12);
+    test(
+      'the chip keeps reporting position mid-ride without moving the origin',
+      () {
+        final c = makeContainer();
+        final nearest = c.read(nearestStationProvider.notifier);
+        // The rider picked Kalyan, then the train reaches Thane. The chip must
+        // follow the train; the origin must not.
+        c.read(journeyDraftProvider.notifier).setOrigin('kalyan');
+        nearest.applyFix(19.1864830, 72.9757664, 12);
 
-      expect(c.read(nearestStationProvider).stationName, 'Thane');
-      expect(c.read(journeyDraftProvider).originId, 'kalyan');
-    });
+        expect(c.read(nearestStationProvider).stationName, 'Thane');
+        expect(c.read(journeyDraftProvider).originId, 'kalyan');
+      },
+    );
   });
 }

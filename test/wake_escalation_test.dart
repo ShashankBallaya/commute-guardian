@@ -48,10 +48,10 @@ final _dadarChain = <Station>[
 final _t0 = DateTime(2026, 7, 16, 18, 0, 0);
 
 Announcement _arrival(String stationId) => Announcement(
-      stationId: stationId,
-      kind: AnnouncementKind.arrival,
-      text: 'Now approaching $stationId.',
-    );
+  stationId: stationId,
+  kind: AnnouncementKind.arrival,
+  text: 'Now approaching $stationId.',
+);
 
 void main() {
   group('rung escalation while unacknowledged', () {
@@ -316,8 +316,7 @@ void main() {
       );
     });
 
-    test('dead GPS with no prior usable fix stays quiet: the honest floor',
-        () {
+    test('dead GPS with no prior usable fix stays quiet: the honest floor', () {
       final wake = WakeEscalation(
         chain: _chain,
         interchangeStationIds: const [],
@@ -339,29 +338,31 @@ void main() {
   });
 
   group('calls suspend the wake clock', () {
-    test('a call starting mid-ladder stops the tone and freezes escalation',
-        () {
-      final wake = WakeEscalation(
-        chain: _chain,
-        interchangeStationIds: const [],
-        destinationStationId: 'digha',
-      );
-      wake.onStationEvent(_arrival('thane'), _t0);
-      wake.onTick(_t0.add(const Duration(seconds: 25))); // rung 1
+    test(
+      'a call starting mid-ladder stops the tone and freezes escalation',
+      () {
+        final wake = WakeEscalation(
+          chain: _chain,
+          interchangeStationIds: const [],
+          destinationStationId: 'digha',
+        );
+        wake.onStationEvent(_arrival('thane'), _t0);
+        wake.onTick(_t0.add(const Duration(seconds: 25))); // rung 1
 
-      // On a call means awake (locked decision 8): the alarm must not
-      // blast into the rider's phone conversation.
-      final suspend = wake.onCallStateChanged(
-        inCall: true,
-        now: _t0.add(const Duration(seconds: 30)),
-      );
-      expect(suspend, hasLength(1));
-      expect(suspend.single, isA<StopTone>());
+        // On a call means awake (locked decision 8): the alarm must not
+        // blast into the rider's phone conversation.
+        final suspend = wake.onCallStateChanged(
+          inCall: true,
+          now: _t0.add(const Duration(seconds: 30)),
+        );
+        expect(suspend, hasLength(1));
+        expect(suspend.single, isA<StopTone>());
 
-      // The clock is frozen: rungs that would have fired stay silent.
-      expect(wake.onTick(_t0.add(const Duration(seconds: 40))), isEmpty);
-      expect(wake.onTick(_t0.add(const Duration(minutes: 2))), isEmpty);
-    });
+        // The clock is frozen: rungs that would have fired stay silent.
+        expect(wake.onTick(_t0.add(const Duration(seconds: 40))), isEmpty);
+        expect(wake.onTick(_t0.add(const Duration(minutes: 2))), isEmpty);
+      },
+    );
 
     test('hanging up with lead left gets a catch-up naming the stations the '
         'call swallowed, and the ladder arms from it', () {
@@ -396,8 +397,7 @@ void main() {
       );
 
       // The catch-up doubles as the check-in: silence still escalates.
-      final rung1 =
-          wake.onTick(hangUp.add(const Duration(seconds: 25)));
+      final rung1 = wake.onTick(hangUp.add(const Duration(seconds: 25)));
       expect((rung1[0] as Tone).volume, 0.3);
     });
 
@@ -426,8 +426,7 @@ void main() {
       // again. A false resume during a real long call costs an awake
       // rider one ack tap; a ladder that never comes back costs a
       // sleeping rider their stop.
-      final resume =
-          wake.onTick(suspendAt.add(const Duration(minutes: 3)));
+      final resume = wake.onTick(suspendAt.add(const Duration(minutes: 3)));
       expect(resume, hasLength(1));
       expect(
         (resume.single as Speak).text,
@@ -435,7 +434,8 @@ void main() {
         'I am awake button, to show you are awake.',
       );
       final rung1 = wake.onTick(
-          suspendAt.add(const Duration(minutes: 3, seconds: 25)));
+        suspendAt.add(const Duration(minutes: 3, seconds: 25)),
+      );
       expect((rung1[0] as Tone).volume, 0.3);
     });
 
@@ -447,8 +447,14 @@ void main() {
         destinationStationId: 'digha',
       );
       wake.onCallStateChanged(inCall: true, now: _t0);
-      wake.onStationEvent(_arrival('thane'), _t0.add(const Duration(minutes: 1)));
-      wake.onStationEvent(_arrival('digha'), _t0.add(const Duration(minutes: 2)));
+      wake.onStationEvent(
+        _arrival('thane'),
+        _t0.add(const Duration(minutes: 1)),
+      );
+      wake.onStationEvent(
+        _arrival('digha'),
+        _t0.add(const Duration(minutes: 2)),
+      );
 
       final resume = wake.onTick(_t0.add(const Duration(minutes: 3)));
       expect(resume, hasLength(3));
@@ -469,17 +475,18 @@ void main() {
       );
       wake.onStationEvent(_arrival('thane'), _t0);
       wake.onCallStateChanged(
-          inCall: true, now: _t0.add(const Duration(seconds: 5)));
+        inCall: true,
+        now: _t0.add(const Duration(seconds: 5)),
+      );
       wake.onCallStateChanged(
-          inCall: false, now: _t0.add(const Duration(minutes: 1)));
+        inCall: false,
+        now: _t0.add(const Duration(minutes: 1)),
+      );
       wake.acknowledge(_t0.add(const Duration(minutes: 1, seconds: 5)));
 
       // The old deadline must not fire a phantom resume after the ladder
       // was legitimately resumed and acknowledged.
-      expect(
-        wake.onTick(_t0.add(const Duration(minutes: 4))),
-        isEmpty,
-      );
+      expect(wake.onTick(_t0.add(const Duration(minutes: 4))), isEmpty);
     });
 
     test('hanging up at or past the stop skips the gentle ramp and goes '
@@ -621,10 +628,10 @@ void main() {
       );
 
       Announcement approach(String stationId) => Announcement(
-            stationId: stationId,
-            kind: AnnouncementKind.approach,
-            text: 'Now approaching $stationId.',
-          );
+        stationId: stationId,
+        kind: AnnouncementKind.approach,
+        text: 'Now approaching $stationId.',
+      );
 
       // An approach ping for Kalwa's successor... Kalwa has no approach
       // fence, but Thane does, and Thane is the trigger for nothing while
@@ -644,7 +651,9 @@ void main() {
       expect(ping, isEmpty);
 
       // Still climbing: the ladder is alive after the ping.
-      final rung = wake.onTick(_t0.add(const Duration(minutes: 2, seconds: 30)));
+      final rung = wake.onTick(
+        _t0.add(const Duration(minutes: 2, seconds: 30)),
+      );
       expect(rung, isNotEmpty);
 
       // The real arrival is what stops it.
@@ -705,8 +714,11 @@ void main() {
         _t0.add(const Duration(seconds: 40)),
       );
       expect(atPartner, isEmpty);
-      expect(wake.isLadderLive, isTrue,
-          reason: 'the alarm must survive arrival at the walk partner');
+      expect(
+        wake.isLadderLive,
+        isTrue,
+        reason: 'the alarm must survive arrival at the walk partner',
+      );
 
       // Matunga is the first station that genuinely means "gone too far".
       final past = wake.onStationEvent(
@@ -740,26 +752,28 @@ void main() {
   });
 
   group('ladder trigger by previous-station detection', () {
-    test('announcing the station before the destination starts the check-in',
-        () {
-      final wake = WakeEscalation(
-        chain: _chain,
-        interchangeStationIds: const [],
-        destinationStationId: 'digha',
-      );
+    test(
+      'announcing the station before the destination starts the check-in',
+      () {
+        final wake = WakeEscalation(
+          chain: _chain,
+          interchangeStationIds: const [],
+          destinationStationId: 'digha',
+        );
 
-      expect(wake.isLadderLive, isFalse);
-      final actions = wake.onStationEvent(_arrival('thane'), _t0);
+        expect(wake.isLadderLive, isFalse);
+        final actions = wake.onStationEvent(_arrival('thane'), _t0);
 
-      expect(actions, hasLength(1));
-      final speak = actions.single;
-      expect(speak, isA<Speak>());
-      expect(
-        (speak as Speak).text,
-        'Your stop, Digha Gaon, is next. Tap your earphones, or press the '
-        'I am awake button, to show you are awake.',
-      );
-      expect(wake.isLadderLive, isTrue);
-    });
+        expect(actions, hasLength(1));
+        final speak = actions.single;
+        expect(speak, isA<Speak>());
+        expect(
+          (speak as Speak).text,
+          'Your stop, Digha Gaon, is next. Tap your earphones, or press the '
+          'I am awake button, to show you are awake.',
+        );
+        expect(wake.isLadderLive, isTrue);
+      },
+    );
   });
 }

@@ -110,20 +110,20 @@ class AppDatabase extends _$AppDatabase {
   /// they know.
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (m) => m.createAll(),
-        onUpgrade: (m, from, to) async {
-          if (from < 2) {
-            await m.addColumn(journeyRecords, journeyRecords.batteryStartPct);
-            await m.addColumn(journeyRecords, journeyRecords.batteryEndPct);
-          }
-          // Added together on 28 Jul 2026. Existing installs (the 3T holds
-          // real rides) gain the tables without losing a row.
-          if (from < 3) {
-            await m.createTable(savedRoutes);
-            await m.createTable(appFlags);
-          }
-        },
-      );
+    onCreate: (m) => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.addColumn(journeyRecords, journeyRecords.batteryStartPct);
+        await m.addColumn(journeyRecords, journeyRecords.batteryEndPct);
+      }
+      // Added together on 28 Jul 2026. Existing installs (the 3T holds
+      // real rides) gain the tables without losing a row.
+      if (from < 3) {
+        await m.createTable(savedRoutes);
+        await m.createTable(appFlags);
+      }
+    },
+  );
 
   Future<void> record({
     required String originId,
@@ -195,19 +195,30 @@ class AppDatabase extends _$AppDatabase {
     return query.get();
   }
 
+  /// ONE ROUTE PER LABEL, so saving is also how a rider corrects one.
+  ///
+  /// Screen 5 offers exactly two names, Home and Work, and a rider whose Home
+  /// moves has no other way to fix it: there is no edit screen and no delete
+  /// gesture, by design (see Screen 1). Riding to the new one and tapping Home
+  /// again replaces it, which is the behaviour anyone would expect from a slot
+  /// with a name on it. It also caps free saved routes at two without a rule
+  /// that has to be written down or enforced anywhere.
   Future<void> saveRoute({
     required String label,
     required String destinationStationId,
     required String destinationName,
   }) {
-    return into(savedRoutes).insert(
-      SavedRoutesCompanion.insert(
-        label: label,
-        destinationStationId: destinationStationId,
-        destinationName: destinationName,
-        createdAt: DateTime.now(),
-      ),
-    );
+    return transaction(() async {
+      await (delete(savedRoutes)..where((t) => t.label.equals(label))).go();
+      await into(savedRoutes).insert(
+        SavedRoutesCompanion.insert(
+          label: label,
+          destinationStationId: destinationStationId,
+          destinationName: destinationName,
+          createdAt: DateTime.now(),
+        ),
+      );
+    });
   }
 
   Future<void> deleteSavedRoute(int id) =>
@@ -218,14 +229,15 @@ class AppDatabase extends _$AppDatabase {
   // -------------------------------------------------------------------------
 
   Future<String?> flag(String key) async {
-    final row = await (select(appFlags)..where((t) => t.key.equals(key)))
-        .getSingleOrNull();
+    final row = await (select(
+      appFlags,
+    )..where((t) => t.key.equals(key))).getSingleOrNull();
     return row?.value;
   }
 
-  Future<void> setFlag(String key, String value) => into(appFlags).insertOnConflictUpdate(
-        AppFlagsCompanion.insert(key: key, value: value),
-      );
+  Future<void> setFlag(String key, String value) => into(
+    appFlags,
+  ).insertOnConflictUpdate(AppFlagsCompanion.insert(key: key, value: value));
 
   /// Whether onboarding has been completed. A REINSTALL WIPES THIS along with
   /// the permission grants it exists to explain, which is correct: a rider

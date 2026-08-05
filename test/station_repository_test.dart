@@ -4,8 +4,8 @@ import 'package:commute_guardian/data/station_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 StationRepository _repo() => StationRepository.parse(
-      File(StationRepository.assetPath).readAsStringSync(),
-    );
+  File(StationRepository.assetPath).readAsStringSync(),
+);
 
 void main() {
   test('the nearest station to a platform is that station', () {
