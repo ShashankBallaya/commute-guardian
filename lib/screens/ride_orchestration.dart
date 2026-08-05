@@ -560,6 +560,27 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// The DEBUG screen's own Start button deliberately still calls [start]
   /// directly, so a bench is never gated on permissions or earphones.
   Future<void> prepareAndStart(String destinationId) async {
+    // THE RIDE TO WHERE YOU ALREADY ARE. JourneyPlanner refuses it (it throws
+    // on origin == destination), so plannedJourneyProvider holds an error, and
+    // [start] then returns silently on a null journey: the rider tapped and
+    // NOTHING happened, on every path into a ride. It is not a strange case
+    // either. A saved Home is a station a rider stands at twice a day, and it
+    // is right there in the picker on the resting list, which shows their own
+    // line first.
+    //
+    // Answered here rather than in the picker because the picker is only one of
+    // the three ways in; the saved and recent cards on Screen 1 are the others.
+    if (ref.read(journeyDraftProvider).originId == destinationId) {
+      onOrchestrationLog('Ride refused: already at $destinationId');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("You're already at ${stationName(destinationId)}."),
+        ),
+      );
+      return;
+    }
+
     final report = await const PreparingGate().check(ref);
     if (!mounted) return;
 

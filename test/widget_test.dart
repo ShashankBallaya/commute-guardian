@@ -9,6 +9,7 @@ import 'package:commute_guardian/data/app_database.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/main.dart';
 import 'package:commute_guardian/screens/arrival_screen.dart';
+import 'package:commute_guardian/screens/home_screen.dart';
 import 'package:commute_guardian/screens/ride_orchestration.dart';
 import 'package:commute_guardian/screens/wake_alert_screen.dart';
 import 'package:commute_guardian/services/ride_service_client.dart';
@@ -352,6 +353,72 @@ void main() {
     // progress) put "You've arrived at Kalyan" on a ride to Thane.
     expect(find.textContaining('Thane'), findsWidgets);
     expect(find.textContaining("You've arrived at Kalyan"), findsNothing);
+  });
+
+  testWidgets('A TAP THAT CANNOT BECOME A RIDE SAYS SO, on every path in', (
+    tester,
+  ) async {
+    // JourneyPlanner refuses origin == destination, so plannedJourneyProvider
+    // holds an error and start() returns on a null journey: the rider tapped
+    // and NOTHING happened. A saved Home is a station someone stands at twice a
+    // day, so this is the ordinary case, not an exotic one.
+    //
+    // Through the WHOLE APP rather than the picker, because the picker is one
+    // of three ways in and the cards on Screen 1 are the other two.
+    final db = AppDatabase.inMemory();
+    addTearDown(db.close);
+    await db.record(
+      originId: 'thane',
+      destinationId: 'shahad',
+      originName: 'Thane',
+      destinationName: 'Shahad',
+      startedAt: DateTime(2026, 8, 5, 9),
+      endedAt: DateTime(2026, 8, 5, 10),
+      reachedDestination: true,
+      stationCount: 9,
+    );
+    await db.saveRoute(
+      label: 'Home',
+      destinationStationId: 'shahad',
+      destinationName: 'Shahad',
+    );
+    final service = FakeRideServiceClient();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appDatabaseProvider.overrideWith((ref) => db),
+          onboardingSeenProvider.overrideWith((ref) async => true),
+          stationRepositoryProvider.overrideWith(
+            (ref) async => StationRepository.parse(
+              File(StationRepository.assetPath).readAsStringSync(),
+            ),
+          ),
+          fixAcquirerProvider.overrideWithValue(
+            () async => throw StateError('no GPS'),
+          ),
+          rideServiceClientProvider.overrideWithValue(service),
+        ],
+        child: const CommuteGuardianDebugApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The rider is standing at the station they saved as Home.
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(HomeScreen)),
+    );
+    container.read(journeyDraftProvider.notifier).setOrigin('shahad');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('saved_route_card_home')));
+    await tester.pumpAndSettle();
+
+    expect(find.text("You're already at Shahad."), findsOneWidget);
+    expect(
+      service.commands.where((c) => c.startsWith('startRide')),
+      isEmpty,
+      reason: 'a ride nobody can take must not be started',
+    );
   });
 
   testWidgets('A RIDER CARRIED PAST THEIR STOP IS TOLD WHERE THEY ARE', (

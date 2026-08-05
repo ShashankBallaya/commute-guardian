@@ -174,6 +174,39 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('THE STATION THE RIDER IS STANDING ON TAKES NO TAP', (
+    tester,
+  ) async {
+    // A ride to where you already are is refused by JourneyPlanner, so this row
+    // used to do nothing at all when pressed, on a screen where every other row
+    // starts a journey. It is not an exotic tap either: the resting list leads
+    // with the rider's own line, so their own station is right there.
+    final picked = await pumpPicker(tester, originId: 'shahad');
+
+    // Present, not hidden. Hiding it from a list of their own line would read
+    // as missing data and send them searching for it.
+    expect(find.text('Shahad'), findsOneWidget);
+    expect(find.text("You're here"), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('station_row_shahad')));
+    await tester.pumpAndSettle();
+    expect(picked, isEmpty);
+
+    // And the rest of the list is untouched.
+    await tester.tap(find.byKey(const Key('station_row_kalyan')));
+    await tester.pumpAndSettle();
+    expect(picked.map((s) => s.id), ['kalyan']);
+  });
+
+  testWidgets('the same row is marked in search results too', (tester) async {
+    // The rider can reach their own station by typing it, and the answer has to
+    // be the same one the resting list gives.
+    await pumpPicker(tester, originId: 'shahad');
+    await type(tester, 'Shahad');
+
+    expect(find.text("You're here"), findsOneWidget);
+  });
+
   testWidgets("the resting list leads with the rider's own line", (
     tester,
   ) async {

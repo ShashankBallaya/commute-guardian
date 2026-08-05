@@ -55,6 +55,9 @@ class _DestinationPickerScreenState
   Widget build(BuildContext context) {
     final repo = ref.watch(stationRepositoryProvider).valueOrNull;
     final searching = _query.trim().isNotEmpty;
+    // The station the rider is standing at. It is in this list like any other
+    // and it is the one row that cannot become a ride.
+    final originId = ref.watch(journeyDraftProvider).originId;
 
     return Scaffold(
       body: SafeArea(
@@ -75,9 +78,14 @@ class _DestinationPickerScreenState
                   child: searching
                       ? _Results(
                           stations: _matches(repo),
+                          originId: originId,
                           onPicked: widget.onPicked,
                         )
-                      : _Resting(repo: repo, onPicked: widget.onPicked),
+                      : _Resting(
+                          repo: repo,
+                          originId: originId,
+                          onPicked: widget.onPicked,
+                        ),
                 ),
             ],
           ),
@@ -195,16 +203,20 @@ class _SearchField extends StatelessWidget {
 
 /// No query yet: what the rider is most likely to want, then where they are.
 class _Resting extends ConsumerWidget {
-  const _Resting({required this.repo, required this.onPicked});
+  const _Resting({
+    required this.repo,
+    required this.originId,
+    required this.onPicked,
+  });
 
   final StationRepository repo;
+  final String? originId;
   final void Function(Station) onPicked;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final recents =
         ref.watch(recentDestinationsProvider).valueOrNull ?? const [];
-    final originId = ref.watch(journeyDraftProvider).originId;
     final lines = _linesThrough(originId);
 
     return ListView(
@@ -212,6 +224,7 @@ class _Resting extends ConsumerWidget {
       children: [
         if (recents.isNotEmpty) ...[
           _StationCard(
+            originId: originId,
             eyebrow: 'Recent',
             stations: [
               for (final ride in recents)
@@ -225,6 +238,7 @@ class _Resting extends ConsumerWidget {
         // The rider's own line, because most destinations are on it.
         for (final entry in lines.entries) ...[
           _StationCard(
+            originId: originId,
             eyebrow: '${entry.key} line',
             stations: _alphabetical(entry.value),
             onPicked: onPicked,
@@ -233,6 +247,7 @@ class _Resting extends ConsumerWidget {
         ],
         if (lines.isEmpty)
           _StationCard(
+            originId: originId,
             eyebrow: 'All stations',
             stations: _alphabetical(repo.stationsById.keys.toList()),
             onPicked: onPicked,
@@ -273,9 +288,14 @@ class _Resting extends ConsumerWidget {
 
 /// A query exists: matches, and nothing else.
 class _Results extends StatelessWidget {
-  const _Results({required this.stations, required this.onPicked});
+  const _Results({
+    required this.stations,
+    required this.originId,
+    required this.onPicked,
+  });
 
   final List<Station> stations;
+  final String? originId;
   final void Function(Station) onPicked;
 
   @override
@@ -296,7 +316,13 @@ class _Results extends StatelessWidget {
     }
     return ListView(
       padding: EdgeInsets.zero,
-      children: [_StationCard(stations: stations, onPicked: onPicked)],
+      children: [
+        _StationCard(
+          stations: stations,
+          originId: originId,
+          onPicked: onPicked,
+        ),
+      ],
     );
   }
 }
@@ -305,11 +331,13 @@ class _StationCard extends StatelessWidget {
   const _StationCard({
     this.eyebrow,
     required this.stations,
+    required this.originId,
     required this.onPicked,
   });
 
   final String? eyebrow;
   final List<Station> stations;
+  final String? originId;
   final void Function(Station) onPicked;
 
   @override
@@ -332,7 +360,11 @@ class _StationCard extends StatelessWidget {
             const SizedBox(height: 6),
           ],
           for (final station in stations)
-            _StationRow(station: station, onPicked: onPicked),
+            _StationRow(
+              station: station,
+              isOrigin: station.id == originId,
+              onPicked: onPicked,
+            ),
         ],
       ),
     );
@@ -340,14 +372,27 @@ class _StationCard extends StatelessWidget {
 }
 
 /// The whole row is the trigger and there is nothing else on it.
+///
+/// EXCEPT THE ROW THE RIDER IS STANDING ON. A ride to where you already are is
+/// refused by JourneyPlanner, so tapping it did nothing at all, on a screen
+/// where every other row starts a journey. It is not an exotic tap: the resting
+/// list leads with the rider's own line, so their own station is usually on
+/// screen. The row says why instead, in the slot the code would have used, and
+/// takes no press. Answering before the tap beats explaining after it.
 class _StationRow extends StatelessWidget {
-  const _StationRow({required this.station, required this.onPicked});
+  const _StationRow({
+    required this.station,
+    required this.isOrigin,
+    required this.onPicked,
+  });
 
   final Station station;
+  final bool isOrigin;
   final void Function(Station) onPicked;
 
   @override
   Widget build(BuildContext context) {
+    if (isOrigin) return _hereRow();
     return PressableRow(
       key: Key('station_row_${station.id}'),
       onTap: () => onPicked(station),
@@ -378,6 +423,39 @@ class _StationRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Same row, dimmed, with no press and no code.
+  ///
+  /// Dimmed rather than hidden: hiding the rider's own station from a list of
+  /// their own line would read as missing data, and they would search for it.
+  Widget _hereRow() {
+    return Padding(
+      key: Key('station_row_${station.id}'),
+      padding: const EdgeInsets.symmetric(vertical: 11),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Expanded(
+            child: Text(
+              station.name,
+              style: TextStyle(
+                fontSize: TypeScale.bodyLarge,
+                color: Palette.textDim(0.4),
+              ),
+            ),
+          ),
+          Text(
+            "You're here",
+            style: TextStyle(
+              fontSize: TypeScale.caption,
+              color: Palette.textDim(0.4),
+            ),
+          ),
+        ],
       ),
     );
   }
