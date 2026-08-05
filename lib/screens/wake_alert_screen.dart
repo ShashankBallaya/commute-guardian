@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/palette.dart';
 import '../theme/type_scale.dart';
+import '../widgets/fill_or_scroll.dart';
 import '../widgets/pressable.dart';
 
 /// The wake alert. The screen the entire product exists to put in front of a
@@ -115,47 +116,63 @@ class _WakeAlertScreenState extends State<WakeAlertScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Spacer(flex: 2),
-              _AlarmGlyph(rung: widget.rung),
-              const SizedBox(height: 32),
-              // HERO SCALE, and this is the second and last place in the app
-              // that earns it. Every other screen is read by someone awake;
-              // this one is read at arm's length by someone who is not, often
-              // in the dark, on a moving train. TypeScale.title was sized for
-              // an alert screen; this is sized for the reader.
-              Text(
-                'Wake up\n$destinationName is next',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 32,
-                  height: 1.2,
-                  fontWeight: FontWeight.w700,
-                  color: Palette.text,
-                ),
-              ),
-              if (lastPassedLine != null) ...[
-                const SizedBox(height: 16),
-                Text(
-                  lastPassedLine,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: TypeScale.body,
-                    // Lifted from 0.55. Half-asleep eyes in a dark carriage are
-                    // not the eyes this palette's dim ladder was tuned for.
-                    color: Palette.textDim(0.7),
+              // THE MESSAGE SCROLLS, THE BUTTON NEVER DOES. A long station
+              // name wraps the hero line to three (Chhatrapati Shivaji Maharaj
+              // Terminus), and at a raised font size that ran 63 px past the
+              // bottom on a 320 dp phone, which on this screen means the ack
+              // button is the part that gets clipped. So the glyph and the
+              // words live in their own flexible region and "I'm awake" is
+              // pinned below it, at full size, always.
+              Expanded(
+                child: FillOrScroll(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Spacer(flex: 2),
+                      _AlarmGlyph(rung: widget.rung),
+                      const SizedBox(height: 32),
+                      // HERO SCALE, and this is the second and last place in the app
+                      // that earns it. Every other screen is read by someone awake;
+                      // this one is read at arm's length by someone who is not, often
+                      // in the dark, on a moving train. TypeScale.title was sized for
+                      // an alert screen; this is sized for the reader.
+                      Text(
+                        'Wake up\n$destinationName is next',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 32,
+                          height: 1.2,
+                          fontWeight: FontWeight.w700,
+                          color: Palette.text,
+                        ),
+                      ),
+                      if (lastPassedLine != null) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          lastPassedLine,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: TypeScale.body,
+                            // Lifted from 0.55. Half-asleep eyes in a dark carriage are
+                            // not the eyes this palette's dim ladder was tuned for.
+                            color: Palette.textDim(0.7),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 22),
+                      Text(
+                        statusLine,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: TypeScale.label,
+                          color: Palette.textDim(0.6),
+                        ),
+                      ),
+                      const Spacer(flex: 3),
+                    ],
                   ),
                 ),
-              ],
-              const SizedBox(height: 22),
-              Text(
-                statusLine,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: TypeScale.label,
-                  color: Palette.textDim(0.6),
-                ),
               ),
-              const Spacer(flex: 3),
               // The nudge answers a refused back press: the way out is the
               // thing that moves. Same curve and feel as every other press in
               // the app, just triggered by the system instead of a finger.

@@ -36,10 +36,10 @@ class StatusChip extends StatelessWidget {
       // Dim, not red. Unavailable is inactive, not an error, and the only red
       // in this palette is the journey CTA. See Palette's class comment.
       GpsState.unavailable => (
-          Palette.textDim(0.25),
-          'Location unavailable. Tap to retry',
-          null,
-        ),
+        Palette.textDim(0.25),
+        'Location unavailable. Tap to retry',
+        null,
+      ),
     };
 
     // The Align sits OUTSIDE the press target on purpose. The chip hugs its
@@ -87,18 +87,28 @@ class StatusChip extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Text.rich(
-            TextSpan(
-              text: label,
-              children: [
-                if (station != null)
-                  TextSpan(
-                    text: station,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-              ],
+          // Flexible, because the chip's longest state is a sentence. "Location
+          // unavailable. Tap to retry" is 34 characters, and at a raised font
+          // size on a 320 dp phone it ran 291 px past the row (measured 5 Aug
+          // 2026). It wraps rather than ellipsizing: the tail of that line is
+          // the instruction, so it is the half that must not be cut.
+          Flexible(
+            child: Text.rich(
+              TextSpan(
+                text: label,
+                children: [
+                  if (station != null)
+                    TextSpan(
+                      text: station,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                ],
+              ),
+              style: TextStyle(
+                fontSize: TypeScale.body,
+                color: Palette.textDim(0.9),
+              ),
             ),
-            style: TextStyle(fontSize: TypeScale.body, color: Palette.textDim(0.9)),
           ),
         ],
       ),

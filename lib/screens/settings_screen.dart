@@ -149,114 +149,114 @@ class SettingsScreen extends StatelessWidget {
   /// location flow is where riders silently drop out. A rider whose app was
   /// killed mid journey has no other way to find out.
   Widget _readinessCard() => _Card(
-        title: 'Travel Mode readiness',
-        subtitle: 'What the app needs to wake you while your phone is locked '
-            'in a pocket.',
-        children: [
-          for (final (index, item) in readiness.indexed) ...[
-            if (index > 0) const _Divider(),
-            _ReadinessRow(item: item),
-          ],
-        ],
-      );
+    title: 'Travel Mode readiness',
+    subtitle:
+        'What the app needs to wake you while your phone is locked '
+        'in a pocket.',
+    children: [
+      for (final (index, item) in readiness.indexed) ...[
+        if (index > 0) const _Divider(),
+        _ReadinessRow(item: item),
+      ],
+    ],
+  );
 
   Widget _pulseCard() => _Card(
-        title: 'Pocket Pulse',
-        // "with you", not "in your pocket". Many riders carry the phone in a
-        // bag, and the pulse never proved possession anyway: it proves the
-        // audio link is alive to wherever the phone is. The old copy quietly
-        // excluded the bag carriers it actually serves.
-        subtitle: 'A quiet sound through your earphones, so you know your phone '
-            'is still with you without checking.',
-        children: [
-          _Segmented(
-            labels: [
-              for (final m in _intervals) m == 0 ? 'Off' : '$m min',
-            ],
-            selected: _intervals.indexOf(settings.pulseIntervalMinutes),
-            onChanged: (i) => onPulseInterval(_intervals[i]),
-          ),
-          const SizedBox(height: 4),
-          _SwitchRow(
-            label: 'Crowd mode',
-            detail: 'Every 45 seconds. For a packed train.',
-            value: settings.crowdMode,
-            onChanged: onCrowdMode,
-            switchKey: const Key('settings_crowd_mode'),
-          ),
-          const _Divider(),
-          // MOVED INSIDE THIS CARD from a card of its own. It is scoped to the
-          // pulse, and position makes that scope self-evident where a caption
-          // alone had to be read and believed.
-          _SwitchRow(
-            label: 'Vibrate with the pulse',
-            detail: 'The wake alarm always vibrates.',
-            value: settings.vibrateWithPulse,
-            onChanged: onVibrateWithPulse,
-            switchKey: const Key('settings_vibrate'),
-          ),
-          if (onPreviewPulse != null) ...[
-            const _Divider(),
-            Pressable(
-              key: const Key('settings_preview_pulse'),
-              onTap: onPreviewPulse!,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Hear it now',
-                        style: TextStyle(
-                          fontSize: TypeScale.body,
-                          color: Palette.text,
-                        ),
-                      ),
+    title: 'Pocket Pulse',
+    // "with you", not "in your pocket". Many riders carry the phone in a
+    // bag, and the pulse never proved possession anyway: it proves the
+    // audio link is alive to wherever the phone is. The old copy quietly
+    // excluded the bag carriers it actually serves.
+    subtitle:
+        'A quiet sound through your earphones, so you know your phone '
+        'is still with you without checking.',
+    children: [
+      _Segmented(
+        labels: [for (final m in _intervals) m == 0 ? 'Off' : '$m min'],
+        selected: _intervals.indexOf(settings.pulseIntervalMinutes),
+        onChanged: (i) => onPulseInterval(_intervals[i]),
+      ),
+      const SizedBox(height: 4),
+      _SwitchRow(
+        label: 'Crowd mode',
+        detail: 'Every 45 seconds. For a packed train.',
+        value: settings.crowdMode,
+        onChanged: onCrowdMode,
+        switchKey: const Key('settings_crowd_mode'),
+      ),
+      const _Divider(),
+      // MOVED INSIDE THIS CARD from a card of its own. It is scoped to the
+      // pulse, and position makes that scope self-evident where a caption
+      // alone had to be read and believed.
+      _SwitchRow(
+        label: 'Vibrate with the pulse',
+        detail: 'The wake alarm always vibrates.',
+        value: settings.vibrateWithPulse,
+        onChanged: onVibrateWithPulse,
+        switchKey: const Key('settings_vibrate'),
+      ),
+      if (onPreviewPulse != null) ...[
+        const _Divider(),
+        Pressable(
+          key: const Key('settings_preview_pulse'),
+          onTap: onPreviewPulse!,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Hear it now',
+                    style: TextStyle(
+                      fontSize: TypeScale.body,
+                      color: Palette.text,
                     ),
-                    Icon(
-                      Icons.chevron_right,
-                      size: 18,
-                      color: Palette.textDim(0.45),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
+                Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: Palette.textDim(0.45),
+                ),
+              ],
             ),
-          ],
-        ],
-      );
+          ),
+        ),
+      ],
+    ],
+  );
 
   Widget _announcementsCard() => _Card(
-        title: 'Announcements',
-        children: [
-          _SwitchRow(
-            label: 'Name every station',
-            detail: 'Off announces only your stop, and still wakes you.',
-            value: settings.announceEveryStation,
-            onChanged: onAnnounceEveryStation,
-            switchKey: const Key('settings_announce_every'),
-          ),
-          const _Divider(),
-          _LanguagePicker(
-            available: availableLanguages,
-            selected: settings.language,
-            onChanged: onLanguage,
-          ),
-        ],
-      );
+    title: 'Announcements',
+    children: [
+      _SwitchRow(
+        label: 'Name every station',
+        detail: 'Off announces only your stop, and still wakes you.',
+        value: settings.announceEveryStation,
+        onChanged: onAnnounceEveryStation,
+        switchKey: const Key('settings_announce_every'),
+      ),
+      const _Divider(),
+      _LanguagePicker(
+        available: availableLanguages,
+        selected: settings.language,
+        onChanged: onLanguage,
+      ),
+    ],
+  );
 
   Widget _privacyCard() => _Card(
-        title: 'Privacy',
-        children: [
-          _SwitchRow(
-            label: 'Share anonymous usage',
-            detail: 'Never your location, and never where you travel.',
-            value: settings.shareAnonymousUsage,
-            onChanged: onShareAnonymousUsage,
-            switchKey: const Key('settings_share_usage'),
-          ),
-        ],
-      );
+    title: 'Privacy',
+    children: [
+      _SwitchRow(
+        label: 'Share anonymous usage',
+        detail: 'Never your location, and never where you travel.',
+        value: settings.shareAnonymousUsage,
+        onChanged: onShareAnonymousUsage,
+        switchKey: const Key('settings_share_usage'),
+      ),
+    ],
+  );
 }
 
 class _Header extends StatelessWidget {
@@ -341,10 +341,10 @@ class _Divider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        height: 1,
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        color: Palette.hairline,
-      );
+    height: 1,
+    margin: const EdgeInsets.symmetric(vertical: 4),
+    color: Palette.hairline,
+  );
 }
 
 class _ReadinessRow extends StatelessWidget {
@@ -417,8 +417,10 @@ class _ReadinessRow extends StatelessWidget {
                   borderRadius: BorderRadius.circular(11),
                   border: Border.all(color: Palette.textDim(0.25)),
                 ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 15,
+                  vertical: 7,
+                ),
                 child: const Text(
                   'Fix',
                   style: TextStyle(
@@ -541,8 +543,9 @@ class _Segmented extends StatelessWidget {
                       overflow: TextOverflow.clip,
                       style: TextStyle(
                         fontSize: TypeScale.label,
-                        fontWeight:
-                            i == selected ? FontWeight.w700 : FontWeight.w400,
+                        fontWeight: i == selected
+                            ? FontWeight.w700
+                            : FontWeight.w400,
                         color: i == selected
                             ? Palette.dotGreen
                             : Palette.textDim(0.75),
@@ -577,8 +580,9 @@ class _LanguagePicker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final offered =
-        AppLanguage.values.where(available.contains).toList(growable: false);
+    final offered = AppLanguage.values
+        .where(available.contains)
+        .toList(growable: false);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),

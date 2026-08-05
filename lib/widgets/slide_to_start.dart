@@ -88,10 +88,7 @@ class _SlideToStartState extends State<SlideToStart>
   void _snapBack() {
     _settle
       ..value = _progress
-      ..animateTo(
-        0,
-        curve: const Cubic(0.23, 1, 0.32, 1),
-      );
+      ..animateTo(0, curve: const Cubic(0.23, 1, 0.32, 1));
   }
 
   void _complete() {
@@ -123,15 +120,18 @@ class _SlideToStartState extends State<SlideToStart>
               ? (details) {
                   if (travel <= 0) return;
                   setState(() {
-                    _progress =
-                        (_progress + details.delta.dx / travel).clamp(0.0, 1.0);
+                    _progress = (_progress + details.delta.dx / travel).clamp(
+                      0.0,
+                      1.0,
+                    );
                   });
                 }
               : null,
           onHorizontalDragEnd: widget.enabled
               ? (details) {
                   setState(() => _dragging = false);
-                  final flicked = details.velocity.pixelsPerSecond.dx / 1000 >
+                  final flicked =
+                      details.velocity.pixelsPerSecond.dx / 1000 >
                           _flickVelocity &&
                       _progress > _flickThreshold;
                   if (_progress >= _commitThreshold || flicked) {
@@ -217,11 +217,7 @@ class _Thumb extends StatelessWidget {
           color: Palette.text,
           borderRadius: BorderRadius.circular(14),
         ),
-        child: const Icon(
-          Icons.chevron_right,
-          color: Palette.ground,
-          size: 28,
-        ),
+        child: const Icon(Icons.chevron_right, color: Palette.ground, size: 28),
       ),
     );
   }

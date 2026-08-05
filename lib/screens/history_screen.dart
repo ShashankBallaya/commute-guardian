@@ -37,8 +37,10 @@ class HistoryScreen extends ConsumerWidget {
                   IconButton(
                     key: const Key('history_back'),
                     padding: EdgeInsets.zero,
-                    constraints:
-                        const BoxConstraints(minWidth: 44, minHeight: 44),
+                    constraints: const BoxConstraints(
+                      minWidth: 44,
+                      minHeight: 44,
+                    ),
                     icon: Icon(
                       Icons.chevron_left,
                       color: Palette.textDim(0.7),
@@ -97,7 +99,10 @@ class _Empty extends StatelessWidget {
       padding: const EdgeInsets.only(top: 24),
       child: Text(
         message,
-        style: TextStyle(fontSize: TypeScale.label, color: Palette.textDim(0.55)),
+        style: TextStyle(
+          fontSize: TypeScale.label,
+          color: Palette.textDim(0.55),
+        ),
       ),
     );
   }
@@ -145,7 +150,10 @@ class _RideRow extends StatelessWidget {
               // be read down rather than across.
               Text(
                 durationLabel(ride.startedAt, ride.endedAt),
-                style: TextStyle(fontSize: TypeScale.label, color: Palette.textDim(0.55)),
+                style: TextStyle(
+                  fontSize: TypeScale.label,
+                  color: Palette.textDim(0.55),
+                ),
               ),
             ],
           ),
@@ -173,7 +181,10 @@ class _RideRow extends StatelessWidget {
                 ),
               ],
             ),
-            style: TextStyle(fontSize: TypeScale.caption, color: Palette.textDim(0.45)),
+            style: TextStyle(
+              fontSize: TypeScale.caption,
+              color: Palette.textDim(0.45),
+            ),
           ),
         ],
       ),
@@ -207,14 +218,26 @@ String durationLabel(DateTime startedAt, DateTime endedAt) {
 String metaLine(JourneyRecord ride) {
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
   ];
   final t = ride.endedAt;
   final day = days[t.weekday - 1];
   final hh = t.hour.toString().padLeft(2, '0');
   final mm = t.minute.toString().padLeft(2, '0');
-  final stations = ride.stationCount == 1 ? '1 station' : '${ride.stationCount} stations';
+  final stations = ride.stationCount == 1
+      ? '1 station'
+      : '${ride.stationCount} stations';
   return '$day ${t.day} ${months[t.month - 1]} • $hh:$mm • $stations';
 }
 

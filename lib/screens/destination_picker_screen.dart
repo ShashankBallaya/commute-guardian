@@ -120,12 +120,19 @@ class _Header extends StatelessWidget {
           onPressed: onBack,
         ),
         const SizedBox(width: 4),
-        const Text(
-          'New journey',
-          style: TextStyle(
-            fontSize: TypeScale.heading,
-            fontWeight: FontWeight.w600,
-            color: Palette.text,
+        // Expanded, because a 44 pt back target plus a screen name is already
+        // most of a 320 dp row once the font size is raised (24 px past it,
+        // measured 5 Aug 2026).
+        const Expanded(
+          child: Text(
+            'New journey',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: TypeScale.heading,
+              fontWeight: FontWeight.w600,
+              color: Palette.text,
+            ),
           ),
         ),
       ],
@@ -159,12 +166,18 @@ class _SearchField extends StatelessWidget {
               onChanged: onChanged,
               autofocus: true,
               cursorColor: Palette.dotGreen,
-              style: const TextStyle(fontSize: TypeScale.bodyLarge, color: Palette.text),
+              style: const TextStyle(
+                fontSize: TypeScale.bodyLarge,
+                color: Palette.text,
+              ),
               decoration: InputDecoration(
                 // The screen only ever sets the destination, so the hint says
                 // so. "Search station" never told the rider which end.
                 hintText: 'Where to?',
-                hintStyle: TextStyle(fontSize: TypeScale.bodyLarge, color: Palette.textDim(0.5)),
+                hintStyle: TextStyle(
+                  fontSize: TypeScale.bodyLarge,
+                  color: Palette.textDim(0.5),
+                ),
                 filled: false,
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
@@ -189,7 +202,8 @@ class _Resting extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final recents = ref.watch(recentDestinationsProvider).valueOrNull ?? const [];
+    final recents =
+        ref.watch(recentDestinationsProvider).valueOrNull ?? const [];
     final originId = ref.watch(journeyDraftProvider).originId;
     final lines = _linesThrough(originId);
 
@@ -239,7 +253,9 @@ class _Resting extends ConsumerWidget {
     final byName = <String, List<String>>{};
     for (final line in repo.linesById.values) {
       if (!line.stationIds.contains(stationId)) continue;
-      byName.putIfAbsent(line.shortName, () => <String>[]).addAll(line.stationIds);
+      byName
+          .putIfAbsent(line.shortName, () => <String>[])
+          .addAll(line.stationIds);
     }
     return byName;
   }
@@ -271,7 +287,10 @@ class _Results extends StatelessWidget {
         padding: const EdgeInsets.only(top: 8),
         child: Text(
           'No station by that name.',
-          style: TextStyle(fontSize: TypeScale.body, color: Palette.textDim(0.5)),
+          style: TextStyle(
+            fontSize: TypeScale.body,
+            color: Palette.textDim(0.5),
+          ),
         ),
       );
     }
@@ -341,7 +360,10 @@ class _StationRow extends StatelessWidget {
             Expanded(
               child: Text(
                 station.name,
-                style: const TextStyle(fontSize: TypeScale.bodyLarge, color: Palette.text),
+                style: const TextStyle(
+                  fontSize: TypeScale.bodyLarge,
+                  color: Palette.text,
+                ),
               ),
             ),
             // The code is on the platform boards, and it is what separates

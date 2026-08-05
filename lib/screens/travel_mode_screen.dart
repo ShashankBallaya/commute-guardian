@@ -64,7 +64,8 @@ class TravelModeScreen extends StatelessWidget {
   List<Station> get _chain => journey.chain;
 
   /// Stations still ahead, destination included.
-  int get _stationsRemaining => (_chain.length - 1 - reachedIndex).clamp(0, 999);
+  int get _stationsRemaining =>
+      (_chain.length - 1 - reachedIndex).clamp(0, 999);
 
   String get _destinationName => _chain.isEmpty ? '' : _chain.last.name;
 
@@ -102,10 +103,7 @@ class TravelModeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              _WakeCard(
-                choice: wakeChoice,
-                onChanged: onWakeChoiceChanged,
-              ),
+              _WakeCard(choice: wakeChoice, onChanged: onWakeChoiceChanged),
               const SizedBox(height: 16),
               _EndJourneyButton(onConfirmed: onEndJourney),
             ],
@@ -217,13 +215,20 @@ class _Header extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   etaLine!,
-                  style: TextStyle(fontSize: TypeScale.body, color: Palette.textDim(0.6)),
+                  style: TextStyle(
+                    fontSize: TypeScale.body,
+                    color: Palette.textDim(0.6),
+                  ),
                 ),
               ],
             ],
           ),
         ),
-        const _ShieldBadge(),
+        // Flexible, so the badge gives way before the headline does. It is the
+        // reassurance, not the news, and its two-line label grows with the
+        // font size until it squeezes the station count into the gutter
+        // (4.6 px past the row on a 320 dp phone, measured 5 Aug 2026).
+        const Flexible(child: _ShieldBadge()),
       ],
     );
   }
@@ -242,12 +247,14 @@ class _ShieldBadge extends StatelessWidget {
         children: [
           const Icon(Icons.shield, color: Palette.text, size: 22),
           const SizedBox(width: 7),
-          Text(
-            'Wake-up\nmode active',
-            style: TextStyle(
-              fontSize: TypeScale.caption,
-              height: 1.25,
-              color: Palette.textDim(0.85),
+          Flexible(
+            child: Text(
+              'Wake-up\nmode active',
+              style: TextStyle(
+                fontSize: TypeScale.caption,
+                height: 1.25,
+                color: Palette.textDim(0.85),
+              ),
             ),
           ),
         ],
@@ -301,9 +308,7 @@ class _ChainCard extends StatelessWidget {
       rows.add(
         _ChainRow(
           kind: isDestination ? _RowKind.destination : _RowKind.ahead,
-          label: isDestination
-              ? '${chain[i].name} (your stop)'
-              : chain[i].name,
+          label: isDestination ? '${chain[i].name} (your stop)' : chain[i].name,
         ),
       );
     }
@@ -363,8 +368,9 @@ class _ChainRow extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: TypeScale.body,
-                fontWeight:
-                    kind == _RowKind.here ? FontWeight.w700 : FontWeight.w400,
+                fontWeight: kind == _RowKind.here
+                    ? FontWeight.w700
+                    : FontWeight.w400,
                 color: dimmed ? Palette.textDim(0.5) : Palette.text,
               ),
             ),
@@ -375,50 +381,50 @@ class _ChainRow extends StatelessWidget {
   }
 
   Widget _marker() => switch (kind) {
-        _RowKind.passed => Container(
-            width: 22,
-            height: 22,
-            decoration: const BoxDecoration(
-              color: Palette.dotGreen,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.check, size: 14, color: Palette.text),
+    _RowKind.passed => Container(
+      width: 22,
+      height: 22,
+      decoration: const BoxDecoration(
+        color: Palette.dotGreen,
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(Icons.check, size: 14, color: Palette.text),
+    ),
+    // The glow is the same "live, tracking now" signal the status chip
+    // carries, at the same locked 40%.
+    _RowKind.here => Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: Palette.dotGreen,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Palette.dotGreen.withValues(alpha: 0.4),
+            blurRadius: 10,
+            spreadRadius: 3,
           ),
-        // The glow is the same "live, tracking now" signal the status chip
-        // carries, at the same locked 40%.
-        _RowKind.here => Container(
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              color: Palette.dotGreen,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Palette.dotGreen.withValues(alpha: 0.4),
-                  blurRadius: 10,
-                  spreadRadius: 3,
-                ),
-              ],
-            ),
-          ),
-        _RowKind.ahead => Container(
-            width: 20,
-            height: 20,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Palette.textDim(0.35), width: 1.5),
-            ),
-          ),
-        _RowKind.destination => Container(
-            width: 22,
-            height: 22,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Palette.text, width: 1.5),
-            ),
-            child: const Icon(Icons.flag, size: 12, color: Palette.text),
-          ),
-      };
+        ],
+      ),
+    ),
+    _RowKind.ahead => Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Palette.textDim(0.35), width: 1.5),
+      ),
+    ),
+    _RowKind.destination => Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: Palette.text, width: 1.5),
+      ),
+      child: const Icon(Icons.flag, size: 12, color: Palette.text),
+    ),
+  };
 }
 
 class _WakeCard extends StatelessWidget {
@@ -460,7 +466,10 @@ class _WakeCard extends StatelessWidget {
                   'before my stop',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: TypeScale.label, color: Palette.textDim(0.7)),
+                  style: TextStyle(
+                    fontSize: TypeScale.label,
+                    color: Palette.textDim(0.7),
+                  ),
                 ),
               ],
             ),
@@ -535,7 +544,9 @@ class _WakeToggle extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         curve: const Cubic(0.23, 1, 0.32, 1),
         decoration: BoxDecoration(
-          color: selected ? Palette.greenSoft : Palette.greenSoft.withValues(alpha: 0),
+          color: selected
+              ? Palette.greenSoft
+              : Palette.greenSoft.withValues(alpha: 0),
           borderRadius: BorderRadius.circular(11),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),

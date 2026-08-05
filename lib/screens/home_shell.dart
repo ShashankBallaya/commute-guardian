@@ -28,8 +28,7 @@ class HomeShell extends ConsumerStatefulWidget {
   ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends ConsumerState<HomeShell>
-    with RideOrchestration {
+class _HomeShellState extends ConsumerState<HomeShell> with RideOrchestration {
   @override
   VoidCallback? get debugDoor => widget.onOpenDebug;
 

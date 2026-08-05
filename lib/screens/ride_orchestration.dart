@@ -428,7 +428,9 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     }
 
     try {
-      await ref.read(appDatabaseProvider).record(
+      await ref
+          .read(appDatabaseProvider)
+          .record(
             originId: originId,
             destinationId: destinationId,
             originName: stationName(originId),
@@ -484,9 +486,9 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         ? repo?.stationsById[persisted.destinationId]
         : null;
 
-    ref.read(journeyDraftProvider.notifier).resetAfterRide(
-          originId: destination?.id,
-        );
+    ref
+        .read(journeyDraftProvider.notifier)
+        .resetAfterRide(originId: destination?.id);
 
     // Chip (and origin, when the ride ended somewhere unproven) from a real
     // fix. The service's last streamed fix is seconds old and free, so prefer
@@ -504,7 +506,10 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   }
 
   String stationName(String stationId) =>
-      ref.read(stationRepositoryProvider).valueOrNull?.stationsById[stationId]
+      ref
+          .read(stationRepositoryProvider)
+          .valueOrNull
+          ?.stationsById[stationId]
           ?.name ??
       stationId;
 
@@ -531,10 +536,8 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final destination = stationName(destinationId);
     final proceed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) => PreparingFlow(
-          destinationName: destination,
-          report: report,
-        ),
+        builder: (_) =>
+            PreparingFlow(destinationName: destination, report: report),
       ),
     );
     if (!mounted || proceed != true) return;
@@ -696,9 +699,9 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
   /// Screen 7. Replaces the debug bottom sheet the debug screen used to carry.
   Future<void> showHistory() async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(builder: (_) => const HistoryScreen()),
-    );
+    await Navigator.of(
+      context,
+    ).push<void>(MaterialPageRoute(builder: (_) => const HistoryScreen()));
   }
 
   /// Hands the current pulse settings to the service, if a ride is running.
@@ -729,10 +732,10 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
           builder: (context, ref, _) {
             final settings =
                 ref.watch(appSettingsProvider).valueOrNull ??
-                    const AppSettings();
+                const AppSettings();
             final languages =
                 ref.watch(availableLanguagesProvider).valueOrNull ??
-                    {AppLanguage.english};
+                {AppLanguage.english};
             final notifier = ref.read(appSettingsProvider.notifier);
 
             return SettingsScreen(
@@ -744,10 +747,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
                   label: 'Location, always',
                   state: ReadinessState.ok,
                 ),
-                ReadinessItem(
-                  label: 'Notifications',
-                  state: ReadinessState.ok,
-                ),
+                ReadinessItem(label: 'Notifications', state: ReadinessState.ok),
                 ReadinessItem(
                   label: 'Battery use',
                   state: ReadinessState.needsAttention,

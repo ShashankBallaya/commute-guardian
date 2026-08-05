@@ -8,6 +8,7 @@ import '../state/journey_providers.dart';
 import '../state/ride_providers.dart';
 import '../theme/palette.dart';
 import '../theme/type_scale.dart';
+import '../widgets/fill_or_scroll.dart';
 import '../widgets/mini_rail.dart';
 import '../widgets/pressable.dart';
 import '../widgets/status_chip.dart';
@@ -109,69 +110,74 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
           // Bottom-anchored: dead space goes at the top, actions in the thumb
           // zone. A locked layout rule, and it is why the spacer is here and
-          // not between the cards.
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // The chip and the two secondary destinations share one row.
-              // Putting them on separate rows would spend two bands of vertical
-              // space on things a rider touches rarely, and the whole layout is
-              // built to keep the route cards in the thumb zone.
-              Row(
-                children: [
-                  // Expanded with an Align, NOT Flexible next to a Spacer. A
-                  // Spacer takes a flex share, so it competed with the chip for
-                  // the row and squeezed it until its own internal Row
-                  // overflowed by 239 px. This gives the chip all the room that
-                  // is left and lets it sit at its natural width on the left.
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: StatusChip(
-                        state: nearest.state,
-                        stationName: nearest.stationName,
-                        onTap: () => unawaited(
-                          ref.read(nearestStationProvider.notifier).locate(),
+          // not between the cards. FillOrScroll keeps that layout exactly as it
+          // is whenever there is room, and gives it somewhere to go when there
+          // is not: with several saved routes and a raised font size the cards
+          // ran 95 px past the bottom.
+          child: FillOrScroll(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // The chip and the two secondary destinations share one row.
+                // Putting them on separate rows would spend two bands of vertical
+                // space on things a rider touches rarely, and the whole layout is
+                // built to keep the route cards in the thumb zone.
+                Row(
+                  children: [
+                    // Expanded with an Align, NOT Flexible next to a Spacer. A
+                    // Spacer takes a flex share, so it competed with the chip for
+                    // the row and squeezed it until its own internal Row
+                    // overflowed by 239 px. This gives the chip all the room that
+                    // is left and lets it sit at its natural width on the left.
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: StatusChip(
+                          state: nearest.state,
+                          stationName: nearest.stationName,
+                          onTap: () => unawaited(
+                            ref.read(nearestStationProvider.notifier).locate(),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  if (widget.onHistory != null)
-                    _HeaderIcon(
-                      // The design system's history glyph: the plain
-                      // clock-with-counterclockwise-arrow, never a stopwatch,
-                      // and no numeral (a "24" reads as open-24-hours).
-                      icon: Icons.history,
-                      tooltip: 'Journey history',
-                      buttonKey: const Key('home_history'),
-                      onTap: widget.onHistory!,
-                    ),
-                  if (widget.onSettings != null) ...[
-                    const SizedBox(width: 4),
-                    _HeaderIcon(
-                      icon: Icons.settings_outlined,
-                      tooltip: 'Settings',
-                      buttonKey: const Key('home_settings'),
-                      onTap: widget.onSettings!,
-                    ),
-                  ],
-                ],
-              ),
-              const Spacer(),
-              destinations.when(
-                loading: () => const SizedBox.shrink(),
-                // History is a convenience, never the product. If the database
-                // will not answer, the rider can still start a journey.
-                error: (_, _) => _NewJourneyButton(onTap: widget.onNew),
-                data: (rides) => rides.isEmpty
-                    ? _FirstRun(onStart: widget.onNew)
-                    : _Recents(
-                        rides: rides,
-                        onStartTo: widget.onStartTo,
-                        onNew: widget.onNew,
+                    if (widget.onHistory != null)
+                      _HeaderIcon(
+                        // The design system's history glyph: the plain
+                        // clock-with-counterclockwise-arrow, never a stopwatch,
+                        // and no numeral (a "24" reads as open-24-hours).
+                        icon: Icons.history,
+                        tooltip: 'Journey history',
+                        buttonKey: const Key('home_history'),
+                        onTap: widget.onHistory!,
                       ),
-              ),
-            ],
+                    if (widget.onSettings != null) ...[
+                      const SizedBox(width: 4),
+                      _HeaderIcon(
+                        icon: Icons.settings_outlined,
+                        tooltip: 'Settings',
+                        buttonKey: const Key('home_settings'),
+                        onTap: widget.onSettings!,
+                      ),
+                    ],
+                  ],
+                ),
+                const Spacer(),
+                destinations.when(
+                  loading: () => const SizedBox.shrink(),
+                  // History is a convenience, never the product. If the database
+                  // will not answer, the rider can still start a journey.
+                  error: (_, _) => _NewJourneyButton(onTap: widget.onNew),
+                  data: (rides) => rides.isEmpty
+                      ? _FirstRun(onStart: widget.onNew)
+                      : _Recents(
+                          rides: rides,
+                          onStartTo: widget.onStartTo,
+                          onNew: widget.onNew,
+                        ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -243,7 +249,11 @@ class _FirstRun extends StatelessWidget {
         Text(
           'Save a route at the end of your first journey and it will be one '
           'tap from here.',
-          style: TextStyle(fontSize: TypeScale.label, height: 1.4, color: Palette.textDim(0.55)),
+          style: TextStyle(
+            fontSize: TypeScale.label,
+            height: 1.4,
+            color: Palette.textDim(0.55),
+          ),
         ),
         const SizedBox(height: 28),
         _CrimsonCta(

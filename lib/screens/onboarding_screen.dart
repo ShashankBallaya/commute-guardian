@@ -7,8 +7,9 @@ import '../theme/palette.dart';
 import '../theme/type_scale.dart';
 import '../widgets/mini_rail.dart';
 
-final permissionsGatewayProvider =
-    Provider<PermissionsGateway>((ref) => const PermissionsGateway());
+final permissionsGatewayProvider = Provider<PermissionsGateway>(
+  (ref) => const PermissionsGateway(),
+);
 
 /// Onboarding. Six screens, and only the first is about persuasion.
 ///
@@ -80,8 +81,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                 child: LayoutBuilder(
                   builder: (context, constraints) => SingleChildScrollView(
                     child: ConstrainedBox(
-                      constraints:
-                          BoxConstraints(minHeight: constraints.maxHeight),
+                      constraints: BoxConstraints(
+                        minHeight: constraints.maxHeight,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         mainAxisAlignment: MainAxisAlignment.end,
@@ -108,29 +110,30 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Widget _welcome() => _Panel(
-          key: const Key('onboarding_welcome'),
-          heading: 'Never miss your station',
-          body: "Sleep, read, scroll. We'll wake you at your destination.",
-          action: 'Get started',
-          onAction: _next,
-        );
+    key: const Key('onboarding_welcome'),
+    heading: 'Never miss your station',
+    body: "Sleep, read, scroll. We'll wake you at your destination.",
+    action: 'Get started',
+    onAction: _next,
+  );
 
   /// Play requires this BEFORE the runtime prompt: what is accessed, why, that
   /// it happens in the background, and an affirmative action. A screen that
   /// only says "we need location" is a rejection.
   Widget _disclosure() => _Panel(
-          key: const Key('onboarding_disclosure'),
-          heading: 'We watch the line so you do not have to',
-          body: 'Commute Guardian uses your location in the background, with '
-              'the screen off and the app closed, to announce each station and '
-              'wake you before your stop.\n\n'
-              'Your location never leaves your phone. There is no account and '
-              'no server.',
-          action: 'Continue',
-          onAction: () => _ask(_permissions.requestWhileInUse),
-          quiet: 'Not now',
-          onQuiet: _next,
-        );
+    key: const Key('onboarding_disclosure'),
+    heading: 'We watch the line so you do not have to',
+    body:
+        'Commute Guardian uses your location in the background, with '
+        'the screen off and the app closed, to announce each station and '
+        'wake you before your stop.\n\n'
+        'Your location never leaves your phone. There is no account and '
+        'no server.',
+    action: 'Continue',
+    onAction: () => _ask(_permissions.requestWhileInUse),
+    quiet: 'Not now',
+    onQuiet: _next,
+  );
 
   /// The drop-out point, and the reason onboarding cannot be one screen. On
   /// Android 11+ "Allow all the time" is not offered in the same dialog: the
@@ -138,30 +141,32 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   /// Settings. Most never finish it, and the app silently becomes useless on a
   /// locked phone.
   Widget _background() => _Panel(
-          key: const Key('onboarding_background'),
-          heading: 'One more tap, and you can pocket the phone',
-          body: 'Android asks for this separately. Without it we stop watching '
-              'the moment your screen goes off, which is exactly when you need '
-              'us.',
-          action: 'Open settings',
-          onAction: () => _ask(_permissions.openSettings),
-          // The label they are hunting for is Android's, not ours.
-          caption: 'Choose "Allow all the time"',
-          quiet: 'Not now',
-          onQuiet: _next,
-        );
+    key: const Key('onboarding_background'),
+    heading: 'One more tap, and you can pocket the phone',
+    body:
+        'Android asks for this separately. Without it we stop watching '
+        'the moment your screen goes off, which is exactly when you need '
+        'us.',
+    action: 'Open settings',
+    onAction: () => _ask(_permissions.openSettings),
+    // The label they are hunting for is Android's, not ours.
+    caption: 'Choose "Allow all the time"',
+    quiet: 'Not now',
+    onQuiet: _next,
+  );
 
   Widget _notifications() => _Panel(
-          key: const Key('onboarding_notifications'),
-          heading: 'The controls live in your notifications',
-          body: 'While a journey runs we keep one notification up. It is how '
-              'you end a ride or keep tracking a little longer without '
-              'unlocking the phone.',
-          action: 'Allow notifications',
-          onAction: () => _ask(_permissions.requestNotifications),
-          quiet: 'Not now',
-          onQuiet: _next,
-        );
+    key: const Key('onboarding_notifications'),
+    heading: 'The controls live in your notifications',
+    body:
+        'While a journey runs we keep one notification up. It is how '
+        'you end a ride or keep tracking a little longer without '
+        'unlocking the phone.',
+    action: 'Allow notifications',
+    onAction: () => _ask(_permissions.requestNotifications),
+    quiet: 'Not now',
+    onQuiet: _next,
+  );
 
   /// Android only. The 3T's own logs record the permission picture at every
   /// ride start precisely because this one decides whether the ride survives a
@@ -175,7 +180,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     return _Panel(
       key: const Key('onboarding_battery'),
       heading: 'Let us keep running while you doze',
-      body: 'Some phones put background apps to sleep to save power. We need '
+      body:
+          'Some phones put background apps to sleep to save power. We need '
           'an exception, or we may be stopped before your stop.',
       action: 'Allow',
       onAction: () => _ask(
@@ -187,13 +193,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   }
 
   Widget _ready() => _Panel(
-          key: const Key('onboarding_ready'),
-          heading: 'You are set',
-          body: 'Pick where you are going and put the phone away. We will take '
-              'it from here.',
-          action: 'Start',
-          onAction: _next,
-        );
+    key: const Key('onboarding_ready'),
+    heading: 'You are set',
+    body:
+        'Pick where you are going and put the phone away. We will take '
+        'it from here.',
+    action: 'Start',
+    onAction: _next,
+  );
 }
 
 /// The one shape every onboarding screen wears: dead space at the top, the
@@ -290,7 +297,10 @@ class _Panel extends StatelessWidget {
             Center(
               child: Text(
                 caption!,
-                style: TextStyle(fontSize: TypeScale.caption, color: Palette.textDim(0.5)),
+                style: TextStyle(
+                  fontSize: TypeScale.caption,
+                  color: Palette.textDim(0.5),
+                ),
               ),
             ),
           ],
@@ -301,7 +311,10 @@ class _Panel extends StatelessWidget {
               onPressed: onQuiet,
               child: Text(
                 quiet!,
-                style: TextStyle(fontSize: TypeScale.body, color: Palette.textDim(0.55)),
+                style: TextStyle(
+                  fontSize: TypeScale.body,
+                  color: Palette.textDim(0.55),
+                ),
               ),
             ),
           ],

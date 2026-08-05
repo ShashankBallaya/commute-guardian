@@ -118,68 +118,62 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow> {
 
     return switch (_stage) {
       _Stage.locating => PreparingScreen(
-          originName: _originName,
-          destinationName: destination,
-          steps: const [
-            PrepStep(
-              label: 'Finding you',
-              detail: 'This can take a few seconds indoors',
+        originName: _originName,
+        destinationName: destination,
+        steps: const [
+          PrepStep(
+            label: 'Finding you',
+            detail: 'This can take a few seconds indoors',
+            status: PrepStatus.active,
+          ),
+          PrepStep(label: 'Watching for your stop', status: PrepStatus.pending),
+          PrepStep(
+            label: 'Direction',
+            detail: 'Confirmed once the train moves',
+            status: PrepStatus.pending,
+          ),
+        ],
+        onCancel: () => Navigator.of(context).pop(false),
+      ),
+      _Stage.notLocated => CannotLocateScreen(
+        originName: _originName,
+        destinationName: destination,
+        onRetry: () {
+          setState(() => _stage = _Stage.locating);
+          unawaited(_locate());
+        },
+        // NOTE: there is no manual origin picker yet, so this returns the
+        // rider to where they came from rather than opening one. It is the
+        // one control on Screen 3 that does not yet do what it says.
+        onSetStation: () => Navigator.of(context).pop(false),
+      ),
+      _Stage.backgroundLocation => BackgroundLocationScreen(
+        originName: _originName,
+        destinationName: destination,
+        onOpenSettings: () async {
+          await widget.permissions.openSettings();
+          if (context.mounted) Navigator.of(context).pop(false);
+        },
+        onStartAnyway: () {
+          setState(() => _stage = _Stage.preflight);
+          _settleIfClear();
+        },
+      ),
+      _Stage.preflight => PreflightScreen(
+        originName: _originName,
+        destinationName: destination,
+        steps: [
+          if (!_earphonesConnected)
+            const PrepStep(
+              label: "Your earphones aren't connected",
+              detail: 'The alarm will play out loud',
               status: PrepStatus.active,
             ),
-            PrepStep(
-              label: 'Watching for your stop',
-              status: PrepStatus.pending,
-            ),
-            PrepStep(
-              label: 'Direction',
-              detail: 'Confirmed once the train moves',
-              status: PrepStatus.pending,
-            ),
-          ],
-          onCancel: () => Navigator.of(context).pop(false),
-        ),
-      _Stage.notLocated => CannotLocateScreen(
-          originName: _originName,
-          destinationName: destination,
-          onRetry: () {
-            setState(() => _stage = _Stage.locating);
-            unawaited(_locate());
-          },
-          // NOTE: there is no manual origin picker yet, so this returns the
-          // rider to where they came from rather than opening one. It is the
-          // one control on Screen 3 that does not yet do what it says.
-          onSetStation: () => Navigator.of(context).pop(false),
-        ),
-      _Stage.backgroundLocation => BackgroundLocationScreen(
-          originName: _originName,
-          destinationName: destination,
-          onOpenSettings: () async {
-            await widget.permissions.openSettings();
-            if (context.mounted) Navigator.of(context).pop(false);
-          },
-          onStartAnyway: () {
-            setState(() => _stage = _Stage.preflight);
-            _settleIfClear();
-          },
-        ),
-      _Stage.preflight => PreflightScreen(
-          originName: _originName,
-          destinationName: destination,
-          steps: [
-            if (!_earphonesConnected)
-              const PrepStep(
-                label: "Your earphones aren't connected",
-                detail: 'The alarm will play out loud',
-                status: PrepStatus.active,
-              ),
-            PrepStep(
-              label: 'Watching for $destination',
-              status: PrepStatus.done,
-            ),
-          ],
-          onStart: () => Navigator.of(context).pop(true),
-          onRecheck: () => unawaited(_recheckEarphones()),
-        ),
+          PrepStep(label: 'Watching for $destination', status: PrepStatus.done),
+        ],
+        onStart: () => Navigator.of(context).pop(true),
+        onRecheck: () => unawaited(_recheckEarphones()),
+      ),
     };
   }
 }
@@ -200,8 +194,7 @@ class PreparingReport {
 
   /// Nothing to show. The ride starts and Screen 3 never appears, which is the
   /// normal case.
-  bool get clear =>
-      hasFix && backgroundLocationGranted && earphonesConnected;
+  bool get clear => hasFix && backgroundLocationGranted && earphonesConnected;
 }
 
 /// Runs the probes that decide whether Screen 3 is needed at all.

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/palette.dart';
 import '../theme/type_scale.dart';
+import '../widgets/fill_or_scroll.dart';
 import '../widgets/pressable.dart';
 
 /// Screen 5, Arrival. The last thing a ride shows.
@@ -151,51 +152,68 @@ class _ArrivalScreenState extends State<ArrivalScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // flex 1, not 2. With the save card present the counting state
-              // has six stacked blocks and the top spacer was eating room the
-              // content needed, pushing the summary line into the card.
-              const Spacer(),
-              const _ArrivedGlyph(),
-              const SizedBox(height: 18),
-              Text(
-                "You've arrived at ${widget.destinationName}",
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: TypeScale.display,
-                  height: 1.25,
-                  fontWeight: FontWeight.w700,
-                  color: Palette.text,
-                ),
-              ),
-              const SizedBox(height: 22),
-              if (remaining != null)
-                _CountdownRing(remaining: remaining, window: widget.window)
-              else
-                // No ring, because there is no time to show. The line states
-                // the contract instead, which is the same move the wake alert
-                // makes when it refuses to invent a rung total.
-                Text(
-                  'Travel Mode stays on until you leave the station.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: TypeScale.body,
-                    height: 1.35,
-                    color: Palette.textDim(0.6),
+              // The summary block scrolls; the save card and the buttons do
+              // not. Six stacked blocks (glyph, headline, ring, summary, save
+              // card, two buttons) is the fullest state this app has, and with
+              // a long station name it ran 160 px past the bottom of a 320 dp
+              // phone. End now is what must survive that, so it is pinned.
+              Expanded(
+                child: FillOrScroll(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // flex 1, not 2. With the save card present the counting state
+                      // has six stacked blocks and the top spacer was eating room the
+                      // content needed, pushing the summary line into the card.
+                      const Spacer(),
+                      const _ArrivedGlyph(),
+                      const SizedBox(height: 18),
+                      Text(
+                        "You've arrived at ${widget.destinationName}",
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: TypeScale.display,
+                          height: 1.25,
+                          fontWeight: FontWeight.w700,
+                          color: Palette.text,
+                        ),
+                      ),
+                      const SizedBox(height: 22),
+                      if (remaining != null)
+                        _CountdownRing(
+                          remaining: remaining,
+                          window: widget.window,
+                        )
+                      else
+                        // No ring, because there is no time to show. The line states
+                        // the contract instead, which is the same move the wake alert
+                        // makes when it refuses to invent a rung total.
+                        Text(
+                          'Travel Mode stays on until you leave the station.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: TypeScale.body,
+                            height: 1.35,
+                            color: Palette.textDim(0.6),
+                          ),
+                        ),
+                      const SizedBox(height: 22),
+                      Text(
+                        widget.summaryLine,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: TypeScale.caption,
+                          color: Palette.textDim(0.5),
+                        ),
+                      ),
+                      // Minimum breathing room BEFORE the flexible gap, so the summary
+                      // never ends up touching the save card when the spacer collapses.
+                      const SizedBox(height: 24),
+                      const Spacer(flex: 2),
+                    ],
                   ),
                 ),
-              const SizedBox(height: 22),
-              Text(
-                widget.summaryLine,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: TypeScale.caption,
-                  color: Palette.textDim(0.5),
-                ),
               ),
-              // Minimum breathing room BEFORE the flexible gap, so the summary
-              // never ends up touching the save card when the spacer collapses.
-              const SizedBox(height: 24),
-              const Spacer(flex: 2),
               if (showSave) ...[
                 _SaveRouteCard(
                   onSave: widget.onSaveRoute!,
@@ -206,10 +224,7 @@ class _ArrivalScreenState extends State<ArrivalScreen> {
                 ),
                 const SizedBox(height: 16),
               ],
-              _Actions(
-                onEndNow: widget.onEndNow,
-                onExtend: widget.onExtend,
-              ),
+              _Actions(onEndNow: widget.onEndNow, onExtend: widget.onExtend),
             ],
           ),
         ),
@@ -322,27 +337,39 @@ class _CountdownRing extends StatelessWidget {
                 painter: _RingPainter(fraction: value, stroke: _stroke),
               ),
             ),
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _label,
-                  style: const TextStyle(
-                    fontSize: _digits,
-                    height: 1,
-                    fontWeight: FontWeight.w700,
-                    color: Palette.text,
-                  ),
+            // The RING is a fixed 116 dp and stays that way: its diameter was
+            // chosen against the End now button on the 3T, and a circle that
+            // grew with the font size would take that decision back. So the
+            // digits inside adapt instead. At a raised font size they ran
+            // 10 px past the circle (measured 5 Aug 2026), which clipped the
+            // "auto end" line under them.
+            Padding(
+              padding: const EdgeInsets.all(_stroke * 2),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _label,
+                      style: const TextStyle(
+                        fontSize: _digits,
+                        height: 1,
+                        fontWeight: FontWeight.w700,
+                        color: Palette.text,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'auto end',
+                      style: TextStyle(
+                        fontSize: TypeScale.caption,
+                        color: Palette.textDim(0.55),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'auto end',
-                  style: TextStyle(
-                    fontSize: TypeScale.caption,
-                    color: Palette.textDim(0.55),
-                  ),
-                ),
-              ],
+              ),
             ),
           ],
         ),
@@ -426,30 +453,37 @@ class _SaveRouteCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
+          // TWO ROWS, NOT THREE CONTROLS ON ONE. Home, Work and Not now side
+          // by side measured about 40 dp tall against the locked 48 dp floor
+          // (11 dp of padding around a 15 px line cannot reach it), and on a
+          // 320 dp phone the three of them ran 107 px past the card. Splitting
+          // them buys the height back: the two labels share the width, and Not
+          // now gets its own full-width row, which also puts the destructive
+          // choice where a thumb will not find it by accident.
           Row(
             children: [
-              _label('Home'),
+              Expanded(child: _label('Home')),
               const SizedBox(width: 10),
-              _label('Work'),
-              const SizedBox(width: 10),
-              Pressable(
-                key: const Key('save_route_not_now'),
-                onTap: onDismiss,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 11,
-                  ),
-                  child: Text(
-                    'Not now',
-                    style: TextStyle(
-                      fontSize: TypeScale.body,
-                      color: Palette.textDim(0.55),
-                    ),
+              Expanded(child: _label('Work')),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Pressable(
+            key: const Key('save_route_not_now'),
+            onTap: onDismiss,
+            child: Padding(
+              // 15, not 11: 15 + 15 around a 15 px line is 48 dp exactly.
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              child: Center(
+                child: Text(
+                  'Not now',
+                  style: TextStyle(
+                    fontSize: TypeScale.body,
+                    color: Palette.textDim(0.55),
                   ),
                 ),
               ),
-            ],
+            ),
           ),
         ],
       ),
@@ -457,24 +491,28 @@ class _SaveRouteCard extends StatelessWidget {
   }
 
   Widget _label(String name) => Pressable(
-        key: Key('save_route_${name.toLowerCase()}'),
-        onTap: () => onSave(name),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Palette.textDim(0.22)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
-          child: Text(
-            name,
-            style: const TextStyle(
-              fontSize: TypeScale.body,
-              fontWeight: FontWeight.w600,
-              color: Palette.text,
-            ),
+    key: Key('save_route_${name.toLowerCase()}'),
+    onTap: () => onSave(name),
+    child: Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Palette.textDim(0.22)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+      child: Center(
+        child: Text(
+          name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: TypeScale.body,
+            fontWeight: FontWeight.w600,
+            color: Palette.text,
           ),
         ),
-      );
+      ),
+    ),
+  );
 }
 
 /// End now, and Extend when there is something to extend.

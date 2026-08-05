@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/palette.dart';
 import '../theme/type_scale.dart';
+import '../widgets/fill_or_scroll.dart';
 import '../widgets/pressable.dart';
 
 /// Screen 3, Preparing. The moment the rider hands the ride over to their
@@ -280,7 +281,8 @@ class BackgroundLocationScreen extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.w700),
                 ),
                 TextSpan(
-                  text: '. To watch for your stop while the phone is in your '
+                  text:
+                      '. To watch for your stop while the phone is in your '
                       'pocket, we need ',
                 ),
                 TextSpan(
@@ -363,12 +365,12 @@ class PreflightScreen extends StatelessWidget {
   /// Counted, never hardcoded. The frame said "Two things" because it happened
   /// to draw two; one earphone warning alone must not say "Two".
   static String headlineFor(int warnings) => switch (warnings) {
-        0 => 'Before you doze off',
-        1 => 'One thing before you doze off',
-        2 => 'Two things before you doze off',
-        3 => 'Three things before you doze off',
-        _ => '$warnings things before you doze off',
-      };
+    0 => 'Before you doze off',
+    1 => 'One thing before you doze off',
+    2 => 'Two things before you doze off',
+    3 => 'Three things before you doze off',
+    _ => '$warnings things before you doze off',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -444,7 +446,15 @@ class _PreparingScaffold extends StatelessWidget {
                 originName: originName,
                 destinationName: destinationName,
               ),
-              Expanded(child: Center(child: middle)),
+              // Centred while it fits, scrollable when it does not. The step
+              // card grows with the font size and the promise above it grows
+              // with the station name, which together ran 56 px past the
+              // bottom of a 320 dp phone (measured 5 Aug 2026). Cancel stays
+              // outside, always reachable: a rider whose fix hangs must never
+              // have to scroll to get out.
+              Expanded(
+                child: FillOrScroll(child: Center(child: middle)),
+              ),
               bottom,
             ],
           ),
@@ -504,11 +514,7 @@ class _WideButton extends StatelessWidget {
 /// choice we would rather the rider did not make (Start anyway) and for the one
 /// that simply leaves (Cancel).
 class _PlainButton extends StatelessWidget {
-  const _PlainButton({
-    super.key,
-    required this.label,
-    required this.onTap,
-  });
+  const _PlainButton({super.key, required this.label, required this.onTap});
 
   final String label;
   final VoidCallback onTap;
@@ -522,7 +528,10 @@ class _PlainButton extends StatelessWidget {
         child: Center(
           child: Text(
             label,
-            style: TextStyle(fontSize: TypeScale.body, color: Palette.textDim(0.5)),
+            style: TextStyle(
+              fontSize: TypeScale.body,
+              color: Palette.textDim(0.5),
+            ),
           ),
         ),
       ),
@@ -595,7 +604,10 @@ class _Promise extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           "We'll wake you up before $destinationName.",
-          style: TextStyle(fontSize: TypeScale.label, color: Palette.textDim(0.62)),
+          style: TextStyle(
+            fontSize: TypeScale.label,
+            color: Palette.textDim(0.62),
+          ),
         ),
       ],
     );
