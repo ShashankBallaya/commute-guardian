@@ -101,6 +101,23 @@ void main() {
       expect(parseServiceData({'destinationReached': false}), isEmpty);
     });
 
+    test('the station the rider alights at crosses the boundary', () {
+      // The 4 Aug open item. WindDown moves its exit watch to an overshoot pin
+      // and Screen 5 named the destination anyway, so a rider carried past
+      // Shahad and standing at Ambivli would have been told they had arrived
+      // at Shahad.
+      final event = parseServiceData({'alightStationId': 'ambivli'}).single;
+      expect(event, isA<AlightingAt>());
+      expect((event as AlightingAt).stationId, 'ambivli');
+    });
+
+    test('an empty alight station is no opinion, not a station', () {
+      // saveData has no null, so the teardown writes '' to clear it. Reading
+      // that as a station id would have Screen 5 look up a station that does
+      // not exist on the NEXT ride.
+      expect(parseServiceData({'alightStationId': ''}), isEmpty);
+    });
+
     test('a tone command defaults to full volume when none is sent', () {
       final withVolume =
           parseServiceData({

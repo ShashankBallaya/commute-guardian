@@ -81,6 +81,19 @@ class DestinationReached extends ServiceEvent {
   const DestinationReached();
 }
 
+/// Where the rider is going to get off, which after an overshoot is NOT the
+/// station they picked.
+///
+/// Fires once at the start of every ride (naming the destination) and again
+/// only if the rider is carried past it to an overshoot pin. It is its own
+/// event rather than a field on [WindDownChanged] because that move changes
+/// neither liveness nor the deadline, so anything keyed to those would never
+/// hear it.
+class AlightingAt extends ServiceEvent {
+  const AlightingAt(this.stationId);
+  final String stationId;
+}
+
 /// The service ended the ride on its own (wind-down auto-off).
 class RideEndedByService extends ServiceEvent {
   const RideEndedByService();
@@ -118,6 +131,7 @@ class PersistedRide {
     this.windDownLive = false,
     this.windDownEndsAt,
     this.windDownWindow = WindDown.countdown,
+    this.alightStationId,
   });
 
   /// When the ride started, or null if no ride is running. The history row is
@@ -158,6 +172,12 @@ class PersistedRide {
   /// really has left rather than a fresh minute it invented.
   final DateTime? windDownEndsAt;
   final Duration windDownWindow;
+
+  /// The station the rider will get off at, or null for the destination they
+  /// picked. It differs only after an overshoot, and it is read back here for
+  /// the same reason the deadline is: Screen 5 may be opened by a process that
+  /// was recreated after the pin was reached.
+  final String? alightStationId;
 }
 
 /// Turns one raw payload from the service isolate into the events it carries.
@@ -217,6 +237,11 @@ List<ServiceEvent> parseServiceData(Object data) {
 
   if (data['destinationReached'] == true) {
     events.add(const DestinationReached());
+  }
+
+  final alightStationId = data['alightStationId'] as String?;
+  if (alightStationId != null && alightStationId.isNotEmpty) {
+    events.add(AlightingAt(alightStationId));
   }
 
   if (data['rideEnded'] == true) events.add(const RideEndedByService());
@@ -474,6 +499,9 @@ class RideServiceClient {
           await FlutterForegroundTask.getData<int>(key: windDownWindowKey) ??
           WindDown.countdown.inSeconds,
     ),
+    alightStationId: _stationFromStore(
+      await FlutterForegroundTask.getData<String>(key: alightStationKey),
+    ),
   );
 
   static DateTime? _dateFromMillis(int? millis) => millis == null || millis <= 0
@@ -483,6 +511,12 @@ class RideServiceClient {
   /// -1 is the store's way of saying the platform would not give a reading.
   static int? _batteryFromStore(int? pct) =>
       pct == null || pct < 0 ? null : pct;
+
+  /// Empty is the store's way of saying "no opinion", since saveData has no
+  /// null. Null here means the destination, which is where a ride that goes to
+  /// plan ends.
+  static String? _stationFromStore(String? id) =>
+      id == null || id.isEmpty ? null : id;
 
   /// Clears the history row's seed once the row is written, so a later read
   /// cannot resurrect a journey that has already been recorded.

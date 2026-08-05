@@ -894,6 +894,25 @@ void main() {
     expect(second.whereType<WindDownSpeak>(), hasLength(1));
   });
 
+  test('THE ENGINE SAYS WHERE THE RIDER GETS OFF, and it moves at the pin', () {
+    // The fact existed here from the 22 Jul fix and travelled nowhere until
+    // 5 Aug: WindDown has always moved its exit watch to the pin, and Screen 5
+    // went on naming the destination. It is published now, so the arrival
+    // screen can stop congratulating a rider on reaching a station they were
+    // carried past.
+    final windDown = _newWindDown();
+    expect(windDown.alightStationId, _digha.id);
+
+    windDown.onStationEvent(_dighaArrival(), _t0);
+    expect(windDown.alightStationId, _digha.id);
+
+    windDown.onStationEvent(
+      _airoliOvershoot(),
+      _t0.add(const Duration(minutes: 6)),
+    );
+    expect(windDown.alightStationId, _airoli.id);
+  });
+
   test('an overshoot re-arms the exit watch at the overshoot station', () {
     // Was the opposite assertion until the 22 Jul ride: an overshoot used to
     // disarm auto-off for the whole ride, so the owner walked home from

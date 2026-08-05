@@ -42,10 +42,20 @@ class LiveRide {
     required this.destinationId,
     required this.destinationReached,
     this.reachedIndex = -1,
+    this.alightStationId,
   });
 
   final String originId;
   final String destinationId;
+
+  /// The station the rider will actually get off at, or null for the
+  /// destination they picked.
+  ///
+  /// It differs only when the rider was carried past their stop and the app
+  /// told them to alight at an overshoot pin. Screen 5 names this, so it is the
+  /// difference between "You've arrived at Shahad" and the truth, which is that
+  /// they are standing at Ambivli.
+  final String? alightStationId;
 
   /// True only once the destination arrival announcement actually spoke.
   final bool destinationReached;
@@ -59,6 +69,15 @@ class LiveRide {
     destinationId: destinationId,
     destinationReached: destinationReached,
     reachedIndex: index,
+    alightStationId: alightStationId,
+  );
+
+  LiveRide withAlightAt(String stationId) => LiveRide(
+    originId: originId,
+    destinationId: destinationId,
+    destinationReached: destinationReached,
+    reachedIndex: reachedIndex,
+    alightStationId: stationId,
   );
 
   LiveRide get arrived => LiveRide(
@@ -66,6 +85,7 @@ class LiveRide {
     destinationId: destinationId,
     destinationReached: true,
     reachedIndex: reachedIndex,
+    alightStationId: alightStationId,
   );
 }
 
@@ -103,6 +123,15 @@ class LiveRideNotifier extends AsyncNotifier<LiveRide?> {
           state = AsyncData(current.arrived);
         }
       }
+      // The overshoot case, and the reason this is an event at all: the pin is
+      // reached AFTER the arrival, so Screen 5 may already be open and naming
+      // the wrong platform when it lands.
+      if (event is AlightingAt) {
+        final current = state.valueOrNull;
+        if (current != null && current.alightStationId != event.stationId) {
+          state = AsyncData(current.withAlightAt(event.stationId));
+        }
+      }
     });
     ref.onDispose(subscription.cancel);
     return _readFromStore();
@@ -124,6 +153,7 @@ class LiveRideNotifier extends AsyncNotifier<LiveRide?> {
         destinationId: destinationId,
         destinationReached: persisted.destinationReached,
         reachedIndex: persisted.reachedIndex,
+        alightStationId: persisted.alightStationId,
       );
     } catch (_) {
       // No service plumbing (widget tests) or a store race.
@@ -272,6 +302,7 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
       case ServiceFix():
       case RideProgressed():
       case DestinationReached():
+      case AlightingAt():
         // Not alerts. Progress belongs to LiveRide, which owns the projection;
         // duplicating it here would give Screen 4 two places to disagree with
         // itself about where the train is.

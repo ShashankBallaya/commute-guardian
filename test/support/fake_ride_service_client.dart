@@ -28,6 +28,7 @@ class FakeRideServiceClient implements RideServiceClient {
     this.startBatteryPct,
     this.wakeLadderLive = false,
     this.windDownLive = false,
+    this.alightStationId,
   });
 
   bool running;
@@ -44,6 +45,10 @@ class FakeRideServiceClient implements RideServiceClient {
   /// mid-alarm can find out it has an alarm to answer.
   bool wakeLadderLive;
   bool windDownLive;
+
+  /// Where the rider gets off, null for the destination they picked. Only an
+  /// overshoot moves it.
+  String? alightStationId;
 
   /// Every command the screen sent, in order, for assertions.
   final List<String> commands = [];
@@ -74,6 +79,7 @@ class FakeRideServiceClient implements RideServiceClient {
     startBatteryPct: startBatteryPct,
     wakeLadderLive: wakeLadderLive,
     windDownLive: windDownLive,
+    alightStationId: alightStationId,
   );
 
   @override

@@ -354,6 +354,60 @@ void main() {
     expect(find.textContaining("You've arrived at Kalyan"), findsNothing);
   });
 
+  testWidgets('A RIDER CARRIED PAST THEIR STOP IS TOLD WHERE THEY ARE', (
+    tester,
+  ) async {
+    // The 4 Aug open item, and the one tomorrow's ride is built to provoke:
+    // Ghatkopar to Shahad carries an Ambivli overshoot pin. WindDown has moved
+    // its exit watch to the pin since 22 Jul, so the app already knew; the fact
+    // just never crossed the isolate boundary, and Screen 5 went on naming the
+    // destination.
+    //
+    // THE PIN IS REACHED AFTER THE ARRIVAL, so this screen is already open and
+    // already wrong when the correction lands. That is why the name is watched
+    // rather than read once before the push.
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'ghatkopar',
+      destinationId: 'shahad',
+    );
+    await _pumpScreen(tester, service: service);
+
+    service.emit(const DestinationReached());
+    await tester.pumpAndSettle();
+    expect(find.textContaining("You've arrived at Shahad"), findsOneWidget);
+
+    // Carried past. The train rolls on and the app tells them to get off at the
+    // next station instead.
+    service.emit(const AlightingAt('ambivli'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining("You've arrived at Ambivli"), findsOneWidget);
+    expect(find.textContaining("You've arrived at Shahad"), findsNothing);
+    // The journey summary still describes the JOURNEY, which was to Shahad.
+    // Only the platform under the rider's feet changed.
+    expect(find.textContaining('→ Shahad'), findsOneWidget);
+  });
+
+  testWidgets('a screen born after the pin still names the right platform', (
+    tester,
+  ) async {
+    // Sent AND saved. A process recreated between the overshoot and the rider
+    // looking at their phone reads the store, and the store has to agree.
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'ghatkopar',
+      destinationId: 'shahad',
+      alightStationId: 'ambivli',
+    );
+    await _pumpScreen(tester, service: service);
+
+    service.emit(const DestinationReached());
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining("You've arrived at Ambivli"), findsOneWidget);
+  });
+
   testWidgets('saving at journey end writes the route the service rode', (
     tester,
   ) async {

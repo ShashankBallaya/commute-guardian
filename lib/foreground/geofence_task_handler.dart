@@ -125,6 +125,12 @@ const wakeClimbingKey = 'wake_climbing';
 const windDownEndsAtKey = 'wind_down_ends_at_ms';
 const windDownWindowKey = 'wind_down_window_s';
 
+/// The station the rider will actually get off at, which after an overshoot is
+/// not the one they picked. Empty means "the destination", because saveData has
+/// no null. Screen 5 names this station, so a rider carried past Shahad and
+/// told to alight at Ambivli is not congratulated on arriving at Shahad.
+const alightStationKey = 'alight_station_id';
+
 /// Native call state from iOS CallKit, forwarded main isolate -> service.
 /// Android has no counterpart and does not need one: there the audio session
 /// already reports a real call, because the ringtone interrupts us.
@@ -258,6 +264,13 @@ class GeofenceTaskHandler extends TaskHandler {
         );
         _updateNotificationButtons();
       },
+      // Sent AND saved, like everything else the ride learns mid-flight. This
+      // one moves at most once per ride, at an overshoot pin, and Screen 5 may
+      // well be opened by a process that was recreated in between.
+      onAlightingAt: (stationId) {
+        FlutterForegroundTask.sendDataToMain({'alightStationId': stationId});
+        FlutterForegroundTask.saveData(key: alightStationKey, value: stationId);
+      },
       onAutoOff: () => _autoOff(),
     );
     await _chain!.start(
@@ -324,6 +337,9 @@ class GeofenceTaskHandler extends TaskHandler {
     _windDownLive = false;
     await FlutterForegroundTask.saveData(key: wakeLadderLiveKey, value: false);
     await FlutterForegroundTask.saveData(key: windDownLiveKey, value: false);
+    // And the same again: a stale pin from a ride that overshot would name the
+    // wrong platform on the NEXT ride's arrival screen.
+    await FlutterForegroundTask.saveData(key: alightStationKey, value: '');
   }
 
   @override

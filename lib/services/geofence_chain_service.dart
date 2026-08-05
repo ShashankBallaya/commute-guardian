@@ -47,6 +47,7 @@ class GeofenceChainService {
     this.onProgress,
     this.onWakeLadderLive,
     this.onWindDownLive,
+    this.onAlightingAt,
     this.onAutoOff,
     this.onIosToneCommand,
     this.sarvamGreeting = false,
@@ -114,6 +115,15 @@ class GeofenceChainService {
   final void Function(bool live, DateTime? endsAt, Duration window)?
   onWindDownLive;
 
+  /// Fires when the station the rider will alight at changes, which happens
+  /// exactly once per overshoot and never on a ride that goes to plan.
+  ///
+  /// SEPARATE FROM [onWindDownLive] because a re-arm at an overshoot pin does
+  /// not change liveness or the deadline, so anything keyed to those would miss
+  /// it entirely. That is the same trap the wind-down deadline and the wake
+  /// rung both fell into: the flag is not the state.
+  final void Function(String stationId)? onAlightingAt;
+
   /// The auto-off countdown expired (or [End now] was pressed): the ride is
   /// over and the whole service should tear itself down. Owned by the
   /// handler because only it may stop the foreground service.
@@ -145,6 +155,10 @@ class GeofenceChainService {
 
   /// The last deadline published, so an Extend is noticed as a change.
   DateTime? _windDownEndsAt;
+
+  /// The last alight station published, so a move to an overshoot pin is
+  /// noticed as a change. Null until WindDown exists.
+  String? _alightStationId;
 
   /// The volume of the last engine Tone action, while a ladder is live.
   /// The tick watchdog re-asserts the tone at this volume every 5 seconds,
@@ -1166,6 +1180,8 @@ class GeofenceChainService {
 
     // A manual End mid-countdown must not leave phantom wind-down buttons.
     _windDown = null;
+    // The next ride starts with no opinion about where its rider gets off.
+    _alightStationId = null;
     if (_windDownLive) {
       _windDownLive = false;
       _windDownEndsAt = null;
@@ -1459,6 +1475,20 @@ class GeofenceChainService {
           _log('WIND_DOWN $reason.');
       }
     }
+    // Where the rider is getting off, published on change. It is set to the
+    // destination when WindDown is built and moves exactly once, at an
+    // overshoot pin, so on a ride that goes to plan this fires once at the
+    // start and never again.
+    final alight = _windDown?.alightStationId;
+    if (alight != null && alight != _alightStationId) {
+      final moved = _alightStationId != null;
+      _alightStationId = alight;
+      if (moved) {
+        _log('WIND_DOWN alighting at $alight now, not the stop picked.');
+      }
+      onAlightingAt?.call(alight);
+    }
+
     // Mirrors the countdown state out to the notification buttons, the debug
     // screen and Screen 5, only on change.
     //

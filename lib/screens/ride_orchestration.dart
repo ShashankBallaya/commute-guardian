@@ -285,6 +285,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       case ToneCommanded():
       case RideProgressed():
       case DestinationReached():
+      case AlightingAt():
         // liveRideProvider owns progress and arrival; Screen 5 opens off that
         // provider (see _watchForArrival) rather than off this stream, so a
         // host that was not mounted when the event passed still catches up.
@@ -688,12 +689,14 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // bench, which fires an arrival without moving progress, showed "You've
     // arrived at Shahad" for a ride to Kalyan.
     //
-    // STILL NOT COVERED, and it needs the service to say so rather than a
-    // guess here: a rider carried past their stop alights at an overshoot pin,
-    // and this will name the destination they never reached. WindDown already
-    // moves its own exit anchor to that pin, so the fact exists on the far side
-    // of the boundary; it just does not travel yet.
-    final here = stationName(live.destinationId);
+    // AND THE OVERSHOOT, covered since 5 Aug 2026 by the service saying so
+    // rather than by a guess here. A rider carried past their stop alights at
+    // an overshoot pin, and this used to name the destination they never
+    // reached. WindDown always knew (it moves its own exit anchor to the pin);
+    // the fact simply did not travel. Now it does, as AlightingAt, and it is
+    // watched rather than read once, because the pin is reached AFTER the
+    // arrival and this screen is already open when it lands.
+    final here = stationName(live.alightStationId ?? live.destinationId);
 
     final startedAt = persisted.startedAt;
     final minutes = startedAt == null
@@ -717,8 +720,14 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         builder: (routeContext) => Consumer(
           builder: (context, ref, _) {
             final alerts = ref.watch(rideAlertsProvider);
-            final stillRunning =
-                ref.watch(liveRideProvider).valueOrNull != null;
+            final running = ref.watch(liveRideProvider).valueOrNull;
+            final stillRunning = running != null;
+            // Re-read from the WATCHED ride, so a pin reached while this screen
+            // is already open renames the platform under the rider rather than
+            // leaving the headline on the stop they were carried past.
+            final alightingAt = running == null
+                ? here
+                : stationName(running.alightStationId ?? running.destinationId);
             if (!stillRunning) {
               // The ride is over, by auto-off or by End now. Leave on the next
               // frame: popping during a build is not allowed.
@@ -728,7 +737,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             }
             final counting = alerts.windDownLive;
             return ArrivalScreen(
-              destinationName: here,
+              destinationName: alightingAt,
               summaryLine: summary,
               autoEndAt: alerts.windDownEndsAt,
               window: alerts.windDownWindow,

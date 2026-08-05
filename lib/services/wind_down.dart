@@ -82,6 +82,17 @@ class WindDown {
   /// actually stand on.
   Station _exitStation;
 
+  /// The station the rider is going to get off at, which after an overshoot is
+  /// NOT the one they picked.
+  ///
+  /// PUBLISHED BECAUSE THE FACT EXISTED HERE AND TRAVELLED NOWHERE. This engine
+  /// has moved its exit watch to an overshoot pin since the 22 Jul ride, so it
+  /// has always known where the rider actually alights; Screen 5 read the
+  /// destination instead and would have said "You've arrived at Shahad" to
+  /// someone standing at Ambivli. The service isolate sends and saves this the
+  /// same way it does progress.
+  String get alightStationId => _exitStation.id;
+
   /// How long after the platform exit is detected Travel Mode ends on its
   /// own (the handover's WIND_DOWN countdown).
   static const countdown = Duration(seconds: 60);
