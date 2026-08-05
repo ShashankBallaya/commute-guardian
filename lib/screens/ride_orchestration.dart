@@ -54,18 +54,6 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// and this must not quietly become a second way to change leadTimeS.
   WakeChoice wakeChoice = WakeChoice.lastTwoStations;
 
-  /// The journey handed to the service at Start, as a FAST PATH only.
-  /// [plannedJourneyProvider] cannot serve: the picker can replan it mid-ride
-  /// while the service keeps riding the chain it was handed. This is the
-  /// Journey/Ride distinction in CONTEXT.md made concrete, which is also why
-  /// the field is named for the journey and not for the ride.
-  ///
-  /// NOT LOAD-BEARING since 29 Jul 2026. The history row's real source is the
-  /// shared store, and [recordRide] replans from the ids the service was handed
-  /// when this is empty. That is what makes a journey survive the app being
-  /// swiped out of recents with its record intact.
-  Journey? _startedJourney;
-
   /// The freshest fix streamed up from the running service. At ride end this is
   /// seconds old and free, so it names the rider's position instantly; a cold
   /// GPS acquisition indoors can hang instead (13 Jul bench).
@@ -350,9 +338,6 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     );
 
     if (started) {
-      // The store now owns the history row's seed (see startRide). This field
-      // stays only as the fast path for a ride recorded in the same process.
-      _startedJourney = journey;
       // A new ride gets a new arrival screen.
       _arrivalShown = false;
       // Liveness comes from the store, never from an assumption here.
@@ -409,19 +394,19 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final startedAt = persisted.startedAt;
     final originId = persisted.originId;
     final destinationId = persisted.destinationId;
-    _startedJourney = null;
     if (startedAt == null || originId == null || destinationId == null) return;
 
-    // Re-planned from the ids THE SERVICE WAS HANDED, never from the live
-    // draft: the picker can replan mid-ride while the service keeps riding the
-    // chain it was given. Same reason _startedJourney existed.
+    // ALWAYS RE-PLANNED from the ids THE SERVICE WAS HANDED, never from the
+    // live draft: the picker can replan mid-ride while the service keeps riding
+    // the chain it was given.
     //
-    // NOTE, found during the 4 Aug extraction and deliberately NOT changed
-    // here: _startedJourney is cleared three lines up, so this fast path has
-    // always been null and every row has been replanned. Harmless (both routes
-    // plan from the same ids) but it is dead, and killing it belongs in its own
-    // commit rather than hiding inside a move.
-    final journey = _startedJourney ?? _planStored(originId, destinationId);
+    // There used to be a `_startedJourney ??` fast path in front of this, kept
+    // for a ride recorded in the same process. It was cleared three lines above
+    // being read, so it was always null and every row has been replanned since
+    // 29 Jul 2026. Removed 5 Aug: both routes plan from the same ids, so the
+    // only thing it ever did was suggest a second source of truth for the
+    // history row, which is exactly the shape of bug the store exists to end.
+    final journey = _planStored(originId, destinationId);
     if (journey == null) {
       onOrchestrationLog('History skipped: cannot replan the ride');
       await service.clearRideRecordSeed();
