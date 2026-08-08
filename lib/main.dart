@@ -12,6 +12,7 @@ import 'screens/ride_orchestration.dart';
 import 'screens/preparing_screen.dart';
 import 'screens/travel_mode_screen.dart';
 import 'screens/wake_alert_screen.dart';
+import 'services/crash_reporting.dart';
 import 'services/ride_service_client.dart';
 import 'services/wind_down.dart';
 import 'state/journey_providers.dart';
@@ -22,12 +23,18 @@ import 'widgets/slide_to_start.dart';
 import 'widgets/status_chip.dart';
 
 void main() {
-  RideServiceClient.initCommunicationPort();
-  // ProviderScope holds the UI isolate's providers. It is deliberately absent
-  // from the service isolate (lib/foreground/geofence_task_handler.dart):
-  // providers do not cross isolates, and the ride's truth lives over there.
-  // See docs/design/riverpod-adoption.md.
-  runApp(const ProviderScope(child: CommuteGuardianDebugApp()));
+  // Wraps the whole app so an uncaught error anywhere in the UI isolate is
+  // reported. Does nothing without a DSN, which is what every checkout of this
+  // public repository gets. See lib/services/crash_reporting.dart for the rules
+  // that keep a rider's journey out of the reports.
+  CrashReporting.runUiIsolate(() {
+    RideServiceClient.initCommunicationPort();
+    // ProviderScope holds the UI isolate's providers. It is deliberately absent
+    // from the service isolate (lib/foreground/geofence_task_handler.dart):
+    // providers do not cross isolates, and the ride's truth lives over there.
+    // See docs/design/riverpod-adoption.md.
+    runApp(const ProviderScope(child: CommuteGuardianDebugApp()));
+  });
 }
 
 class CommuteGuardianDebugApp extends StatelessWidget {
@@ -424,6 +431,15 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
     );
   }
 
+  /// Proves this build's DSN reaches Sentry. Debug only, and it exists because
+  /// crash reporting fails SILENTLY: a wrong DSN, a missing dart-define and a
+  /// blocked network all look identical to an app that simply has not crashed.
+  Future<void> _testCrashReporting() async {
+    final result = await CrashReporting.sendTestEvent();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result)));
+  }
+
   void _holdToEndHint() {
     ScaffoldMessenger.of(
       context,
@@ -766,6 +782,24 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
                                     color: Palette.textDim(0.6),
                                   ),
                                   onPressed: openSettings,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              // Sends one deliberate event to Sentry and says
+                              // what happened. The row scrolls, which is why a
+                              // ninth icon is allowed to exist.
+                              SizedBox(
+                                width: 22,
+                                child: IconButton(
+                                  key: const Key('sentry_test_button'),
+                                  padding: EdgeInsets.zero,
+                                  iconSize: 18,
+                                  tooltip: 'Send a test event to Sentry',
+                                  icon: Icon(
+                                    Icons.bug_report_outlined,
+                                    color: Palette.textDim(0.6),
+                                  ),
+                                  onPressed: _testCrashReporting,
                                 ),
                               ),
                             ],

@@ -51,6 +51,7 @@ dependencies:
   path: ^1.9.1
   battery_plus: ^7.1.1
   flutter_riverpod: ^2.6.1
+  sentry_flutter: 9.26.0
 
 dev_dependencies:
   flutter_test:

@@ -78,18 +78,18 @@ void main() {
       '_isRunning',
       '_wakeLadderLive',
       '_windDownLive',
-      '_journey ',
+      '_journey',
       '_planError',
       '_originId',
       '_destinationId',
       '_gpsState',
       '_nearStationName',
       '_repo',
-      '_stations ',
+      '_stations',
     ];
 
     final source = File('lib/main.dart').readAsStringSync();
-    final found = forbidden.where(source.contains).toList();
+    final found = forbidden.where((name) => _holdsField(source, name)).toList();
     expect(
       found,
       isEmpty,
@@ -97,6 +97,44 @@ void main() {
           'Ride and journey state belongs in lib/state/, not in a widget '
           'field. See docs/design/riverpod-adoption.md.',
     );
+  });
+
+  test('THE FIELD CHECK MATCHES WHOLE NAMES, not substrings', () {
+    // It was a bare `source.contains` until 8 Aug 2026, and it flagged
+    // `_repo` inside `crash_reporting.dart` and `bug_report_outlined`. Two of
+    // the names carried a trailing space as a hand-made fix for the same
+    // problem, which only worked where the field happened to be followed by
+    // one. A word boundary does the job for every name, so the trailing spaces
+    // are gone.
+    //
+    // The guard has to keep its teeth, so this proves both directions rather
+    // than trusting the regex by eye.
+    for (final innocent in const [
+      "import 'services/crash_reporting.dart';",
+      'Icons.bug_report_outlined,',
+      "import '../data/station_repository.dart';",
+      'final draft = ref.read(_journeyDraftProvider);',
+      'ref.watch(stationsAlphabeticalProvider);',
+    ]) {
+      expect(_holdsField(innocent, '_repo'), isFalse, reason: innocent);
+      expect(_holdsField(innocent, '_journey'), isFalse, reason: innocent);
+      expect(_holdsField(innocent, '_stations'), isFalse, reason: innocent);
+    }
+
+    for (final guilty in const [
+      'StationRepository? _repo;',
+      '  final _repo = ref.read(stationRepositoryProvider);',
+      'Journey? _journey;',
+      'List<Station> _stations = [];',
+      '_repo = await StationRepository.load();',
+    ]) {
+      final tripped = [
+        '_repo',
+        '_journey',
+        '_stations',
+      ].where((name) => _holdsField(guilty, name)).toList();
+      expect(tripped, isNotEmpty, reason: guilty);
+    }
   });
 
   test('the detector reads code and ignores prose', () {
@@ -148,3 +186,14 @@ bool _containsBridgeCode(String source) {
       code.contains('FlutterForegroundTask') ||
       code.contains('media_ack');
 }
+
+/// Whether [source] uses [name] as a whole identifier rather than as part of a
+/// longer one.
+///
+/// The trailing boundary is the point: `_repo` must not match inside
+/// `crash_reporting`, `bug_report_outlined` or `station_repository`, and
+/// `_journey` must not match inside `_journeyDraftProvider`. The leading one
+/// matters too, so a field called `_myRepo` stays its own name.
+bool _holdsField(String source, String name) => RegExp(
+  '(?<![A-Za-z0-9_])${RegExp.escape(name)}(?![A-Za-z0-9_])',
+).hasMatch(source);

@@ -1,5 +1,6 @@
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+import '../services/crash_reporting.dart';
 import '../services/geofence_chain_service.dart';
 
 /// Entry point the foreground service isolate calls to install the handler.
@@ -177,6 +178,15 @@ class GeofenceTaskHandler extends TaskHandler {
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    // This isolate has no screen, so a crash in it is SILENT: the ride simply
+    // stops watching and the rider finds out by missing their stop. It is
+    // therefore the half of the app most worth reporting, and the half a
+    // report is least likely to arrive from by any other route.
+    //
+    // Awaited before the chain is built, so an error while planning the
+    // journey is already covered. Does nothing without a DSN.
+    await CrashReporting.initServiceIsolate();
+
     final originId = await FlutterForegroundTask.getData<String>(
       key: originIdKey,
     );

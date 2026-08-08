@@ -2,6 +2,19 @@
 
 A new Flutter project.
 
+## Building
+
+```
+flutter pub get
+flutter run
+```
+
+Crash reporting needs a Sentry DSN, which is **not** in this repository. Without
+one the app runs normally with reporting off, which is what a clone gets. To
+enable it, copy `sentry.example.json` to `sentry.json`, paste the DSN in, and
+add `--dart-define-from-file=sentry.json` to any `run` or `build`. See
+[docs/sentry.md](docs/sentry.md).
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.
