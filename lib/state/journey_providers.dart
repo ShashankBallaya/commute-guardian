@@ -1,9 +1,12 @@
 import 'package:fl_location/fl_location.dart' as fl;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/app_database.dart';
 import '../data/station_repository.dart';
 import '../models/journey.dart';
 import '../models/station.dart';
+import '../services/journey_suggestion.dart';
+import 'ride_providers.dart';
 
 /// The pre-ride half of the state model: the station network, what the rider
 /// has picked, where they are, and the journey those imply.
@@ -132,10 +135,19 @@ final plannedJourneyProvider = Provider<PlannedJourney>((ref) {
 enum GpsState { locating, located, unavailable }
 
 class NearestStation {
-  const NearestStation(this.state, {this.stationName});
+  const NearestStation(this.state, {this.stationName, this.stationId});
 
   final GpsState state;
   final String? stationName;
+
+  /// The station's id, published beside its name so anything keyed on WHERE
+  /// THE RIDER IS reads the same answer the chip shows.
+  ///
+  /// The alternative was to read the journey DRAFT's origin, which is wrong in
+  /// a way worth naming: the draft is what the rider has picked, so a
+  /// suggestion keyed on it would follow their edits around the picker instead
+  /// of following them around the network.
+  final String? stationId;
 }
 
 /// How to get a one-shot fix. A provider so tests can override it: the real
@@ -211,7 +223,11 @@ class NearestStationNotifier extends Notifier<NearestStation> {
       return false;
     }
 
-    state = NearestStation(GpsState.located, stationName: nearest.name);
+    state = NearestStation(
+      GpsState.located,
+      stationName: nearest.name,
+      stationId: nearest.id,
+    );
     ref.read(journeyDraftProvider.notifier).defaultOriginTo(nearest.id);
     return true;
   }
@@ -221,3 +237,46 @@ final nearestStationProvider =
     NotifierProvider<NearestStationNotifier, NearestStation>(
       NearestStationNotifier.new,
     );
+
+/// What the app thinks the rider is about to do, or null, which is the normal
+/// answer. See [JourneySuggester] for why most of its rules are about silence.
+///
+/// Watches the nearest station, so it appears the moment a fix lands and
+/// disappears if the rider walks to a different platform. It is a RANKING over
+/// their own completed rides, never a prediction, and it decides nothing: the
+/// card it feeds behaves exactly like every other card on Screen 1.
+final journeySuggestionProvider = FutureProvider.autoDispose<JourneySuggestion?>(
+  (ref) async {
+    final at = ref.watch(nearestStationProvider).stationId;
+    if (at == null) return null;
+
+    final db = ref.watch(appDatabaseProvider);
+    // A wider window than the recent-destination cards use: a habit is counted
+    // over weeks, not over the last three journeys.
+    final rides = await db.recent(limit: 200);
+    final saved = await db.allSavedRoutes();
+    SavedRoute? home;
+    for (final route in saved) {
+      if (route.label.toLowerCase() == 'home') {
+        home = route;
+        break;
+      }
+    }
+
+    return const JourneySuggester().suggest(
+      history: [
+        for (final ride in rides)
+          if (ride.reachedDestination)
+            PastRide(
+              originId: ride.originId,
+              destinationId: ride.destinationId,
+              destinationName: ride.destinationName,
+              startedAt: ride.startedAt,
+            ),
+      ],
+      atStationId: at,
+      now: DateTime.now(),
+      homeDestinationId: home?.destinationStationId,
+    );
+  },
+);

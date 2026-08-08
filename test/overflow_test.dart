@@ -8,6 +8,7 @@ import 'package:commute_guardian/screens/arrival_screen.dart';
 import 'package:commute_guardian/screens/destination_picker_screen.dart';
 import 'package:commute_guardian/screens/history_screen.dart';
 import 'package:commute_guardian/screens/home_screen.dart';
+import 'package:commute_guardian/services/journey_suggestion.dart';
 import 'package:commute_guardian/screens/preparing_screen.dart';
 import 'package:commute_guardian/screens/settings_screen.dart';
 import 'package:commute_guardian/screens/travel_mode_screen.dart';
@@ -148,6 +149,46 @@ void main() {
   atEverySize(
     'home, no history',
     () => wrap(HomeScreen(onStartTo: (_) {}, onNew: () {})),
+  );
+
+  // THE FULLEST Screen 1 CAN EVER BE: the suggestion card on top of three
+  // saved routes. The suggestion was added on 8 Aug and it is a FOURTH card on
+  // a screen whose cards already ran 95 px past the bottom once, at a raised
+  // font size, before FillOrScroll. Measured rather than eyeballed, which is
+  // the rule this suite exists to enforce.
+  atEverySize(
+    'home, suggestion over three saved routes',
+    () => wrap(
+      HomeScreen(onStartTo: (_) {}, onNew: () {}),
+      overrides: [
+        journeySuggestionProvider.overrideWith(
+          (ref) async => const JourneySuggestion(
+            destinationId: 'dadar',
+            // The longest realistic name on the network, so the card is
+            // measured at its worst rather than at its tidiest.
+            destinationName: 'Chhatrapati Shivaji Maharaj Terminus',
+            matches: 12,
+            isHome: true,
+          ),
+        ),
+        savedRoutesProvider.overrideWith(
+          (ref) async => [
+            for (final (id, label) in const [
+              ('kalyan', 'Home'),
+              ('thane', 'Work'),
+              ('panvel', 'Mum and Dad'),
+            ])
+              SavedRoute(
+                id: label.hashCode,
+                label: label,
+                destinationStationId: id,
+                destinationName: id,
+                createdAt: DateTime(2026, 8, 1),
+              ),
+          ],
+        ),
+      ],
+    ),
   );
 
   // ---------------------------------------------------------------- Screen 2

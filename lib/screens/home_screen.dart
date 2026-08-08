@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/app_database.dart';
+import '../services/journey_suggestion.dart';
 import '../state/journey_providers.dart';
 import '../state/ride_providers.dart';
 import '../theme/palette.dart';
@@ -183,6 +184,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       : _Cards(
                           saved: saved.valueOrNull ?? const [],
                           rides: rides,
+                          // valueOrNull for the same reason as saved routes:
+                          // this is an enhancement, and a query that will not
+                          // answer must cost the rider one card, never the
+                          // screen.
+                          suggestion: ref
+                              .watch(journeySuggestionProvider)
+                              .valueOrNull,
                           onStartTo: widget.onStartTo,
                           onNew: widget.onNew,
                         ),
@@ -293,6 +301,7 @@ class _Cards extends StatelessWidget {
   const _Cards({
     required this.saved,
     required this.rides,
+    required this.suggestion,
     required this.onStartTo,
     required this.onNew,
   });
@@ -301,21 +310,59 @@ class _Cards extends StatelessWidget {
 
   final List<SavedRoute> saved;
   final List<JourneyRecord> rides;
+
+  /// What the rider usually does from this platform at this hour, or null,
+  /// which is the normal answer. See [JourneySuggester].
+  final JourneySuggestion? suggestion;
+
   final void Function(String destinationStationId) onStartTo;
   final VoidCallback onNew;
 
   @override
   Widget build(BuildContext context) {
-    final shown = saved.take(_slots).toList();
+    final suggestion = this.suggestion;
+    // The suggested destination is REMOVED from the lists below rather than
+    // shown twice. A rider looking at two cards for Dadar has to work out
+    // whether they differ, on a platform, which is exactly the moment this
+    // screen is supposed to be obvious.
+    final suggestedId = suggestion?.destinationId;
+    final shown = [
+      for (final route in saved)
+        if (route.destinationStationId != suggestedId) route,
+    ].take(_slots).toList();
     final savedIds = {for (final route in shown) route.destinationStationId};
     final recents = [
       for (final ride in rides)
-        if (!savedIds.contains(ride.destinationId)) ride,
+        if (!savedIds.contains(ride.destinationId) &&
+            ride.destinationId != suggestedId)
+          ride,
     ].take(_slots - shown.length);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (suggestion != null) ...[
+          _DestinationCard(
+            cardKey: const Key('suggestion_card'),
+            // "Heading home?" ONLY when the destination is the route the rider
+            // labelled Home. The app does not otherwise know which of a
+            // person's stations is their house, and a confident wrong guess
+            // about that is the kind of small wrongness that makes software
+            // feel stupid.
+            title: suggestion.isHome
+                ? 'Heading home?'
+                : 'Heading to ${suggestion.destinationName}?',
+            // SAYS WHY, and the count is the point. A suggestion a rider can
+            // check is one they can disagree with; one that just appears has
+            // to be trusted, and this screen has not earned that.
+            detail: suggestion.isHome
+                ? '${suggestion.destinationName} - you usually do, around now'
+                : 'You usually do, around now',
+            onTap: () => onStartTo(suggestion.destinationId),
+          ),
+          const SizedBox(height: 10),
+          const SizedBox(height: 6),
+        ],
         if (shown.isNotEmpty) ...[
           const _Eyebrow('Saved'),
           const SizedBox(height: 10),

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:commute_guardian/data/app_database.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/screens/home_screen.dart';
+import 'package:commute_guardian/services/journey_suggestion.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
 import 'package:commute_guardian/widgets/pressable.dart';
@@ -51,6 +52,7 @@ void main() {
     WidgetTester tester, {
     AppDatabase? history,
     bool header = true,
+    JourneySuggestion? suggestion,
   }) async {
     taps.clear();
     final started = <String>[];
@@ -68,6 +70,11 @@ void main() {
             ref.onDispose(db.close);
             return db;
           }),
+          // Overridden rather than driven through a fake GPS fix and a
+          // synthetic history: what these tests are about is what the CARD
+          // does, and JourneySuggester's own rules are proved in
+          // journey_suggestion_test.dart against the engine directly.
+          journeySuggestionProvider.overrideWith((ref) async => suggestion),
         ],
         child: MaterialApp(
           home: HomeScreen(
@@ -371,5 +378,105 @@ void main() {
 
     expect(find.text('Start your first journey'), findsOneWidget);
     expect(find.byKey(const Key('saved_route_card_home')), findsNothing);
+  });
+
+  group('the "Heading home?" suggestion', () {
+    const toDadar = JourneySuggestion(
+      destinationId: 'dadar',
+      destinationName: 'Dadar',
+      matches: 8,
+      isHome: false,
+    );
+
+    testWidgets('no suggestion leaves the screen exactly as it was', (
+      tester,
+    ) async {
+      // The normal case, by a wide margin. JourneySuggester returns null
+      // unless there is real evidence, so most riders most of the time must
+      // see the screen that existed before this feature.
+      await pumpHome(
+        tester,
+        history: await historyWith([('kalyan', 'Kalyan')]),
+      );
+      expect(find.byKey(const Key('suggestion_card')), findsNothing);
+      expect(find.textContaining('Heading'), findsNothing);
+    });
+
+    testWidgets('a suggestion that is not home names the station instead', (
+      tester,
+    ) async {
+      // History is required, and not as ceremony: Screen 1 shows the first-run
+      // state until a journey has completed, and a suggestion is DERIVED from
+      // completed journeys, so "a suggestion with no history" is a state that
+      // cannot occur. The first draft of these tests built exactly that and
+      // failed correctly.
+      await pumpHome(
+        tester,
+        history: await historyWith([('thane', 'Thane')]),
+        suggestion: toDadar,
+      );
+      expect(find.text('Heading to Dadar?'), findsOneWidget);
+      expect(find.text('Heading home?'), findsNothing);
+    });
+
+    testWidgets('IT ONLY SAYS HOME WHEN HOME IS WHAT THE RIDER LABELLED', (
+      tester,
+    ) async {
+      // Its own test rather than a second pump in the one above: pumping a
+      // fresh ProviderScope over an existing element tree does not reliably
+      // re-resolve an overridden autoDispose provider, so the two-pump version
+      // failed on the second half while the code was correct.
+      await pumpHome(
+        tester,
+        history: await historyWith([('thane', 'Thane')]),
+        suggestion: const JourneySuggestion(
+          destinationId: 'dadar',
+          destinationName: 'Dadar',
+          matches: 8,
+          isHome: true,
+        ),
+      );
+      expect(find.text('Heading home?'), findsOneWidget);
+      // Still names the station underneath, because a card that starts a ride
+      // has to be checkable before it is tapped.
+      expect(find.textContaining('Dadar'), findsWidgets);
+    });
+
+    testWidgets('it says why, so the rider can disagree with it', (
+      tester,
+    ) async {
+      await pumpHome(
+        tester,
+        history: await historyWith([('thane', 'Thane')]),
+        suggestion: toDadar,
+      );
+      expect(find.textContaining('usually'), findsOneWidget);
+    });
+
+    testWidgets('tapping it starts that ride and nothing else', (tester) async {
+      final started = await pumpHome(
+        tester,
+        history: await historyWith([('thane', 'Thane')]),
+        suggestion: toDadar,
+      );
+      await tester.tap(find.byKey(const Key('suggestion_card')));
+      await tester.pumpAndSettle();
+      expect(started, ['dadar']);
+    });
+
+    testWidgets('THE SAME DESTINATION NEVER APPEARS TWICE', (tester) async {
+      // A rider looking at two cards for Dadar has to work out whether they
+      // differ, on a platform, which is the one moment this screen exists to
+      // be obvious in.
+      await pumpHome(
+        tester,
+        history: await historyWith([('dadar', 'Dadar'), ('thane', 'Thane')]),
+        suggestion: toDadar,
+      );
+      expect(find.byKey(const Key('suggestion_card')), findsOneWidget);
+      expect(find.byKey(const Key('destination_card_dadar')), findsNothing);
+      // The other recent is untouched.
+      expect(find.byKey(const Key('destination_card_thane')), findsOneWidget);
+    });
   });
 }
