@@ -17,6 +17,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "13.0.0"
+  aptabase_flutter:
+    dependency: "direct main"
+    description:
+      name: aptabase_flutter
+      sha256: bef8e216351a61b3769ffc642d84a59eca012134e6cc2c1b575441b1c987c1b6
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.5.0"
   args:
     dependency: transitive
     description:
@@ -989,6 +997,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
+  universal_io:
+    dependency: transitive
+    description:
+      name: universal_io
+      sha256: f63cbc48103236abf48e345e07a03ce5757ea86285ed313a6a032596ed9301e2
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.1"
   upower:
     dependency: transitive
     description:

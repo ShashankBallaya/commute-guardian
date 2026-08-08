@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/app_database.dart';
 import '../models/app_settings.dart';
+import '../services/analytics.dart';
 import '../services/tts_language_gateway.dart';
 import 'ride_providers.dart';
 
@@ -112,3 +113,18 @@ final ttsLanguageGatewayProvider = Provider<TtsLanguageGateway>(
 final availableLanguagesProvider = FutureProvider<Set<AppLanguage>>(
   (ref) => ref.watch(ttsLanguageGatewayProvider).available(),
 );
+
+/// Starts analytics for the UI isolate, once the rider's opt-out is known.
+///
+/// An app open is the whole implementation of two pre-committed bars, installs
+/// and D30 retention: Aptabase derives both from its own anonymous per-device
+/// identity, so initialising the SDK IS the measurement. The ride events come
+/// from the service isolate instead, because the UI can die mid-ride.
+///
+/// Depends on the settings read, so the SDK cannot start before the opt-out has
+/// been looked at. [Analytics.init] is idempotent, which matters because this
+/// re-runs whenever settings change.
+final analyticsBootProvider = FutureProvider<void>((ref) async {
+  final settings = await ref.watch(appSettingsProvider.future);
+  await Analytics.init(enabled: settings.shareAnonymousUsage);
+});

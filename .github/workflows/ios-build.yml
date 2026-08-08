@@ -19,13 +19,17 @@ jobs:
 
       - run: flutter pub get
 
-      # The DSN is a repository SECRET, never a file in the tree: this repo is
+      # Both keys are repository SECRETS, never files in the tree: this repo is
       # public. An empty secret is a valid state and simply builds an IPA with
-      # crash reporting off, which is what a fork gets.
-      - name: Build with the Sentry DSN
+      # that feature off, which is what a fork gets.
+      - name: Build with the Sentry DSN and the Aptabase key
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-        run: flutter build ios --release --no-codesign --dart-define=SENTRY_DSN="$SENTRY_DSN"
+          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
+        run: >
+          flutter build ios --release --no-codesign
+          --dart-define=SENTRY_DSN="$SENTRY_DSN"
+          --dart-define=APTABASE_APP_KEY="$APTABASE_APP_KEY"
 
       # Package Runner.app into an unsigned IPA that Sideloadly / AltStore
       # can re-sign with a free Apple ID on Windows.

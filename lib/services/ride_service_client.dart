@@ -551,6 +551,11 @@ class RideServiceClient {
     // the store key was written only when a ride was already running.
     int? pulseIntervalSeconds,
     bool pulseVibrate = true,
+    // Read at START like the pulse settings, and for the same reason: a
+    // setting that only crosses on change never reaches a ride that simply
+    // began with it already set. Defaults to OFF so a caller that forgets it
+    // sends nothing rather than sending without consent.
+    bool shareAnonymousUsage = false,
   }) async {
     await FlutterForegroundTask.saveData(
       key: originIdKey,
@@ -592,6 +597,10 @@ class RideServiceClient {
     await FlutterForegroundTask.saveData(
       key: pulseVibrateKey,
       value: pulseVibrate,
+    );
+    await FlutterForegroundTask.saveData(
+      key: shareUsageKey,
+      value: shareAnonymousUsage,
     );
 
     final result = await FlutterForegroundTask.startService(

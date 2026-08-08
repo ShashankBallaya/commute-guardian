@@ -89,6 +89,9 @@ class FakeRideServiceClient implements RideServiceClient {
     startBatteryPct = null;
   }
 
+  /// What the last startRide was told about the analytics opt-out.
+  bool? shareAnonymousUsagePassed;
+
   @override
   Future<bool> startRide({
     required String originStationId,
@@ -100,8 +103,13 @@ class FakeRideServiceClient implements RideServiceClient {
     int? startBatteryPct,
     int? pulseIntervalSeconds,
     bool pulseVibrate = true,
+    bool shareAnonymousUsage = false,
   }) async {
     commands.add('startRide:$originStationId->$destinationStationId');
+    // Recorded so a test can prove the rider's opt-out actually reaches the
+    // service isolate, rather than being read in the UI and dropped at the
+    // boundary the way the pulse interval once was.
+    shareAnonymousUsagePassed = shareAnonymousUsage;
     if (pulseIntervalSeconds != null) {
       commands.add('startPulse:$pulseIntervalSeconds');
     }

@@ -335,6 +335,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       // never has to know the rule.
       pulseIntervalSeconds: pulseSettings.pulseIntervalSeconds,
       pulseVibrate: pulseSettings.vibrateWithPulse,
+      shareAnonymousUsage: pulseSettings.shareAnonymousUsage,
     );
 
     if (started) {

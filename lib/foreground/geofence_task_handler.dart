@@ -1,5 +1,6 @@
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+import '../services/analytics.dart';
 import '../services/crash_reporting.dart';
 import '../services/geofence_chain_service.dart';
 
@@ -71,6 +72,17 @@ const pulseCollidePrefix = 'test_pulse_collide:';
 /// to read them back.
 const pulseIntervalKey = 'pulse_interval_s';
 const pulseVibrateKey = 'pulse_vibrate';
+
+/// The rider's analytics opt-out, `AppSettings.shareAnonymousUsage`.
+///
+/// Crosses the isolate boundary through the STORE for the same reason the
+/// pulse interval does: settings live in drift and the service isolate never
+/// opens that database. Written at every Start, so a rider who switches it off
+/// between rides is honoured on the next one, and read by a RESTARTED service
+/// too, which is what keeps a swiped-away ride from quietly re-enabling it.
+///
+/// Absent means OFF. A missing key must never read as consent.
+const shareUsageKey = 'share_anonymous_usage';
 
 /// The rider changed the Pocket Pulse interval MID-RIDE. Carries seconds, or
 /// the literal `off`.
@@ -202,10 +214,20 @@ class GeofenceTaskHandler extends TaskHandler {
     final sarvamClips =
         await FlutterForegroundTask.getData<bool>(key: sarvamClipsKey) ?? false;
 
+    // Absent reads as OFF, deliberately: a missing key is not consent.
+    final shareUsage =
+        await FlutterForegroundTask.getData<bool>(key: shareUsageKey) ?? false;
+    await Analytics.init(enabled: shareUsage);
+
     _chain = GeofenceChainService(
       onLog: _sendLog,
       sarvamGreeting: sarvamGreeting,
       sarvamClips: sarvamClips,
+      // The ride events fire from HERE rather than from the UI, because the
+      // 30 Jul swipe bench proved the UI can die mid-ride while the service
+      // rides on. Reporting from the UI would silently drop exactly the rides
+      // that matter most: a pocketed phone with the app swiped away.
+      analytics: Analytics(enabled: shareUsage),
       onDestinationReached: () {
         // Sent AND saved, like progress. The save alone was enough while the
         // only reader was the history row at teardown; Screen 5 has to open the

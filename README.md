@@ -9,11 +9,12 @@ flutter pub get
 flutter run
 ```
 
-Crash reporting needs a Sentry DSN, which is **not** in this repository. Without
-one the app runs normally with reporting off, which is what a clone gets. To
-enable it, copy `sentry.example.json` to `sentry.json`, paste the DSN in, and
-add `--dart-define-from-file=sentry.json` to any `run` or `build`. See
-[docs/sentry.md](docs/sentry.md).
+Crash reporting (Sentry) and analytics (Aptabase) need keys that are **not** in
+this repository. Without them the app runs normally with both switched off,
+which is what a clone gets. To enable them, copy `secrets.example.json` to
+`secrets.json`, paste the keys in, and add
+`--dart-define-from-file=secrets.json` to any `run` or `build`. See
+[docs/sentry.md](docs/sentry.md) and [docs/analytics.md](docs/analytics.md).
 
 ## Getting Started
 

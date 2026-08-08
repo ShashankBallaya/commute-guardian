@@ -14,6 +14,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../data/station_repository.dart';
 import '../models/journey.dart';
 import '../models/station.dart';
+import 'analytics.dart';
 import 'announcement_templates.dart';
 import 'clip_library.dart';
 import 'pocket_pulse.dart';
@@ -54,7 +55,16 @@ class GeofenceChainService {
     this.onIosToneCommand,
     this.sarvamGreeting = false,
     this.sarvamClips = false,
-  });
+    Analytics? analytics,
+  }) : _analytics = analytics ?? Analytics(enabled: false);
+
+  /// The two analytics events this app has, and the rider's opt-out.
+  ///
+  /// Injected rather than reached for, so a test can watch what a ride would
+  /// have reported without a network, and so the DEFAULT is disabled: a
+  /// GeofenceChainService built without being handed one sends nothing, which
+  /// is the right way round for a switch about a rider's data.
+  final Analytics _analytics;
 
   /// Debug-only flag (owner decision 17 Jul, slice 2 of the clip feature):
   /// station announcements play as full-phrase Sarvam clips when the pushed
@@ -249,6 +259,20 @@ class GeofenceChainService {
   /// shared audio session while the alarm tone is looping.
   bool _wakeLadderLive = false;
 
+  /// What this ride will report to analytics when it ends, and nothing more
+  /// than this. Four booleans, no station, no line, no duration.
+  ///
+  /// They are HISTORICAL, unlike [_wakeLadderLive] and the rest of the live
+  /// state, because the question they answer is asked at teardown when every
+  /// live flag has already been cleared. "Did the alarm ever have to work on
+  /// this ride, and did it" cannot be reconstructed from a flag that is false
+  /// by the time anyone looks.
+  bool _destinationAnnounced = false;
+  bool _overshot = false;
+  bool _timedOut = false;
+  bool _wakeArmedThisRide = false;
+  bool _wakeAnsweredThisRide = false;
+
   Future<void> start({
     required String originId,
     required String destinationId,
@@ -321,6 +345,10 @@ class GeofenceChainService {
     );
     _rideTimeout = RideTimeout(startedAt: rideStartedAt ?? DateTime.now());
     _rideHealth = RideHealth.forJourney(journey);
+    // The count IS the measurement: weekly active riders means three or more
+    // rides in a week, so this event carries no properties at all. Not
+    // awaited, because nothing about starting a ride may wait on a network.
+    unawaited(_analytics.trackRideStarted());
     if (pulseIntervalS > 0) {
       _log(
         'PULSE every ${pulseIntervalS}s'
@@ -1015,6 +1043,9 @@ class GeofenceChainService {
   /// that arrives when no ladder is live still leaves a trace.
   void wakeAck({String? source}) {
     _log('WAKE ack from ${source ?? 'unknown'}.');
+    // Only an ack that answers a LIVE ladder counts as the rider being woken.
+    // A tap when nothing is sounding is a tap.
+    if (_wakeLadderLive) _wakeAnsweredThisRide = true;
     _handleWakeActions(
       _wakeEscalation?.acknowledge(DateTime.now()) ?? const [],
     );
@@ -1069,6 +1100,10 @@ class GeofenceChainService {
       final changedLive = live != _wakeLadderLive;
       _wakeLadderLive = live;
       _wakeLadderRung = rung;
+      // Remembered for the whole ride: wake success is measured over the rides
+      // where the alarm actually had to work, and a ride the rider slept
+      // through cannot be told from one they stayed awake for without this.
+      if (live) _wakeArmedThisRide = true;
       if (changedLive) {
         _log('WAKE ladder ${live ? 'live' : 'stood down'}.');
         if (!live) {
@@ -1172,6 +1207,17 @@ class GeofenceChainService {
   /// parameter was added to abolish.
   Future<void> stop({required String reason}) async {
     _log('Journey ending: $reason.');
+    // Sent FIRST, before the teardown below clears the state it describes, and
+    // not awaited: a slow or unreachable analytics endpoint must never hold up
+    // the end of a ride. Silent and cost-free when the rider has opted out or
+    // no key is compiled in.
+    unawaited(
+      _analytics.trackRideEnded(
+        outcome: _rideOutcome,
+        wakeArmed: _wakeArmedThisRide,
+        wakeAnswered: _wakeAnsweredThisRide,
+      ),
+    );
     // The engine dies first so nothing re-starts the tone mid-teardown; a
     // ride ended mid-ladder must also release the UI's media session.
     _wakeEscalation = null;
@@ -1362,8 +1408,12 @@ class GeofenceChainService {
 
       if (announcement.kind == AnnouncementKind.arrival &&
           announcement.stationId == _journey?.destinationStationId) {
+        _destinationAnnounced = true;
         onDestinationReached?.call();
       }
+      // The failure the whole product exists to prevent, and the one outcome
+      // that must never be lost in an "ended early" bucket.
+      if (announcement.kind == AnnouncementKind.overshoot) _overshot = true;
 
       _handleWindDownActions(
         _windDown?.onStationEvent(announcement, now) ?? const [],
@@ -1554,6 +1604,7 @@ class GeofenceChainService {
           unawaited(_speak(text));
         case RideTimeoutEnd():
           _log('TIMEOUT ending Travel Mode.');
+          _timedOut = true;
           onAutoOff?.call();
         case RideTimeoutNote(:final reason):
           _log('TIMEOUT $reason.');
@@ -1617,6 +1668,20 @@ class GeofenceChainService {
 
   void _onGeofenceError(Object error, StackTrace stackTrace) {
     _log('Geofencing error: $error');
+  }
+
+  /// How this ride finished, in the four words analytics is allowed to know.
+  ///
+  /// ORDER MATTERS. An overshoot outranks an arrival because a ride can do
+  /// both: the destination is announced, the rider sleeps through it, and the
+  /// pin fires a stop later. Reporting that as "arrived" would count the
+  /// product's central failure as its central success, and the wake success
+  /// bar would read 100 percent on a ride that missed the stop.
+  RideOutcome get _rideOutcome {
+    if (_overshot) return RideOutcome.overshot;
+    if (_destinationAnnounced) return RideOutcome.arrived;
+    if (_timedOut) return RideOutcome.timeout;
+    return RideOutcome.endedEarly;
   }
 
   void _log(String message) {

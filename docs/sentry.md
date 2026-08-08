@@ -8,12 +8,13 @@ This repository is **public**. The DSN is passed at build time and is absent
 from every checkout:
 
 ```
-cp sentry.example.json sentry.json     # then paste the DSN in
-flutter run --dart-define-from-file=sentry.json
-flutter build apk --dart-define-from-file=sentry.json
+cp secrets.example.json secrets.json   # then paste the DSN in
+flutter run --dart-define-from-file=secrets.json
+flutter build apk --dart-define-from-file=secrets.json
 ```
 
-`sentry.json` is gitignored. With no DSN, `CrashReporting.isEnabled` is false,
+`secrets.json` is gitignored and also carries the Aptabase key (see
+[analytics.md](analytics.md)). With no DSN, `CrashReporting.isEnabled` is false,
 nothing initialises, and the app runs normally. That is what a clone, a fork
 and every test gets, and it is a supported state rather than a broken one.
 
@@ -87,8 +88,7 @@ OFF: no DSN in this build."
 
 ## Still open
 
-- **No opt-out toggle.** Settings has one for analytics by the locked
-  monetization design; crash reporting was never specified. Decide before the
-  beta, along with the privacy copy that has to name Sentry.
-- Aptabase (analytics) is a separate item and still unbuilt. It is the one
-  with a clock on it: retention cannot be measured retroactively.
+- **No opt-out toggle for CRASHES.** Settings' "Share anonymous usage" switch
+  governs analytics only. Crash reporting was never specified in the locked
+  design. Decide before the beta, along with the privacy copy that has to name
+  Sentry.

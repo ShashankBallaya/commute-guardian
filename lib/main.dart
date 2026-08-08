@@ -17,6 +17,7 @@ import 'services/ride_service_client.dart';
 import 'services/wind_down.dart';
 import 'state/journey_providers.dart';
 import 'state/ride_providers.dart';
+import 'state/settings_providers.dart';
 import 'theme/app_theme.dart';
 import 'theme/palette.dart';
 import 'widgets/slide_to_start.dart';
@@ -1341,6 +1342,13 @@ class _EntryGate extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Starts the UI isolate's analytics once the rider's opt-out has been read
+    // from the database. Watched here rather than called from main() because
+    // main() runs before ProviderScope exists, and reading settings there would
+    // mean opening the drift database a second time.
+    //
+    // Nothing depends on the result: analytics must never gate a screen.
+    ref.watch(analyticsBootProvider);
     final seen = ref.watch(onboardingSeenProvider);
     return seen.when(
       // A blank frame for one database read, rather than flashing the wrong

@@ -63,8 +63,9 @@ teaching/
 # Sarvam API key for tool/build_sarvam_clips.py, never commit
 tool/.sarvam_key
 
-# Sentry DSN, never committed: this repository is public. Copy
-# sentry.example.json to sentry.json and paste the DSN in. Builds pass it with
-# --dart-define-from-file=sentry.json; with no file, crash reporting is off and
-# the app runs normally. See docs/sentry.md.
-sentry.json
+# Build-time keys, never committed: this repository is public. Copy
+# secrets.example.json to secrets.json and paste them in. Builds pass them with
+# --dart-define-from-file=secrets.json; with no file, crash reporting and
+# analytics are both off and the app runs normally. See docs/sentry.md and
+# docs/analytics.md.
+secrets.json
