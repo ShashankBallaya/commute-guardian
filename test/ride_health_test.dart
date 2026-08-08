@@ -88,21 +88,43 @@ void main() {
       expect(second.whereType<RideHealthNote>(), hasLength(1));
     });
 
-    test('past the quiet window it may warn again', () {
-      // A gap twenty minutes later is a new event, not the same one.
+    test('A LATER GAP IS STILL SILENT, however much later it is', () {
+      // This used to warn again past a 15 minute quiet window, on the reasoning
+      // that a gap much later is a new event. The six logs disagreed: 24 gaps
+      // across six rides, the window silenced 14, and the app still spoke 10
+      // times on five of the six rides. Once a ride, and every later gap is a
+      // log line instead.
       final health = RideHealth();
       fixesUntil(health, const Duration(minutes: 1));
-      health.onTick(t0.add(const Duration(minutes: 3, seconds: 1)));
+      expect(
+        spoken(health.onTick(t0.add(const Duration(minutes: 3, seconds: 1)))),
+        hasLength(1),
+      );
 
       fixesUntil(
         health,
-        const Duration(minutes: 25),
+        const Duration(minutes: 40),
         from: const Duration(minutes: 4),
       );
-      expect(
-        spoken(health.onTick(t0.add(const Duration(minutes: 27, seconds: 1)))),
-        hasLength(1),
-      );
+      final later = health.onTick(t0.add(const Duration(minutes: 43)));
+      expect(spoken(later), isEmpty);
+      // Silent to the rider, still visible to whoever reads the ride log.
+      expect(later.whereType<RideHealthNote>(), hasLength(1));
+    });
+
+    test('a whole ride of gaps is one sentence, not six', () {
+      // The shape of the real 18 Jul rides: gaps that recur for the whole
+      // journey, spaced far enough apart that a window never catches them all.
+      final health = RideHealth();
+      var spokenCount = 0;
+      for (var gap = 0; gap < 6; gap++) {
+        final base = Duration(minutes: gap * 12);
+        fixesUntil(health, base + const Duration(minutes: 1), from: base);
+        spokenCount += spoken(
+          health.onTick(t0.add(base + const Duration(minutes: 3, seconds: 1))),
+        ).length;
+      }
+      expect(spokenCount, 1);
     });
 
     test('an unusable fix is not evidence the stream is healthy', () {

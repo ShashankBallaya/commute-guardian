@@ -89,9 +89,30 @@ class RideHealth {
   /// cutting between Kalwa and Mumbra would train the rider to ignore it.
   static const gpsGap = Duration(minutes: 2);
 
-  /// After the stream recovers, how long before another warning may fire. A
-  /// ride through patchy cover must not narrate its own signal strength.
-  static const gpsQuiet = Duration(minutes: 15);
+  /// ONCE A RIDE. Not a quiet window, and this is a MEASURED correction.
+  ///
+  /// It was a 15 minute window until 8 Aug 2026, on the reasoning that a gap
+  /// twenty minutes later is a new event rather than the same one. Replaying
+  /// the six real logs through this engine (the replay tool carries it now, so
+  /// this is the engine and not a sketch of it) says otherwise. Across six
+  /// rides there are 24 gaps past [gpsGap]. The window silences 14 of them and
+  /// the app still speaks 10 times, on five of the six rides, three times on
+  /// the worst one.
+  ///
+  /// Two spoken warnings a ride is the exact failure this file's own rule
+  /// names: an edge state that fires on an ordinary Mumbai local is worse than
+  /// one that never fires, because the rider learns to ignore the voice. That
+  /// voice is also the wake alarm's, and a rider who has learned to ignore it
+  /// sleeps past their stop. Nothing else in this app can go as wrong.
+  ///
+  /// The second warning also carries no new instruction. The rider has moved
+  /// near a door or cannot; saying it again 35 minutes later only spends
+  /// attention. And nothing is lost in the gaps: when fixes return,
+  /// RideProgress's backstop speaks every station crossed, late and in the past
+  /// tense. The ride the rider is told about is still the ride they are on.
+  ///
+  /// Every later gap is still a log line, which is where a diagnosis wants it.
+  static const gpsWarningsPerRide = 1;
 
   /// A stall is this many times the ride's own median segment so far.
   static const stallFactor = 3;
@@ -107,7 +128,7 @@ class RideHealth {
 
   DateTime? _lastUsableFix;
   DateTime? _lastCrossing;
-  DateTime? _gpsWarnedAt;
+  int _gpsWarnings = 0;
   bool _gpsLost = false;
   bool _stallWarned = false;
 
@@ -301,11 +322,10 @@ class RideHealth {
     if (_gpsLost) return const [];
     _gpsLost = true;
 
-    final warnedAt = _gpsWarnedAt;
-    if (warnedAt != null && now.difference(warnedAt) < gpsQuiet) {
-      return const [RideHealthNote('GPS gap again, inside the quiet window')];
+    if (_gpsWarnings >= gpsWarningsPerRide) {
+      return const [RideHealthNote('GPS gap again, already said once')];
     }
-    _gpsWarnedAt = now;
+    _gpsWarnings++;
     return const [
       RideHealthNote('no usable fix for two minutes'),
       // Actionable, and true. It does NOT promise to keep counting stations,
