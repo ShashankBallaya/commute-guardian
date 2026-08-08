@@ -384,6 +384,13 @@ class GeofenceChainService {
     // both platforms because it costs nothing, but only AWAITED on Android
     // (see _speak): iOS honours awaitSpeakCompletion and its shared-session
     // behaviour is device-proven, so it is left exactly as it was.
+    // THE INSTRUMENT THE PRE-WARM QUESTION NEEDED, and never had. Section 4.2
+    // asks for geofence-to-voice latency under one second, and the ride logs
+    // could not answer it: every SPEAK line records when an announcement was
+    // DECIDED, and the gap between that and the first sound was invisible. So
+    // the six replays could not show a problem, which is not the same as
+    // showing there is none.
+    _tts.setStartHandler(_noteSpeechStarted);
     _tts.setCompletionHandler(_finishUtterance);
     _tts.setCancelHandler(_finishUtterance);
     _tts.setErrorHandler((dynamic message) {
@@ -400,6 +407,15 @@ class GeofenceChainService {
       // implement setQueueMode, hence the platform guard.
       await _tts.setQueueMode(1);
     }
+
+    // PRE-WARM (section 4.2). Fired here rather than just before the welcome,
+    // because firing it next to the thing it is meant to speed up would buy
+    // nothing: what it actually buys is the engine loading WHILE the geofence
+    // regions below are registered.
+    //
+    // Not awaited, and it cannot delay the ride: it is queued on the same
+    // chain every announcement uses, so the welcome simply follows it.
+    unawaited(_preWarmTts());
 
     Geofencing.instance.setup(printsDebugLog: true);
     Geofencing.instance.addGeofenceStatusChangedListener(_onStatusChanged);
@@ -849,6 +865,23 @@ class GeofenceChainService {
     if (done != null && !done.isCompleted) done.complete();
   }
 
+  /// When the pending utterance was handed to the engine, so [_noteSpeechStarted]
+  /// can say how long it took to become sound.
+  DateTime? _spokenAt;
+
+  /// The engine has started making noise. Logs decision-to-voice latency,
+  /// which is the number section 4.2 sets a one second budget for and the one
+  /// no ride has ever reported.
+  void _noteSpeechStarted() {
+    final at = _spokenAt;
+    if (at == null) return;
+    _spokenAt = null;
+    _log(
+      'VOICE started ${DateTime.now().difference(at).inMilliseconds}ms '
+      'after the call',
+    );
+  }
+
   Future<void> _speak(String text) {
     _pendingSpeaks++;
     _speaking = _speaking.then((_) async {
@@ -866,6 +899,7 @@ class GeofenceChainService {
           // announcement of the ride behind it.
           final done = Completer<void>();
           _utteranceDone = done;
+          _spokenAt = DateTime.now();
           await _tts.speak(text);
           await done.future.timeout(
             const Duration(seconds: 20),
@@ -875,6 +909,7 @@ class GeofenceChainService {
             },
           );
         } else {
+          _spokenAt = DateTime.now();
           await _tts.speak(text);
         }
       } catch (error) {
@@ -892,6 +927,41 @@ class GeofenceChainService {
           await _session?.setActive(false);
         }
       }
+    });
+    return _speaking;
+  }
+
+  /// Loads the TTS engine before the ride needs it, by speaking one silent
+  /// space (handover section 4.2).
+  ///
+  /// WHAT THIS IS AND IS NOT WORTH. The engine's cold start is a real cost,
+  /// but the app already pays it during the WELCOME line, which speaks seconds
+  /// into every ride. So no station announcement was ever the cold one, which
+  /// is the likeliest reason no ride log has shown a latency problem. What
+  /// this buys is the welcome itself, and the [_noteSpeechStarted] instrument
+  /// added beside it is what will say on the next ride whether that was worth
+  /// having. If it was not, this method is a two line deletion.
+  ///
+  /// IT GOES THROUGH [_speak], deliberately. Calling `_tts.speak` directly
+  /// would skip the audio-session discipline every other utterance obeys, and
+  /// inside the plugin that call activates the session: doing it raw at ride
+  /// start is exactly the shape of the 13 Jul bench bug, where Travel Mode
+  /// grabbed audio focus the moment it began.
+  ///
+  /// The volume is dropped and restored ON THE SAME CHAIN, so the restore
+  /// cannot land after the welcome has been queued. Getting that ordering
+  /// wrong would speak the welcome at volume zero, which is a silent first
+  /// impression on the one line that proves the audio path works at all.
+  Future<void> _preWarmTts() {
+    final startedAt = DateTime.now();
+    _speaking = _speaking.then((_) => _tts.setVolume(0));
+    unawaited(_speak(' '));
+    _speaking = _speaking.then((_) async {
+      await _tts.setVolume(1);
+      _log(
+        'TTS pre-warm done in '
+        '${DateTime.now().difference(startedAt).inMilliseconds}ms',
+      );
     });
     return _speaking;
   }
