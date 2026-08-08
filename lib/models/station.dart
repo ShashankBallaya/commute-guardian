@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 class Station {
   const Station({
     required this.id,
@@ -39,6 +41,30 @@ class Station {
         nameMr.toLowerCase().contains(q) ||
         code.toLowerCase().contains(q);
   }
+
+  /// Great-circle distance in metres from this station to a fix (haversine).
+  ///
+  /// Lives on the station because three engines now ask the same question of
+  /// one, and a per-engine copy of this formula is the drift this project has
+  /// been bitten by before: the day the radius test is tuned in one copy, the
+  /// others keep announcing on the old one.
+  double distanceM(double lat, double lng) {
+    const earthRadiusM = 6371000.0;
+    final dLat = _toRad(lat - this.lat);
+    final dLng = _toRad(lng - this.lng);
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_toRad(this.lat)) *
+            math.cos(_toRad(lat)) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+    return earthRadiusM * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+  }
+
+  /// Whether a fix lies inside this station's own fence.
+  bool contains(double lat, double lng) => distanceM(lat, lng) <= radiusM;
+
+  static double _toRad(double deg) => deg * math.pi / 180.0;
 
   factory Station.fromJson(Map<String, dynamic> json) => Station(
     id: json['id'] as String,

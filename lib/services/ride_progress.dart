@@ -109,8 +109,7 @@ class RideProgress {
     // also keeps the pin out of chain projection, which is the whole reason
     // pins live outside the chain.
     for (final pin in overshootStations) {
-      if (_distanceM(lat, lng, pin.lat, pin.lng) <= pin.radiusM &&
-          _announcedArrivals.add(pin.id)) {
+      if (pin.contains(lat, lng) && _announcedArrivals.add(pin.id)) {
         return [
           Announcement(
             stationId: pin.id,
@@ -125,7 +124,7 @@ class RideProgress {
 
     final n = _nearestIndex(lat, lng);
     final nearest = chain[n];
-    final nearestDist = _distanceM(lat, lng, nearest.lat, nearest.lng);
+    final nearestDist = nearest.distanceM(lat, lng);
 
     // How far along the chain has the train provably got? Inside the nearest
     // fence, or geometrically beyond it toward the next station, is DIRECT
@@ -264,7 +263,7 @@ class RideProgress {
     var best = 0;
     var bestDist = double.infinity;
     for (var i = 0; i < chain.length; i++) {
-      final d = _distanceM(lat, lng, chain[i].lat, chain[i].lng);
+      final d = chain[i].distanceM(lat, lng);
       if (d < bestDist) {
         bestDist = d;
         best = i;
@@ -311,20 +310,6 @@ class RideProgress {
     final toFixX = (lng - here.lng) * cosLat;
     final toFixY = lat - here.lat;
     return (legX * toFixX + legY * toFixY) > 0;
-  }
-
-  /// Great-circle distance in metres between two lat/lng points (haversine).
-  static double _distanceM(double lat1, double lng1, double lat2, double lng2) {
-    const earthRadiusM = 6371000.0;
-    final dLat = _toRad(lat2 - lat1);
-    final dLng = _toRad(lng2 - lng1);
-    final a =
-        math.sin(dLat / 2) * math.sin(dLat / 2) +
-        math.cos(_toRad(lat1)) *
-            math.cos(_toRad(lat2)) *
-            math.sin(dLng / 2) *
-            math.sin(dLng / 2);
-    return earthRadiusM * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
   }
 
   static double _toRad(double deg) => deg * math.pi / 180.0;

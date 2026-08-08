@@ -288,9 +288,10 @@ class GeofenceChainService {
       return;
     }
     _journey = journey;
-    // All three engines are built from the journey and nothing else, through
-    // the factories, so the replay tool cannot drift from the service the way
-    // it did when it silently stopped passing the overshoot pins.
+    // Every journey-shaped engine is built from the journey and nothing else,
+    // through the factories, so the replay tool cannot drift from the service
+    // the way it did when it silently stopped passing the overshoot pins.
+    // RideHealth joined them when WRONG_DIRECTION gave it pins of its own.
     _rideProgress = RideProgress.forJourney(journey);
     _windDown = WindDown.forJourney(journey);
     _wakeEscalation = WakeEscalation.forJourney(journey);
@@ -319,7 +320,7 @@ class GeofenceChainService {
       startedAt: DateTime.now(),
     );
     _rideTimeout = RideTimeout(startedAt: rideStartedAt ?? DateTime.now());
-    _rideHealth = RideHealth();
+    _rideHealth = RideHealth.forJourney(journey);
     if (pulseIntervalS > 0) {
       _log(
         'PULSE every ${pulseIntervalS}s'
@@ -1325,9 +1326,14 @@ class GeofenceChainService {
     // the engine rather than copied. A second copy of that number here would
     // drift the day it is tuned, and the two would disagree about whether the
     // stream is healthy while the chain refused to move.
-    _rideHealth?.onFix(
-      DateTime.now(),
-      usable: location.accuracy <= (_rideProgress?.maxAccuracyM ?? 150),
+    _handleHealthActions(
+      _rideHealth?.onFix(
+            DateTime.now(),
+            usable: location.accuracy <= (_rideProgress?.maxAccuracyM ?? 150),
+            lat: location.latitude,
+            lng: location.longitude,
+          ) ??
+          const [],
     );
 
     // Position, published on CHANGE only. Sits here rather than inside the
@@ -1378,6 +1384,7 @@ class GeofenceChainService {
       _handleHealthActions(
         _rideHealth?.onStationPassed(
               now,
+              stationId: announcement.stationId,
               changeHere:
                   journey?.interchanges.any(
                     (i) => i.stationId == announcement.stationId,

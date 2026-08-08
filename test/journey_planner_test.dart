@@ -361,4 +361,78 @@ void main() {
       throwsArgumentError,
     );
   });
+
+  group('wrong-way pins', () {
+    test('mid-line, the pin is the station behind the origin', () {
+      // Dadar toward Kalyan: the wrong platform sends the rider back to Parel.
+      final journey = _planner().plan(
+        originId: 'dadar',
+        destinationId: 'kalyan',
+      );
+      expect(_ids(journey.wrongWayStations), ['parel']);
+
+      // Riding the other way out of the same station it is the station on the
+      // other side, which is what makes this a DIRECTION test. Straight-line
+      // distance from the destination could not tell these two apart.
+      final back = _planner().plan(originId: 'dadar', destinationId: 'csmt');
+      expect(_ids(back.wrongWayStations), ['matunga']);
+    });
+
+    test('A TERMINUS ORIGIN PINS EVERY BRANCH BEHIND IT', () {
+      // Kalyan toward Dadar. A rider on the wrong platform at Kalyan is on a
+      // Kasara train or a Karjat train and the plan cannot know which, exactly
+      // as the overshoot net cannot know which branch a train runs onto.
+      final journey = _planner().plan(
+        originId: 'kalyan',
+        destinationId: 'dadar',
+      );
+      expect(_ids(journey.wrongWayStations), ['shahad', 'vithalwadi']);
+    });
+
+    test('an origin at the end of the network has no wrong direction', () {
+      // Every train out of CSMT leaves the same way. A pin here would have to
+      // be invented, and this engine only ever speaks from evidence.
+      final journey = _planner().plan(
+        originId: 'csmt',
+        destinationId: 'kalyan',
+      );
+      expect(journey.wrongWayStations, isEmpty);
+    });
+
+    test('no pin is ever a station the ride is meant to reach', () {
+      // The one way this feature could do real harm: warning a rider off a
+      // train that is taking them exactly where they asked to go. Checked
+      // across every pair the survey covers, not argued.
+      const pairs = [
+        ['kalyan', 'dadar'],
+        ['dadar', 'kalyan'],
+        ['thane', 'panvel'],
+        ['panvel', 'thane'],
+        ['borivali', 'churchgate'],
+        ['csmt', 'panvel'],
+        ['shahad', 'borivali'],
+        ['vasai_road', 'diva'],
+        ['nerul', 'uran'],
+        ['goregaon', 'csmt'],
+        ['karjat', 'thane'],
+        ['kasara', 'dadar'],
+      ];
+      for (final pair in pairs) {
+        final journey = _planner().plan(
+          originId: pair.first,
+          destinationId: pair.last,
+        );
+        final chainIds = _ids(journey.chain).toSet();
+        final label = '${pair.first} -> ${pair.last}';
+        for (final pin in journey.wrongWayStations) {
+          expect(chainIds, isNot(contains(pin.id)), reason: label);
+          expect(
+            _ids(journey.overshootStations),
+            isNot(contains(pin.id)),
+            reason: label,
+          );
+        }
+      }
+    });
+  });
 }

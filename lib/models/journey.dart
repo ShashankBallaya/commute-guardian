@@ -57,6 +57,7 @@ class Journey {
     required this.originStationId,
     required this.destinationStationId,
     required this.overshootStations,
+    required this.wrongWayStations,
     required this.interchanges,
   });
 
@@ -93,6 +94,24 @@ class Journey {
   List<String> get overshootStationIds => [
     for (final station in overshootStations) station.id,
   ];
+
+  /// The stations one stop BEHIND the origin: where a rider who boarded on the
+  /// wrong platform arrives first. The mirror image of [overshootStations], and
+  /// deliberately the same shape.
+  ///
+  /// Usually one. At a TERMINUS origin it is one per branch running back out of
+  /// it, because which one a wrongly boarded train takes cannot be known (a
+  /// train leaving Kalyan the other way is a Kasara train or a Karjat train).
+  /// Empty when nothing runs behind the origin at all, which is the honest
+  /// answer at CSMT: there is no wrong direction to catch when the platform
+  /// only faces one way.
+  ///
+  /// Outside [chain] for the same reason the overshoot pins are, and matched by
+  /// proximity alone. They are evidence, not inference: a fix inside one says
+  /// the rider is at a station the ride was never going to pass, which no
+  /// amount of chain geometry can say wrongly. See [Journey.chain] for what
+  /// projecting a non-chain station instead has already cost this app.
+  final List<Station> wrongWayStations;
 
   final List<Interchange> interchanges;
 

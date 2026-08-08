@@ -17,8 +17,15 @@
 // climbs to its ceiling exactly as it would for a sleeping rider.
 //
 // Output prefixes: SPEAK (RideProgress), WAKE (WakeEscalation), WIND_DOWN
-// (WindDown). Compare against the log's own SPEAK/WAKE lines to see what
-// the code change altered.
+// (WindDown), HEALTH (RideHealth: GPS_LOST, STALL, WRONG_DIRECTION). Compare
+// against the log's own SPEAK/WAKE lines to see what the code change altered.
+//
+// RideHealth is here because its three edge states are the ones a replay judges
+// BEST: all three are meant to stay silent on an ordinary ride, so six real
+// logs that produce no HEALTH speech are the strongest false-positive evidence
+// available without riding again. It has already earned that twice, catching a
+// stall warning fired at an interchange and another fired while the owner was
+// walking home from an overshoot.
 
 import 'dart:convert';
 import 'dart:io';
@@ -26,6 +33,7 @@ import 'dart:io';
 import 'package:commute_guardian/models/line.dart';
 import 'package:commute_guardian/models/station.dart';
 import 'package:commute_guardian/services/journey_planner.dart';
+import 'package:commute_guardian/services/ride_health.dart';
 import 'package:commute_guardian/services/ride_progress.dart';
 import 'package:commute_guardian/services/wake_escalation.dart';
 import 'package:commute_guardian/services/wind_down.dart';
@@ -61,14 +69,17 @@ void main(List<String> args) {
   final originId = args.length > 1 ? args[1] : 'kalyan';
   final destinationId = args.length > 2 ? args[2] : 'thane';
 
-  final doc = jsonDecode(
-    File('assets/stations/mumbai_suburban.json').readAsStringSync(),
-  ) as Map<String, dynamic>;
-  final stations = (doc['stations'] as List)
-      .cast<Map<String, dynamic>>()
-      .map(Station.fromJson);
-  final lines =
-      (doc['lines'] as List).cast<Map<String, dynamic>>().map(Line.fromJson);
+  final doc =
+      jsonDecode(
+            File('assets/stations/mumbai_suburban.json').readAsStringSync(),
+          )
+          as Map<String, dynamic>;
+  final stations = (doc['stations'] as List).cast<Map<String, dynamic>>().map(
+    Station.fromJson,
+  );
+  final lines = (doc['lines'] as List).cast<Map<String, dynamic>>().map(
+    Line.fromJson,
+  );
 
   final journey = JourneyPlanner(
     stationsById: {for (final s in stations) s.id: s},
@@ -94,10 +105,12 @@ void main(List<String> args) {
   final ride = RideProgress.forJourney(journey);
   final wake = WakeEscalation.forJourney(journey);
   final windDown = WindDown.forJourney(journey);
+  final health = RideHealth.forJourney(journey);
 
   var fixes = 0;
   var spoken = 0;
   var wakeActions = 0;
+  var healthSpoken = 0;
   DateTime? clock;
 
   String stamp(DateTime t) =>
@@ -128,6 +141,17 @@ void main(List<String> args) {
     }
   }
 
+  void printHealth(List<RideHealthAction> actions, DateTime at) {
+    for (final action in actions) {
+      final line = switch (action) {
+        RideHealthSpeak(:final text) => 'speak     $text',
+        RideHealthNote(:final reason) => 'note      $reason',
+      };
+      if (action is RideHealthSpeak) healthSpoken++;
+      stdout.writeln('${stamp(at)}  HEALTH    $line');
+    }
+  }
+
   // Stands in for the service's 5 second onRepeatEvent between log lines.
   void tickUpTo(DateTime target) {
     if (clock == null) {
@@ -138,6 +162,7 @@ void main(List<String> args) {
       clock = clock!.add(_tick);
       printWake(wake.onTick(clock!), clock!);
       printWindDown(windDown.onTick(clock!), clock!);
+      printHealth(health.onTick(clock!), clock!);
     }
   }
 
@@ -147,9 +172,7 @@ void main(List<String> args) {
       final at = DateTime.parse(interruption.group(1)!);
       tickUpTo(at);
       final began = interruption.group(2)!.startsWith('interrupted');
-      stdout.writeln(
-        '${stamp(at)}  CALL      ${began ? 'started' : 'ended'}',
-      );
+      stdout.writeln('${stamp(at)}  CALL      ${began ? 'started' : 'ended'}');
       printWake(wake.onCallStateChanged(inCall: began, now: at), at);
       continue;
     }
@@ -178,12 +201,42 @@ void main(List<String> args) {
     final speedMps = double.tryParse(m.group(5) ?? '') ?? 0;
 
     final announcements = ride.onFix(lat: lat, lng: lng, accuracyM: accuracyM);
+    printHealth(
+      health.onFix(
+        at,
+        // ONE definition of usable, read off the engine, exactly as the service
+        // reads it rather than repeating the number.
+        usable: accuracyM <= ride.maxAccuracyM,
+        lat: lat,
+        lng: lng,
+      ),
+      at,
+    );
     for (final a in announcements) {
       spoken++;
-      stdout.writeln('${stamp(at)}  ${a.kind.name.toUpperCase().padRight(9)} '
-          '${a.stationId.padRight(9)} ${a.text}');
+      stdout.writeln(
+        '${stamp(at)}  ${a.kind.name.toUpperCase().padRight(9)} '
+        '${a.stationId.padRight(9)} ${a.text}',
+      );
       printWake(wake.onStationEvent(a, at), at);
       printWindDown(windDown.onStationEvent(a, at), at);
+      // The same two journey facts the service passes, from the same journey.
+      // Wiring these by hand differently from the service is precisely how this
+      // tool went blind on the overshoot pins.
+      printHealth(
+        health.onStationPassed(
+          at,
+          stationId: a.stationId,
+          changeHere: journey.interchanges.any(
+            (i) => i.stationId == a.stationId,
+          ),
+          endsWatch:
+              a.kind == AnnouncementKind.overshoot ||
+              (a.kind == AnnouncementKind.arrival &&
+                  a.stationId == journey.destinationStationId),
+        ),
+        at,
+      );
     }
 
     printWake(
@@ -210,6 +263,6 @@ void main(List<String> args) {
 
   stdout.writeln(
     '\n$fixes fixes replayed, $spoken announcements, '
-    '$wakeActions wake actions.',
+    '$wakeActions wake actions, $healthSpoken health warnings.',
   );
 }

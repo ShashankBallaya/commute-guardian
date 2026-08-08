@@ -1,3 +1,6 @@
+import '../models/journey.dart';
+import '../models/station.dart';
+
 /// What a [RideHealth] wants said. The engine decides, the service speaks.
 sealed class RideHealthAction {
   const RideHealthAction();
@@ -15,13 +18,16 @@ class RideHealthNote extends RideHealthAction {
   final String reason;
 }
 
-/// Two of the handover's edge states (section 4.1): GPS_LOST and STALL.
+/// The handover's edge states (section 4.1) that are notices: GPS_LOST, STALL
+/// and WRONG_DIRECTION.
 ///
-/// THEY ARE THE SAME SHAPE, which is why they share an engine: both are "the
-/// thing that should be happening has not happened for a while", and both are
-/// answered with one sentence and no change to the ride. Nothing here touches
-/// progress, the wake ladder or the wind-down. It cannot make the app announce
-/// a station, and it cannot make it fail to.
+/// THE FIRST TWO ARE THE SAME SHAPE, which is why they share an engine: both
+/// are "the thing that should be happening has not happened for a while", and
+/// both are answered with one sentence and no change to the ride.
+/// WRONG_DIRECTION is the odd one, a position claim rather than a clock, but it
+/// belongs here because it has the same POWER: a sentence and a log line.
+/// Nothing here touches progress, the wake ladder or the wind-down. It cannot
+/// make the app announce a station, and it cannot make it fail to.
 ///
 /// WHAT THIS DELIBERATELY DOES NOT DO: DEAD RECKONING.
 ///
@@ -45,7 +51,33 @@ class RideHealthNote extends RideHealthAction {
 /// crossed in the gap, late and in the past tense, which is the honest recovery
 /// and already exists.
 class RideHealth {
-  RideHealth();
+  RideHealth({
+    this.origin,
+    this.destinationName,
+    this.wrongWayStations = const [],
+  });
+
+  /// Build the engine from the journey it runs for, like every other engine
+  /// here. Wiring the fields by hand at the call site is what made the replay
+  /// tool stop reproducing the app.
+  factory RideHealth.forJourney(Journey journey) => RideHealth(
+    origin: journey.chain.isEmpty ? null : journey.chain.first,
+    destinationName: journey.chain.isEmpty ? null : journey.chain.last.name,
+    wrongWayStations: journey.wrongWayStations,
+  );
+
+  /// Where the rider boards. WRONG_DIRECTION is measured from here, and the
+  /// watch does not arm until a fix proves the rider is actually at it.
+  final Station? origin;
+
+  /// Spoken name of where the rider is going, for the one sentence that names
+  /// it. Null disables the wrong-way notice: a warning that cannot say what it
+  /// is warning away from is not worth waking someone for.
+  final String? destinationName;
+
+  /// The stations one stop behind [origin]. Matched by proximity, never by
+  /// chain order. See [Journey.wrongWayStations].
+  final List<Station> wrongWayStations;
 
   /// No usable fix for this long and the rider is told. Usable means the same
   /// thing it means to RideProgress: inside its accuracy ceiling. A fix the OS
@@ -79,6 +111,26 @@ class RideHealth {
   bool _gpsLost = false;
   bool _stallWarned = false;
 
+  /// WRONG_DIRECTION is armed only once a usable fix has put the rider inside
+  /// the origin's own fence, and it is disarmed for good the moment the ride
+  /// provably moves the right way (or ends).
+  ///
+  /// ARMING MATTERS AS MUCH AS FIRING. A rider who plans Dadar to Andheri while
+  /// still riding INTO Dadar is sitting at a wrong-way pin at the instant the
+  /// ride starts, and an unarmed engine would greet them with "you seem to be
+  /// heading away from Andheri" before they had boarded anything. This is the
+  /// same instinct as RideProgress's first fix, which only localizes: a ride
+  /// that starts away from its origin makes no claim about direction until the
+  /// rider is somewhere it can measure from.
+  ///
+  /// The cost of the rule is a MISS, not a false alarm: a rider who starts
+  /// Travel Mode from home and walks into the wrong platform never arms the
+  /// watch if no fix lands inside the origin fence on the way. On this product
+  /// that trade is the right way round, and it is the same asymmetry the whole
+  /// engine is built on.
+  bool _wrongWayArmed = false;
+  bool _wrongWayWatchOver = false;
+
   /// Stall watching is over for this ride. Set at the destination, and at an
   /// overshoot pin, because after either one there are no more stations to
   /// cross BY DESIGN and every further minute would look like a stall.
@@ -106,13 +158,78 @@ class RideHealth {
   /// train the rider is actually on.
   final List<Duration> _segments = [];
 
-  /// A usable fix landed. [usable] is passed rather than derived so the caller
-  /// keeps ONE definition of usable, the one RideProgress applies.
-  void onFix(DateTime now, {required bool usable}) {
-    if (!usable) return;
+  /// A fix landed. [usable] is passed rather than derived so the caller keeps
+  /// ONE definition of usable, the one RideProgress applies.
+  ///
+  /// [lat] and [lng] are what WRONG_DIRECTION reads. They are optional because
+  /// a caller that only wants the health clocks fed has nothing to say about
+  /// position, and a fix without coordinates must not arm or fire a claim about
+  /// where the rider is.
+  List<RideHealthAction> onFix(
+    DateTime now, {
+    required bool usable,
+    double? lat,
+    double? lng,
+  }) {
+    if (!usable) return const [];
     _lastUsableFix = now;
     _lastCrossing ??= now;
     _gpsLost = false;
+    if (lat == null || lng == null) return const [];
+    return _wrongWayActions(lat, lng);
+  }
+
+  /// WRONG_DIRECTION, decided by PROXIMITY ALONE.
+  ///
+  /// A fix inside a wrong-way pin is direct evidence: the rider is standing at
+  /// a station this ride was never going to pass. Nothing is projected, nothing
+  /// is eliminated, and no leg is dot-producted, which is deliberate. Every
+  /// false announcement this project has shipped came from geometry inferring a
+  /// position rather than measuring one: the 12 Jul "you have reached Thane"
+  /// 1.19 km early, and the 18 Jul "you have passed Thane" off one 143 m creek
+  /// fix. A wrong-direction warning is exactly the kind of sentence a rider
+  /// acts on immediately, by getting off a train, so it gets the strictest
+  /// evidence in the codebase rather than the cleverest.
+  ///
+  /// Straight-line distance from the destination was the obvious alternative
+  /// and it is wrong on this network: a Thane to Panvel rider leaves Thane
+  /// EASTWARD on Trans Harbour while the Central line arrives from the east, so
+  /// "moving away from the destination" is the normal shape of a correct ride
+  /// for the first several minutes.
+  List<RideHealthAction> _wrongWayActions(double lat, double lng) {
+    if (_wrongWayWatchOver) return const [];
+    final origin = this.origin;
+    final destination = destinationName;
+    if (origin == null || destination == null) return const [];
+
+    if (!_wrongWayArmed) {
+      if (!origin.contains(lat, lng)) return const [];
+      _wrongWayArmed = true;
+      return const [RideHealthNote('at the origin, wrong-way watch armed')];
+    }
+
+    for (final pin in wrongWayStations) {
+      if (!pin.contains(lat, lng)) continue;
+      // Once is all it gets, whatever the rider does about it.
+      _wrongWayWatchOver = true;
+      return [
+        RideHealthNote('reached ${pin.id}, one stop the wrong way'),
+        // It does NOT ask a question. The handover drafted this with
+        // notification actions ("Keep Travel Mode running?"), and the app has
+        // no notification buttons to answer with (the 30 Jul swipe bench found
+        // that every acknowledgement dies with the UI). It also does not need
+        // them: nothing is going to be turned off either way, so the honest
+        // sentence is the one that says what happened, what to do, and that the
+        // ride is still being watched. A rider who rode one stop back the other
+        // way is picked up again by the chain when they come through the origin.
+        RideHealthSpeak(
+          'You seem to be heading away from $destination. If this is the wrong '
+          'train, get off at the next station and cross to the other platform. '
+          'Travel Mode is still on.',
+        ),
+      ];
+    }
+    return const [];
   }
 
   /// A station was passed or arrived at: the ride is provably moving.
@@ -122,10 +239,21 @@ class RideHealth {
   /// engine never has to know what a Trans Harbour platform is.
   List<RideHealthAction> onStationPassed(
     DateTime now, {
+    String? stationId,
     bool changeHere = false,
     bool endsWatch = false,
   }) {
+    // Any station that is not the origin is proof the train is going the right
+    // way: the chain only contains stations between origin and destination, so
+    // reaching one cannot happen on a wrong-platform train. The origin itself
+    // is excluded because RideProgress announces it on the ride's first fix,
+    // which would otherwise close the watch before it had ever looked.
+    if (!_wrongWayWatchOver && stationId != null && stationId != origin?.id) {
+      _wrongWayWatchOver = true;
+    }
+
     if (endsWatch) {
+      _wrongWayWatchOver = true;
       _stallWatchOver = true;
       _stallWarned = false;
       _lastCrossing = now;

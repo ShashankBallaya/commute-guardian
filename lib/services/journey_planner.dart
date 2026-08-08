@@ -279,6 +279,10 @@ class JourneyPlanner {
         ))
           stationsById[id]!,
       ],
+      wrongWayStations: [
+        for (final id in _wrongWayPins(legs.first, originId, chainIds.toSet()))
+          stationsById[id]!,
+      ],
       interchanges: interchanges,
     );
   }
@@ -325,6 +329,65 @@ class JourneyPlanner {
       }
     }
     return pins;
+  }
+
+  /// The pins one station BEHIND the origin, for WRONG_DIRECTION.
+  ///
+  /// Mirrors [_overshootPins] exactly, stepping the other way: ordinarily the
+  /// previous station on the first leg's own line, and at a TERMINUS origin one
+  /// per branch that runs back out of it. A rider at Kalyan bound for Dadar who
+  /// takes the wrong platform is on a Kasara train or a Karjat train, and the
+  /// plan cannot know which, so both are pinned.
+  ///
+  /// Returns nothing when the origin has no station behind it (CSMT, Churchgate:
+  /// every train leaves the same way, so there is no wrong direction to catch),
+  /// and nothing when the station behind is one the ride passes anyway, which
+  /// would pin a station the rider is meant to reach.
+  List<String> _wrongWayPins(
+    _Leg firstLeg,
+    String originId,
+    Set<String> alreadyInChain,
+  ) {
+    final onOwnLine = _stationBehind(firstLeg, originId);
+    if (onOwnLine != null) {
+      return alreadyInChain.contains(onOwnLine) ? const [] : [onOwnLine];
+    }
+
+    final pins = <String>[];
+    for (final pair in throughServices) {
+      if (!pair.contains(firstLeg.lineId)) continue;
+      final ontoId = pair.first == firstLeg.lineId ? pair.last : pair.first;
+      final ids = linesById[ontoId]?.stationIds;
+      if (ids == null) continue;
+      final at = ids.indexOf(originId);
+      // The origin has to be an END of the branch for a train to run back out
+      // along it; the pin is that branch's next station outward.
+      final String? pin;
+      if (at == 0) {
+        pin = ids.length > 1 ? ids[1] : null;
+      } else if (at == ids.length - 1) {
+        pin = ids.length > 1 ? ids[ids.length - 2] : null;
+      } else {
+        pin = null;
+      }
+      if (pin != null && !alreadyInChain.contains(pin) && !pins.contains(pin)) {
+        pins.add(pin);
+      }
+    }
+    return pins;
+  }
+
+  /// The station before [originId] on the first leg's line, against the
+  /// direction of travel. Null at the end of the line, and null for a
+  /// degenerate single-station leg, which has no direction to be against.
+  String? _stationBehind(_Leg firstLeg, String originId) {
+    final ids = linesById[firstLeg.lineId]!.stationIds;
+    final from = ids.indexOf(firstLeg.fromId);
+    final to = ids.indexOf(firstLeg.toId);
+    if (from == to) return null;
+    final step = to > from ? 1 : -1;
+    final behind = ids.indexOf(originId) - step;
+    return behind >= 0 && behind < ids.length ? ids[behind] : null;
   }
 
   /// The station the onward leg's line ends at in its direction of travel, e.g.
