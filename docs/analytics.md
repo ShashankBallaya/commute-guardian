@@ -111,12 +111,35 @@ service isolate never opens that database.
 Without a key, analytics is inert and the app runs normally. That is what every
 clone and every test gets.
 
+## What it costs the app, measured rather than assumed
+
+- **Network**: three small requests per ride at most. One session on app open,
+  one `ride_started`, one `ride_ended`. Against a ride that samples GPS at 1 Hz
+  for an hour this is not measurable in battery terms.
+- **Size**: `aptabase_flutter` is pure Dart over `shared_preferences`. Tens of
+  kilobytes, not megabytes.
+- **The ride path: NOTHING.** This is the part that needed work rather than
+  assumption. `Aptabase.init` POSTS to the network before its future completes,
+  the package sets no timeout, and Dart's `HttpClient` has none by default. The
+  first wiring awaited that at the top of the service isolate's `onStart`,
+  which put a hung socket between a rider and Travel Mode starting, in an app
+  whose entire job is to start rides in cuttings and tunnels.
+
+  So the ride path fires init and walks away. Events wait for readiness on the
+  SEND side, where nothing is blocked, with a 10 second ceiling. Every send is
+  wrapped in a catch, because these are fired unawaited from the start and stop
+  of a ride, in the isolate whose death is silent. Sentry's init is still
+  awaited but bounded to two seconds. `analytics_test.dart` asserts all of it.
+
 ## Still open
 
 - **Nothing verifies the key reaches Aptabase.** Sentry got a debug button
   because crash reporting fails silently; analytics fails silently in the same
-  way, and has no equivalent yet. The cheapest check is the Aptabase dashboard
-  showing a session after a debug run.
+  way, and has no equivalent yet. It is also a worse fit: a test event would
+  land in the same tables the pre-committed bars are read from, and would be a
+  third event name the test list forbids. The cheapest honest check is the
+  Aptabase dashboard showing a SESSION after a debug run, which needs no event
+  at all. The two ride events need one real ride.
 - **The privacy copy.** The store listing and the onboarding privacy line have
   to name Aptabase and Sentry, and say what each collects. Not written.
 - **The retention clock only starts when this ships to real users.** Every day

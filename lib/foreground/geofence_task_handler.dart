@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../services/analytics.dart';
@@ -195,9 +197,14 @@ class GeofenceTaskHandler extends TaskHandler {
     // therefore the half of the app most worth reporting, and the half a
     // report is least likely to arrive from by any other route.
     //
-    // Awaited before the chain is built, so an error while planning the
-    // journey is already covered. Does nothing without a DSN.
-    await CrashReporting.initServiceIsolate();
+    // BOUNDED, not open ended. Starting an SDK here happens on the ride's
+    // critical path, and this app starts rides in cuttings and tunnels. Two
+    // seconds buys the coverage of an error thrown while planning the journey;
+    // beyond that the ride matters more than the report of it. Does nothing
+    // without a DSN.
+    await CrashReporting.initServiceIsolate()
+        .timeout(const Duration(seconds: 2))
+        .catchError((Object _) {});
 
     final originId = await FlutterForegroundTask.getData<String>(
       key: originIdKey,
@@ -217,7 +224,12 @@ class GeofenceTaskHandler extends TaskHandler {
     // Absent reads as OFF, deliberately: a missing key is not consent.
     final shareUsage =
         await FlutterForegroundTask.getData<bool>(key: shareUsageKey) ?? false;
-    await Analytics.init(enabled: shareUsage);
+    // NOT AWAITED AT ALL. Aptabase's init POSTS to the network before it
+    // completes and the package sets no timeout, so awaiting it here put a
+    // hung socket between the rider and Travel Mode starting. Counting a ride
+    // must never delay one. Events queued meanwhile still go out: Analytics
+    // waits for readiness on the send side, where nothing is blocked.
+    unawaited(Analytics.init(enabled: shareUsage));
 
     _chain = GeofenceChainService(
       onLog: _sendLog,

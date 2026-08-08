@@ -1,4 +1,5 @@
 import 'package:aptabase_flutter/aptabase_flutter.dart';
+import 'package:flutter/foundation.dart';
 
 /// How a ride finished. The only thing analytics ever learns about a journey.
 ///
@@ -64,7 +65,23 @@ enum RideOutcome {
 /// the thing that reads it. Off means nothing initialises and nothing is sent.
 class Analytics {
   Analytics({required this.enabled, Aptabase? client})
-    : _client = client ?? Aptabase.instance;
+    : _client = client ?? Aptabase.instance,
+      _forceConfigured = false;
+
+  /// Behaves as though a build-time app key were present, so the send path can
+  /// be exercised at all.
+  ///
+  /// Without this every test runs with [isConfigured] false, so [_send]
+  /// returns at its first line and the guards below it are never reached: the
+  /// "a broken client cannot escape into the ride" test would pass by doing
+  /// nothing, which is worse than not having it.
+  @visibleForTesting
+  Analytics.configured({required this.enabled, required Aptabase client})
+    // ignore: prefer_initializing_formals
+    : _client = client,
+      _forceConfigured = true;
+
+  final bool _forceConfigured;
 
   /// The rider's choice, `AppSettings.shareAnonymousUsage`. Read at
   /// construction on both sides of the isolate boundary.
@@ -79,19 +96,7 @@ class Analytics {
   static bool get isConfigured => appKey.isNotEmpty;
 
   /// True only when there is a key to send to AND the rider has not opted out.
-  bool get isActive => isConfigured && enabled;
-
-  /// Starts the SDK. Safe to call when inactive: it does nothing.
-  ///
-  /// Called in BOTH isolates. The UI isolate's call is what records an app
-  /// open, which is the entire implementation of installs and D30. The service
-  /// isolate needs its own because a background isolate has its own heap and
-  /// knows nothing about the UI's SDK.
-  static Future<void> init({required bool enabled}) async {
-    if (!isConfigured || !enabled || _started) return;
-    _started = true;
-    await Aptabase.init(appKey);
-  }
+  bool get isActive => (isConfigured || _forceConfigured) && enabled;
 
   /// IDEMPOTENT ON PURPOSE. The UI isolate boots this from a provider that
   /// re-runs whenever any setting changes, and a second init would start a
@@ -106,11 +111,44 @@ class Analytics {
   /// with the app.
   static bool _started = false;
 
-  /// A ride began. No properties: the count is the measurement.
-  Future<void> trackRideStarted() async {
-    if (!isActive) return;
-    await _client.trackEvent('ride_started');
+  /// Starts the SDK. Safe to call when inactive: it does nothing.
+  ///
+  /// Called in BOTH isolates. The UI isolate's call is what records an app
+  /// open, which is the entire implementation of installs and D30. The service
+  /// isolate needs its own because a background isolate has its own heap and
+  /// knows nothing about the UI's SDK.
+  ///
+  /// NEVER AWAIT THIS ON THE RIDE PATH. It returns a future so a caller that
+  /// genuinely wants to wait can, but `Aptabase.init` POSTS TO THE NETWORK
+  /// before it completes (it flushes any queued events at startup), the package
+  /// sets no timeout, and Dart's HttpClient has none by default.
+  ///
+  /// This app starts rides in trains, tunnels and cuttings, on the worst
+  /// networks it will ever see. An awaited init on the service isolate's
+  /// onStart meant a hung socket could delay Travel Mode itself. Analytics
+  /// delaying the thing that wakes a sleeping rider is the wrong way round in
+  /// every possible case, so the ride path fires this and walks away.
+  static Future<void> init({required bool enabled}) {
+    if (!isConfigured || !enabled || _started) return Future.value();
+    _started = true;
+    // Held so events queued before init finishes still go out, and so a hung
+    // init cannot leave them waiting forever.
+    _ready = Aptabase.init(
+      appKey,
+    ).timeout(startupTimeout).catchError((Object _) {});
+    return _ready!;
   }
+
+  /// How long an event will wait for a slow startup before giving up on
+  /// itself. Bounded because the alternative is a queue of pending sends
+  /// growing for the length of a ride.
+  static const startupTimeout = Duration(seconds: 10);
+
+  static Future<void>? _ready;
+
+  /// A ride began. No properties: the count is the measurement.
+  Future<void> trackRideStarted() =>
+      _send(() => _client.trackEvent('ride_started'));
 
   /// A ride finished, and how.
   ///
@@ -124,12 +162,36 @@ class Analytics {
     required RideOutcome outcome,
     required bool wakeArmed,
     required bool wakeAnswered,
-  }) async {
-    if (!isActive) return;
-    await _client.trackEvent('ride_ended', {
+  }) => _send(
+    () => _client.trackEvent('ride_ended', {
       'outcome': outcome.wireName,
       'wake_armed': wakeArmed,
       'wake_answered': wakeAnswered,
-    });
+    }),
+  );
+
+  /// Sends one event, and CANNOT FAIL INTO THE RIDE.
+  ///
+  /// Two guards, both learned from reading the package rather than from
+  /// trusting it:
+  ///
+  ///   - it waits for [init] to finish, because `trackEvent` reads a `late
+  ///     final` field and throws if the SDK has not started yet. The ride path
+  ///     no longer awaits init, so that race is now real rather than
+  ///     theoretical.
+  ///   - it swallows everything. These calls are fired unawaited from the
+  ///     start and stop of a ride, so a thrown error would surface as an
+  ///     unhandled async exception in the service isolate, which is the
+  ///     isolate whose death is silent. NOTHING about counting a ride may
+  ///     endanger riding one.
+  Future<void> _send(Future<void> Function() body) async {
+    if (!isActive) return;
+    try {
+      await _ready;
+      await body();
+    } catch (_) {
+      // Deliberately empty. An analytics failure is not a rider's problem, and
+      // there is nowhere useful to report it from a background isolate.
+    }
   }
 }

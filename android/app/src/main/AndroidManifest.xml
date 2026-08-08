@@ -8,6 +8,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- Crash reports and analytics only. The app itself is fully offline by a
+         locked decision: stations, geofences and TTS are all on device, and no
+         ride has ever needed a network.
+
+         DECLARED HERE, IN main, DELIBERATELY. Flutter puts INTERNET in the
+         debug and profile manifests only, so a RELEASE build had no network
+         permission at all and both Sentry and Aptabase would have failed
+         silently in the one build that ships. Found 8 Aug 2026, before any
+         release existed. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:label="commute_guardian"

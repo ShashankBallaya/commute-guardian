@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:aptabase_flutter/aptabase_flutter.dart';
 import 'package:commute_guardian/services/analytics.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -119,6 +120,73 @@ void main() {
     });
   });
 
+  group('ANALYTICS MUST NEVER DELAY A RIDE', () {
+    // Found 8 Aug 2026 by reading aptabase_flutter rather than trusting it.
+    // `Aptabase.init` POSTS to the network before its future completes, the
+    // package sets no timeout, and Dart's HttpClient has none by default. The
+    // first wiring awaited that at the top of the service isolate's onStart,
+    // which put a hung socket between a rider and Travel Mode starting, on an
+    // app whose whole job is to start rides in cuttings and tunnels.
+
+    test('the service isolate never awaits either SDK unbounded', () {
+      final source = File(
+        'lib/foreground/geofence_task_handler.dart',
+      ).readAsStringSync();
+
+      // Aptabase: fired and forgotten outright.
+      expect(source, contains('unawaited(Analytics.init('));
+      expect(source, isNot(contains('await Analytics.init(')));
+
+      // Sentry: awaited, but bounded, because an early crash report is worth
+      // two seconds and never worth a ride.
+      expect(source, contains('CrashReporting.initServiceIsolate()'));
+      final sentryCall = source.substring(
+        source.indexOf('CrashReporting.initServiceIsolate()'),
+      );
+      expect(sentryCall.substring(0, 200), contains('.timeout('));
+    });
+
+    test('a send waits for readiness instead of the caller waiting', () {
+      // The consequence of not awaiting init: trackEvent reads a late final
+      // field and throws if the SDK has not started. The wait moved to the
+      // send side, where nothing is blocked.
+      final source = File('lib/services/analytics.dart').readAsStringSync();
+      final send = source.substring(source.indexOf('Future<void> _send('));
+      expect(send, contains('await _ready'));
+      expect(send, contains('catch'));
+    });
+
+    test('a throwing client cannot escape into the ride', () async {
+      // These calls are fired unawaited from the start and stop of a ride, in
+      // the isolate whose death is silent. An unhandled async error there is
+      // the worst possible way to learn analytics is broken.
+      // .configured, not the normal constructor: with no build-time key this
+      // test would otherwise return at _send's first line and prove nothing.
+      final analytics = Analytics.configured(
+        enabled: true,
+        client: _ThrowingAptabase(),
+      );
+      expect(analytics.isActive, isTrue, reason: 'the send path must be live');
+      await analytics.trackRideStarted();
+      await analytics.trackRideEnded(
+        outcome: RideOutcome.overshot,
+        wakeArmed: true,
+        wakeAnswered: false,
+      );
+    });
+  });
+
+  test('RELEASE BUILDS CAN ACTUALLY REACH THE NETWORK', () {
+    // Flutter declares INTERNET in the debug and profile manifests only, so
+    // the release build (the only one that ships) had no network permission
+    // and both SDKs would have failed silently in front of real users. Found
+    // 8 Aug 2026, before any release existed.
+    final manifest = File(
+      'android/app/src/main/AndroidManifest.xml',
+    ).readAsStringSync();
+    expect(manifest, contains('android.permission.INTERNET'));
+  });
+
   group('the outcome the bars are read from', () {
     test('AN OVERSHOOT IS NOT AN ARRIVAL', () {
       // The ordering rule in GeofenceChainService._rideOutcome, stated here
@@ -164,3 +232,11 @@ String _stripComments(String source) => source
       return comment == -1 ? line : line.substring(0, comment);
     })
     .join('\n');
+
+/// An Aptabase whose every call fails, standing in for a dead network, a
+/// rejected key, or an SDK that was never initialised.
+class _ThrowingAptabase implements Aptabase {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      Future<void>.error(StateError('analytics is broken'));
+}
