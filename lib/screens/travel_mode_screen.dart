@@ -38,6 +38,7 @@ class TravelModeScreen extends StatelessWidget {
     super.key,
     required this.journey,
     required this.reachedIndex,
+    this.atStation = false,
     required this.wakeChoice,
     required this.onWakeChoiceChanged,
     required this.onEndJourney,
@@ -49,6 +50,11 @@ class TravelModeScreen extends StatelessWidget {
   /// Index into [Journey.chain] of the last station provably reached, or -1
   /// before the first.
   final int reachedIndex;
+
+  /// Whether the train is standing IN the station at [reachedIndex]. The
+  /// service's RideProgress decides this; the screen never re-derives it, for
+  /// the same reason it does not re-derive [reachedIndex].
+  final bool atStation;
 
   final WakeChoice wakeChoice;
   final ValueChanged<WakeChoice> onWakeChoiceChanged;
@@ -99,6 +105,7 @@ class TravelModeScreen extends StatelessWidget {
                 child: _ChainCard(
                   chain: _chain,
                   reachedIndex: reachedIndex,
+                  atStation: atStation,
                   collapsedCount: _collapsedCount,
                 ),
               ),
@@ -267,11 +274,13 @@ class _ChainCard extends StatelessWidget {
   const _ChainCard({
     required this.chain,
     required this.reachedIndex,
+    required this.atStation,
     required this.collapsedCount,
   });
 
   final List<Station> chain;
   final int reachedIndex;
+  final bool atStation;
   final int collapsedCount;
 
   @override
@@ -290,18 +299,37 @@ class _ChainCard extends StatelessWidget {
       );
     }
 
-    // The last station actually reached, named in full.
-    if (reachedIndex >= 0 && reachedIndex < chain.length) {
-      rows.add(
-        _ChainRow(
-          kind: _RowKind.passed,
-          label: chain[reachedIndex].name,
-          dimmed: true,
-        ),
-      );
-    }
+    // AT A STATION, OR BETWEEN TWO. The 9 Aug ride is why this is two states.
+    //
+    // The screen used to draw the reached station as history and put "You are
+    // here" underneath it, always. So a train standing on the platform at
+    // Vithalwadi told the rider they were somewhere between Vithalwadi and
+    // Ulhasnagar, which they could disprove by looking out of the window. The
+    // owner's report, in his words: while the train is stationary at a station
+    // it should still show you are in Vithalwadi.
+    //
+    // Naming the station IS the position when the rider is in it, so there is
+    // one row, not two. "You are here" only appears when the honest answer is
+    // that there is no station to name.
+    final atNamedStation =
+        atStation && reachedIndex >= 0 && reachedIndex < chain.length;
 
-    rows.add(const _ChainRow(kind: _RowKind.here, label: 'You are here'));
+    if (atNamedStation) {
+      rows.add(
+        _ChainRow(kind: _RowKind.here, label: chain[reachedIndex].name),
+      );
+    } else {
+      if (reachedIndex >= 0 && reachedIndex < chain.length) {
+        rows.add(
+          _ChainRow(
+            kind: _RowKind.passed,
+            label: chain[reachedIndex].name,
+            dimmed: true,
+          ),
+        );
+      }
+      rows.add(const _ChainRow(kind: _RowKind.here, label: 'You are here'));
+    }
 
     for (var i = reachedIndex + 1; i < chain.length; i++) {
       final isDestination = i == chain.length - 1;
@@ -329,9 +357,24 @@ class _ChainCard extends StatelessWidget {
         ).createShader(rect),
         blendMode: BlendMode.dstIn,
         child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: rows,
+          // THE SECOND ANIMATED THING, and it earns its place for a different
+          // reason than the count does. Arriving at a station REMOVES a row
+          // (the dimmed name and "You are here" become one named row) and
+          // leaving adds it back, so the whole list below jumps 40 px twice per
+          // station. An element appearing or disappearing with no transition
+          // reads as broken rather than as movement.
+          //
+          // Cheap where it matters: AnimatedSize costs nothing while the height
+          // is unchanged, which on a 45 minute ride is nearly all of it. Still
+          // no pulse, still no stagger, for the reasons in the class comment.
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: const Cubic(0.23, 1, 0.32, 1),
+            alignment: Alignment.topCenter,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: rows,
+            ),
           ),
         ),
       ),

@@ -24,6 +24,7 @@ void main() {
   Future<({List<WakeChoice> choices, List<int> ends})> pump(
     WidgetTester tester, {
     required int reachedIndex,
+    bool atStation = false,
     WakeChoice choice = WakeChoice.lastTwoStations,
     String? etaLine,
   }) async {
@@ -34,6 +35,7 @@ void main() {
         home: TravelModeScreen(
           journey: journey,
           reachedIndex: reachedIndex,
+          atStation: atStation,
           wakeChoice: choice,
           etaLine: etaLine,
           onWakeChoiceChanged: choices.add,
@@ -228,5 +230,43 @@ void main() {
   testWidgets('the shield says the app is watching', (tester) async {
     await pump(tester, reachedIndex: 2);
     expect(find.text('Wake-up\nmode active'), findsOneWidget);
+  });
+
+  group('AT a station reads differently from PAST it', () {
+    // THE 9 AUG 2026 RIDE, reported by the owner from the platform: the train
+    // stood at Vithalwadi and the screen said he was somewhere after it. The
+    // chain is Thane to Kalyan here, so index 1 is Kalwa.
+
+    testWidgets('standing in a station names it as the position', (
+      tester,
+    ) async {
+      await pump(tester, reachedIndex: 1, atStation: true);
+
+      final station = journey.chain[1].name;
+      expect(find.text(station), findsOneWidget);
+      // ONE row, not two. Naming the station IS the position, so a separate
+      // "You are here" underneath it would be the same claim twice, and the
+      // second one would be wrong.
+      expect(find.text('You are here'), findsNothing);
+    });
+
+    testWidgets('between two stations still says you are here', (tester) async {
+      await pump(tester, reachedIndex: 1, atStation: false);
+
+      expect(find.text(journey.chain[1].name), findsOneWidget);
+      expect(find.text('You are here'), findsOneWidget);
+    });
+
+    testWidgets('leaving the platform swaps one state for the other', (
+      tester,
+    ) async {
+      // The transition the rider actually watches: doors close, train pulls
+      // out, and the screen has to stop claiming the platform.
+      await pump(tester, reachedIndex: 1, atStation: true);
+      expect(find.text('You are here'), findsNothing);
+
+      await pump(tester, reachedIndex: 1, atStation: false);
+      expect(find.text('You are here'), findsOneWidget);
+    });
   });
 }

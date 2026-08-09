@@ -107,7 +107,7 @@ class GeofenceChainService {
   /// than re-derived in the UI from the raw fix stream, so that the chain has
   /// exactly one projector. Fires only on CHANGE, so a 1 Hz fix stream does not
   /// become a 1 Hz stream of identical messages across the isolate boundary.
-  final void Function(int reachedIndex)? onProgress;
+  final void Function(int reachedIndex, bool atStation)? onProgress;
 
   /// Fires when the wake ladder starts asking to be acknowledged, stands down,
   /// or CLIMBS A RUNG.
@@ -158,6 +158,9 @@ class GeofenceChainService {
   /// RideProgress's "nothing confirmed yet", so a ride that has not reached a
   /// station never emits.
   int _lastPublishedIndex = -1;
+
+  /// The at-station half of the last published position. See [onProgress].
+  bool _lastPublishedAtStation = false;
   WakeEscalation? _wakeEscalation;
   WakeAlertOutput? _wakeOutput;
   WindDown? _windDown;
@@ -1398,6 +1401,7 @@ class GeofenceChainService {
     // ran one would otherwise inherit a high water mark and never publish its
     // early stations, which is the same shape as the sustained-flag leak.
     _lastPublishedIndex = -1;
+    _lastPublishedAtStation = false;
     _journey = null;
     _log('Geofence chain stopped.');
     _logFile = null;
@@ -1497,10 +1501,19 @@ class GeofenceChainService {
     // announcement loop because the chain can advance without speaking (a
     // catch-up that resolves to a station already announced), and Screen 4 must
     // still move.
+    // AT the station or PAST it travels with the index, because it changes
+    // without the index changing: a train sits in Vithalwadi for a minute and
+    // then leaves, and reachedIndex is the same number throughout. Publishing
+    // on the index alone would freeze the screen on whichever of the two
+    // states happened to be true when the train arrived.
     final reached = _rideProgress?.reachedIndex;
-    if (reached != null && reached != _lastPublishedIndex) {
+    final atStation = _rideProgress?.atReachedStation ?? false;
+    if (reached != null &&
+        (reached != _lastPublishedIndex ||
+            atStation != _lastPublishedAtStation)) {
       _lastPublishedIndex = reached;
-      onProgress?.call(reached);
+      _lastPublishedAtStation = atStation;
+      onProgress?.call(reached, atStation);
     }
 
     final now = DateTime.now();

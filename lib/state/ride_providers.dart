@@ -42,6 +42,7 @@ class LiveRide {
     required this.destinationId,
     required this.destinationReached,
     this.reachedIndex = -1,
+    this.atStation = false,
     this.alightStationId,
   });
 
@@ -64,11 +65,18 @@ class LiveRide {
   /// station. Comes from the service's own RideProgress, never re-derived here.
   final int reachedIndex;
 
-  LiveRide withIndex(int index) => LiveRide(
+  /// Standing IN the station at [reachedIndex] rather than past it on the way
+  /// to the next. The engine has always known this; until the 9 Aug ride it
+  /// had no way to say so, and Screen 4 drew a train sitting at a platform as
+  /// though it had already left.
+  final bool atStation;
+
+  LiveRide withIndex(int index, {required bool atStation}) => LiveRide(
     originId: originId,
     destinationId: destinationId,
     destinationReached: destinationReached,
     reachedIndex: index,
+    atStation: atStation,
     alightStationId: alightStationId,
   );
 
@@ -77,6 +85,7 @@ class LiveRide {
     destinationId: destinationId,
     destinationReached: destinationReached,
     reachedIndex: reachedIndex,
+    atStation: atStation,
     alightStationId: stationId,
   );
 
@@ -85,6 +94,7 @@ class LiveRide {
     destinationId: destinationId,
     destinationReached: true,
     reachedIndex: reachedIndex,
+    atStation: atStation,
     alightStationId: alightStationId,
   );
 }
@@ -111,7 +121,12 @@ class LiveRideNotifier extends AsyncNotifier<LiveRide?> {
       if (event is RideProgressed) {
         final current = state.valueOrNull;
         if (current != null) {
-          state = AsyncData(current.withIndex(event.reachedIndex));
+          state = AsyncData(
+            current.withIndex(
+              event.reachedIndex,
+              atStation: event.atStation,
+            ),
+          );
         }
       }
       // Advanced in place for the same reason progress is: Screen 5 opens on
@@ -153,6 +168,7 @@ class LiveRideNotifier extends AsyncNotifier<LiveRide?> {
         destinationId: destinationId,
         destinationReached: persisted.destinationReached,
         reachedIndex: persisted.reachedIndex,
+        atStation: persisted.atStation,
         alightStationId: persisted.alightStationId,
       );
     } catch (_) {

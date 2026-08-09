@@ -95,6 +95,24 @@ class RideProgress {
   /// matching the service.
   int get reachedIndex => _reachedIndex;
 
+  /// Whether the rider is standing IN the station at [reachedIndex], rather
+  /// than somewhere past it on the way to the next one.
+  ///
+  /// THE ENGINE ALWAYS KNEW THIS AND NEVER SAID IT, which is what the 9 Aug
+  /// ride found on the screen. `reachedIndex` alone conflates two states a
+  /// rider can tell apart by looking out of the window: at Vithalwadi, and
+  /// past Vithalwadi. Screen 4 drew the second one for both, so a train
+  /// standing at a platform said "Vithalwadi" as history and "You are here"
+  /// underneath it. The owner's words: it should still show you are in
+  /// Vithalwadi while the train is stationary there.
+  ///
+  /// Deliberately a boolean about the REACHED station rather than an index of
+  /// its own. A fix inside some other station's fence, which can only happen
+  /// by going backwards along the chain, must not be able to walk the screen's
+  /// marker back: the chain only ratchets forward and this must agree with it.
+  bool get atReachedStation => _atReachedStation;
+  bool _atReachedStation = false;
+
   /// A passed-station claim from the previous usable fix that rested on
   /// elimination alone, held until the next usable fix agrees, or -1 when
   /// nothing is pending. See the corroboration rule in [onFix].
@@ -222,6 +240,13 @@ class RideProgress {
         _reachedIndex = claimIndex;
       }
     }
+
+    // Standing in a station, or between two. Set from THIS fix and only from a
+    // usable one: the accuracy gate above has already returned, so a blackout
+    // leaves the last known answer rather than claiming the rider left the
+    // platform. Compared against the reached index so it can never disagree
+    // with the chain's own idea of where the train is.
+    _atReachedStation = inside && n == _reachedIndex;
 
     // Normal fence arrival for the nearest station.
     if (nearestDist <= nearest.radiusM && _announcedArrivals.add(nearest.id)) {

@@ -39,6 +39,11 @@ const destinationReachedKey = 'destination_reached';
 /// action, the way the destination already survives that.
 const reachedIndexKey = 'reached_index';
 
+/// Whether the train is standing IN the station at [reachedIndexKey] rather
+/// than somewhere past it. Travels beside the index because it changes while
+/// the index does not: see `GeofenceChainService.onProgress`.
+const atStationKey = 'at_station';
+
 /// When the ride started, epoch millis, and the battery it started on.
 ///
 /// THE HISTORY ROW'S SEED. These used to be widget fields, so swiping the app
@@ -258,15 +263,19 @@ class GeofenceTaskHandler extends TaskHandler {
         FlutterForegroundTask.sendDataToMain({'destinationReached': true});
         FlutterForegroundTask.saveData(key: destinationReachedKey, value: true);
       },
-      onProgress: (reachedIndex) {
+      onProgress: (reachedIndex, atStation) {
         // Sent AND saved: the stream is the low-latency path, the store is what
         // a recreated process reads. Screen 4 must be right when the OS kills
         // the UI mid-ride and rebuilds it, with no user action.
-        FlutterForegroundTask.sendDataToMain({'reachedIndex': reachedIndex});
+        FlutterForegroundTask.sendDataToMain({
+          'reachedIndex': reachedIndex,
+          'atStation': atStation,
+        });
         FlutterForegroundTask.saveData(
           key: reachedIndexKey,
           value: reachedIndex,
         );
+        FlutterForegroundTask.saveData(key: atStationKey, value: atStation);
       },
       onWakeLadderLive: (live, rung, climbing) {
         _wakeLadderLive = live;

@@ -77,6 +77,86 @@ RideProgress _newRide() => RideProgress(
 );
 
 void main() {
+  group('standing in a station is not the same as being past it', () {
+    // THE 9 AUG 2026 RIDE FOUND THIS ON THE SCREEN, not in a log. The train sat
+    // at Vithalwadi and Screen 4 drew the rider between Vithalwadi and
+    // Ulhasnagar, because reachedIndex is the only thing this engine published
+    // and that one number answers both questions with the same value.
+
+    test('a fix inside the reached station says so', () {
+      final ride = _newRide();
+      expect(ride.atReachedStation, isFalse, reason: 'nothing localised yet');
+
+      ride.onFix(lat: 19.2358216, lng: 73.1308101, accuracyM: 20);
+
+      expect(ride.reachedIndex, 0);
+      expect(ride.atReachedStation, isTrue);
+    });
+
+    test('a fix between two stations does not', () {
+      final ride = _newRide();
+      ride.onFix(lat: 19.2358216, lng: 73.1308101, accuracyM: 20);
+
+      // Roughly halfway from Kalyan to Thakurli, outside both fences.
+      ride.onFix(lat: 19.2310, lng: 73.1140, accuracyM: 20);
+
+      expect(
+        ride.reachedIndex,
+        0,
+        reason: 'still Kalyan: nothing new has been reached',
+      );
+      expect(
+        ride.atReachedStation,
+        isFalse,
+        reason: 'the train has left the platform, and the screen must say so',
+      );
+    });
+
+    test('an unusable fix leaves the answer alone', () {
+      final ride = _newRide();
+      ride.onFix(lat: 19.2358216, lng: 73.1308101, accuracyM: 20);
+      expect(ride.atReachedStation, isTrue);
+
+      // An accuracy blackout says nothing about where the rider is standing,
+      // so it must not claim they walked off the platform.
+      ride.onFix(lat: 19.2310, lng: 73.1140, accuracyM: 400);
+
+      expect(ride.atReachedStation, isTrue);
+    });
+
+    test('a fix inside a station BEHIND the reached one does not claim it', () {
+      // The guard that makes this a boolean about the REACHED station rather
+      // than an index of its own, and the reason the test exists at all: a
+      // plain "inside some fence" answer passes every other test here while
+      // being wrong exactly once, which is the shape that ships.
+      //
+      // The chain only ratchets forward, so a fix back at Thakurli leaves
+      // reachedIndex on Dombivli. Answering "yes, at a station" would put the
+      // rider's marker on Dombivli while they are standing in Thakurli.
+      final ride = _newRide();
+      ride.onFix(lat: 19.2358216, lng: 73.1308101, accuracyM: 20);
+      ride.onFix(lat: 19.22611, lng: 73.09811, accuracyM: 20);
+      ride.onFix(lat: 19.21815, lng: 73.08673, accuracyM: 20);
+      expect(ride.reachedIndex, 2);
+      expect(ride.atReachedStation, isTrue);
+
+      ride.onFix(lat: 19.22611, lng: 73.09811, accuracyM: 20);
+
+      expect(ride.reachedIndex, 2, reason: 'the chain never walks back');
+      expect(ride.atReachedStation, isFalse);
+    });
+
+    test('arriving at the next station moves it along', () {
+      final ride = _newRide();
+      ride.onFix(lat: 19.2358216, lng: 73.1308101, accuracyM: 20);
+      ride.onFix(lat: 19.2310, lng: 73.1140, accuracyM: 20);
+      ride.onFix(lat: 19.22611, lng: 73.09811, accuracyM: 20);
+
+      expect(ride.reachedIndex, 1);
+      expect(ride.atReachedStation, isTrue);
+    });
+  });
+
   test('a fix outside every fence returns no announcements', () {
     final ride = _newRide();
 

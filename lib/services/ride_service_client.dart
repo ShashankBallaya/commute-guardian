@@ -67,10 +67,15 @@ class ToneCommanded extends ServiceEvent {
 /// this, and it comes from the service's own RideProgress so the chain has one
 /// projector rather than two that can disagree.
 class RideProgressed extends ServiceEvent {
-  const RideProgressed(this.reachedIndex);
+  const RideProgressed(this.reachedIndex, {this.atStation = false});
 
   /// Index into the journey chain, or -1 before the first station.
   final int reachedIndex;
+
+  /// Standing IN that station rather than past it. Fires again with the same
+  /// [reachedIndex] when the train pulls out, which is the whole point: the
+  /// index does not change when a train leaves a platform.
+  final bool atStation;
 }
 
 /// The ride reached the destination and said so out loud.
@@ -124,6 +129,7 @@ class PersistedRide {
     required this.destinationId,
     required this.destinationReached,
     this.reachedIndex = -1,
+    this.atStation = false,
     this.startedAt,
     this.startBatteryPct,
     this.wakeLadderLive = false,
@@ -150,6 +156,11 @@ class PersistedRide {
   /// station. Screen 4 draws itself from this after a process recreation, for
   /// the same reason the destination is read here rather than held in a widget.
   final int reachedIndex;
+
+  /// Standing IN the station at [reachedIndex]. Read back after a process
+  /// recreation so a rebuilt Screen 4 draws the platform the rider is on
+  /// rather than the gap after it.
+  final bool atStation;
 
   /// True only once the destination arrival announcement actually spoke. An
   /// early End stays false, which is what gates the turnaround origin default
@@ -224,7 +235,14 @@ List<ServiceEvent> parseServiceData(Object data) {
   }
 
   final reachedIndex = (data['reachedIndex'] as num?)?.toInt();
-  if (reachedIndex != null) events.add(RideProgressed(reachedIndex));
+  if (reachedIndex != null) {
+    events.add(
+      RideProgressed(
+        reachedIndex,
+        atStation: data['atStation'] as bool? ?? false,
+      ),
+    );
+  }
 
   final toneCommand = data['toneCommand'] as String?;
   if (toneCommand != null) {
@@ -477,6 +495,8 @@ class RideServiceClient {
         false,
     reachedIndex:
         await FlutterForegroundTask.getData<int>(key: reachedIndexKey) ?? -1,
+    atStation:
+        await FlutterForegroundTask.getData<bool>(key: atStationKey) ?? false,
     startedAt: _dateFromMillis(
       await FlutterForegroundTask.getData<int>(key: rideStartedAtKey),
     ),

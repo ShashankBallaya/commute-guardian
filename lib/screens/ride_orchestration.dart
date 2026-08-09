@@ -695,6 +695,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             return TravelModeScreen(
               journey: journey,
               reachedIndex: live?.reachedIndex ?? -1,
+              atStation: live?.atStation ?? false,
               wakeChoice: wakeChoice,
               onWakeChoiceChanged: (next) => setState(() => wakeChoice = next),
               onEndJourney: () async {
