@@ -270,6 +270,48 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
     }
   }
 
+  /// Re-reads the store after the UI has been AWAY, and takes it as the truth.
+  ///
+  /// THE 9 AUG RIDE IS WHY THIS EXISTS. Every fact on this side arrives by
+  /// `sendDataToMain`, which has no queue: an iOS UI isolate suspended in a
+  /// pocket does not receive the event, it loses it. The rider acknowledged the
+  /// alarm with an earphone tap at 20:52:54, the service stood the ladder down
+  /// and said so, and this notifier never heard it. The alert screen pops on
+  /// liveness going false, so it never left; and every press of "I'm awake"
+  /// reached a service with no live ladder, which changes nothing, which sends
+  /// nothing. Sixty-six presses are in that ride log. He force-stopped the app.
+  ///
+  /// AUTHORITATIVE, and that is the difference from [_seedFromStore]. That one
+  /// ORs the store into the state, which can only ever turn an alarm ON: it was
+  /// written for a UI that was newly born and could not hold a stale opinion. A
+  /// resumed UI holds exactly that, so ORing would have left the alarm stuck
+  /// on. The store is safe to trust here because the service writes it on every
+  /// change, false as well as true (see `onWakeLadderLive` in the task
+  /// handler), and any event arriving after this read is fresher and wins by
+  /// simply landing later.
+  Future<void> resync() async {
+    final client = ref.read(rideServiceClientProvider);
+    try {
+      final persisted = await client.readPersistedRide();
+      state = RideAlerts(
+        wakeLadderLive: persisted.wakeLadderLive,
+        wakeRung: persisted.wakeRung,
+        wakeClimbing: persisted.wakeClimbing,
+        windDownLive: persisted.windDownLive,
+        windDownEndsAt: persisted.windDownEndsAt,
+        windDownWindow: persisted.windDownWindow,
+      );
+      // Only ever CLAIMED here, never released. A ladder that stood down while
+      // we were away released the session on the service side already, and a
+      // release from here would be a new way for this screen to take the
+      // earphone buttons off the rider's music.
+      if (state.wakeLadderLive) await client.setMediaSession(true);
+    } catch (_) {
+      // No service plumbing (widget tests) or a store race. The event stream
+      // is still the primary path.
+    }
+  }
+
   void _onEvent(ServiceEvent event) {
     switch (event) {
       case WakeLadderChanged(:final live, :final rung, :final climbing):

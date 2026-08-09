@@ -129,6 +129,26 @@ Future<void> _pick(WidgetTester tester, String label, String station) async {
   await tester.pumpAndSettle();
 }
 
+/// The phone goes in a pocket and comes back out.
+///
+/// THE FULL LEGAL SEQUENCE, not a jump to resumed. `AppLifecycleListener`
+/// asserts on an illegal transition, so a shortcut here throws instead of
+/// testing anything: going straight from inactive to paused is rejected, and
+/// the resume callback never fires. Real platforms send every step.
+Future<void> _pocketAndReturn(WidgetTester tester) async {
+  for (final state in [
+    AppLifecycleState.inactive,
+    AppLifecycleState.hidden,
+    AppLifecycleState.paused,
+    AppLifecycleState.hidden,
+    AppLifecycleState.inactive,
+    AppLifecycleState.resumed,
+  ]) {
+    tester.binding.handleAppLifecycleStateChanged(state);
+  }
+  await tester.pumpAndSettle();
+}
+
 void main() {
   // The alert latches are static so two hosts cannot both open one alert, which
   // means they survive between tests in this process the way they survive
@@ -828,5 +848,99 @@ void main() {
           ?.text,
       isEmpty,
     );
+  });
+
+  testWidgets('AN ALARM ANSWERED WHILE THE APP SLEPT LETS THE RIDER OUT', (
+    tester,
+  ) async {
+    // THE 9 AUG 2026 RIDE, as a test, and it is the worst failure this app has
+    // shipped. The rider acked the ladder with an earphone tap at 20:52:54 with
+    // the phone in his pocket. The service stood the ladder down and said so;
+    // the suspended UI isolate never received it, because sendDataToMain has no
+    // queue and nothing re-read the store on the way back in. The alert screen
+    // leaves on liveness going false, so it never left. He pressed "I'm awake"
+    // SIXTY-SIX times against a service that had no ladder to stand down, and
+    // force-stopped the app.
+    //
+    // Everything below happens with NO event emitted, on purpose. The event is
+    // exactly what a pocketed phone does not get.
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+    );
+    await _pumpScreen(tester, service: service);
+
+    // The ladder starts while the rider is still looking at the phone, which is
+    // what happened at 20:52:21: the screen went up and he saw it.
+    service.emit(const WakeLadderChanged(true, rung: 1));
+    service.wakeLadderLive = true;
+    await tester.pumpAndSettle();
+    expect(find.byType(WakeAlertScreen), findsOneWidget);
+
+    // The ack the rider actually used, reaching the service while the UI is
+    // away: the store flips, and nothing tells the screen.
+    service.wakeLadderLive = false;
+    await tester.pump();
+    expect(
+      find.byType(WakeAlertScreen),
+      findsOneWidget,
+      reason: 'nothing has told the UI yet, so the screen is still up',
+    );
+
+    // He takes the phone out of his pocket.
+    await _pocketAndReturn(tester);
+
+    expect(
+      find.byType(WakeAlertScreen),
+      findsNothing,
+      reason: 'resume must re-read the store and let the rider out',
+    );
+  });
+
+  testWidgets('an arrival announced while the app slept still opens Screen 5', (
+    tester,
+  ) async {
+    // The second symptom of the same cause, and the owner reported it on BOTH
+    // phones: "I didn't see the wind-down screen on both of the phones".
+    // destinationReached is sent AND saved by the service, but the watcher only
+    // ever listened to the live stream.
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+    );
+    await _pumpScreen(tester, service: service);
+    await tester.pumpAndSettle();
+    expect(find.byType(ArrivalScreen), findsNothing);
+
+    // Arrived while the phone was in a pocket. No event.
+    service.destinationReached = true;
+    await tester.pump();
+    expect(find.byType(ArrivalScreen), findsNothing);
+
+    await _pocketAndReturn(tester);
+
+    expect(find.byType(ArrivalScreen), findsOneWidget);
+  });
+
+  testWidgets('a resume does not invent an alarm that is not sounding', (
+    tester,
+  ) async {
+    // The other direction, and the reason resync reads the store rather than
+    // ORing it: a quiet ride must stay quiet across a resume, and the earphone
+    // buttons must stay with the rider's music.
+    final service = FakeRideServiceClient(
+      running: true,
+      originId: 'kalyan',
+      destinationId: 'thane',
+    );
+    await _pumpScreen(tester, service: service);
+    await tester.pumpAndSettle();
+
+    await _pocketAndReturn(tester);
+
+    expect(find.byType(WakeAlertScreen), findsNothing);
+    expect(service.commands, isNot(contains('setMediaSession:true')));
   });
 }

@@ -75,6 +75,9 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// debug screen lives in main.dart and this file must not import it back.
   VoidCallback? get debugDoor => null;
 
+  /// Watches for the app coming back to the foreground. See [_onResumed].
+  AppLifecycleListener? _lifecycle;
+
   void initOrchestration() {
     _serviceEvents = service.events.listen(_onServiceEvent);
     // Forces the alerts notifier to exist before the first frame, so a ladder
@@ -82,7 +85,42 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     ref.read(rideAlertsProvider);
     _watchForArrival();
     _watchForWakeLadder();
+    _lifecycle = AppLifecycleListener(onResume: _onResumed);
     unawaited(_openingSequence());
+  }
+
+  /// THE APP HAD NO LIFECYCLE OBSERVER AT ALL until the 9 Aug ride, and this is
+  /// the hole that left.
+  ///
+  /// Everything this side knows about a ride arrives through `sendDataToMain`,
+  /// which has NO QUEUE. A UI isolate suspended in a pocket does not receive
+  /// those events later; it never receives them. So the screen's picture of the
+  /// ride is only as good as the last moment it was awake, which on this
+  /// product is the moment before the rider put the phone away, i.e. before
+  /// everything worth knowing happened.
+  ///
+  /// Two things went wrong on that ride and both are this:
+  ///   The rider acked the alarm with an earphone tap. The ladder stood down,
+  ///   the UI never heard, and the alert screen (which leaves on liveness going
+  ///   false) trapped him. He pressed "I'm awake" 66 times against a service
+  ///   with no ladder to stand down, and force-stopped the app.
+  ///
+  ///   The arrival screen never opened, on either phone, because
+  ///   `destinationReached` was announced to a UI that was asleep.
+  ///
+  /// The store holds the right answer in both cases: the service writes every
+  /// one of these facts as well as sending it. All that was missing was
+  /// somebody asking again on the way back in.
+  ///
+  /// Both hosts carry this mixin and both will fire on a resume. That is
+  /// harmless: both calls are idempotent reads, and the arrival latch is static
+  /// precisely so two hosts cannot open two screens.
+  void _onResumed() {
+    if (!mounted) return;
+    // Alerts FIRST. A stuck alert screen is the one state the rider cannot get
+    // out of by themselves, and the whole ride is behind it.
+    unawaited(ref.read(rideAlertsProvider.notifier).resync());
+    unawaited(ref.read(liveRideProvider.notifier).refresh());
   }
 
   /// Opens Screen 5 the moment the ride reaches its destination.
@@ -220,6 +258,8 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // this screen, which is what stops an activity recreation from tearing the
     // bridge down and putting it back up.
     unawaited(_serviceEvents.cancel());
+    _lifecycle?.dispose();
+    _lifecycle = null;
   }
 
   /// Everything that has to wait for the station network, in order: restore a
