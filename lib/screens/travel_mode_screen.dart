@@ -283,20 +283,29 @@ class _ChainCard extends StatelessWidget {
   final bool atStation;
   final int collapsedCount;
 
+  /// Behind the rider: the journey's own green, held well under the dots so it
+  /// reads as track rather than as another row of information.
+  static final Color _railTravelled = Palette.dotGreen.withValues(alpha: 0.45);
+
+  /// Still to come.
+  static final Color _railAhead = Palette.textDim(0.18);
+
   @override
   Widget build(BuildContext context) {
-    final rows = <Widget>[];
+    // Built as descriptions first, then turned into widgets, because the rail
+    // between two dots is a property of the PAIR: a row cannot know what colour
+    // the line below it should be without knowing whether the row under it is
+    // still ahead of the rider.
+    final specs = <({_RowKind kind, String label, bool dimmed})>[];
 
     if (collapsedCount > 0) {
-      rows.add(
-        _ChainRow(
-          kind: _RowKind.passed,
-          label: collapsedCount == 1
-              ? '1 station passed'
-              : '$collapsedCount stations passed',
-          dimmed: true,
-        ),
-      );
+      specs.add((
+        kind: _RowKind.passed,
+        label: collapsedCount == 1
+            ? '1 station passed'
+            : '$collapsedCount stations passed',
+        dimmed: true,
+      ));
     }
 
     // AT A STATION, OR BETWEEN TWO. The 9 Aug ride is why this is two states.
@@ -315,31 +324,51 @@ class _ChainCard extends StatelessWidget {
         atStation && reachedIndex >= 0 && reachedIndex < chain.length;
 
     if (atNamedStation) {
-      rows.add(
-        _ChainRow(kind: _RowKind.here, label: chain[reachedIndex].name),
-      );
+      specs.add((
+        kind: _RowKind.here,
+        label: chain[reachedIndex].name,
+        dimmed: false,
+      ));
     } else {
       if (reachedIndex >= 0 && reachedIndex < chain.length) {
-        rows.add(
-          _ChainRow(
-            kind: _RowKind.passed,
-            label: chain[reachedIndex].name,
-            dimmed: true,
-          ),
-        );
+        specs.add((
+          kind: _RowKind.passed,
+          label: chain[reachedIndex].name,
+          dimmed: true,
+        ));
       }
-      rows.add(const _ChainRow(kind: _RowKind.here, label: 'You are here'));
+      specs.add((kind: _RowKind.here, label: 'You are here', dimmed: false));
     }
 
     for (var i = reachedIndex + 1; i < chain.length; i++) {
       final isDestination = i == chain.length - 1;
-      rows.add(
-        _ChainRow(
-          kind: isDestination ? _RowKind.destination : _RowKind.ahead,
-          label: isDestination ? '${chain[i].name} (your stop)' : chain[i].name,
-        ),
-      );
+      specs.add((
+        kind: isDestination ? _RowKind.destination : _RowKind.ahead,
+        label: isDestination ? '${chain[i].name} (your stop)' : chain[i].name,
+        dimmed: false,
+      ));
     }
+
+    // THE RAIL. Behind the dots, and it carries the same information the dots
+    // do rather than repeating it: the line the rider has travelled is the
+    // journey's colour, the line still to come is the quiet one. So the whole
+    // card can be read at arm's length without reading a word of it, which is
+    // how it is read on a moving train.
+    final hereIndex = specs.indexWhere((spec) => spec.kind == _RowKind.here);
+    final rows = <Widget>[
+      for (var i = 0; i < specs.length; i++)
+        _ChainRow(
+          kind: specs[i].kind,
+          label: specs[i].label,
+          dimmed: specs[i].dimmed,
+          railAbove: i == 0
+              ? null
+              : (i <= hereIndex ? _railTravelled : _railAhead),
+          railBelow: i == specs.length - 1
+              ? null
+              : (i < hereIndex ? _railTravelled : _railAhead),
+        ),
+    ];
 
     return Container(
       decoration: Palette.glassCard(radius: 20),
@@ -389,11 +418,29 @@ class _ChainRow extends StatelessWidget {
     required this.kind,
     required this.label,
     this.dimmed = false,
+    this.railAbove,
+    this.railBelow,
   });
 
   final _RowKind kind;
   final String label;
   final bool dimmed;
+
+  /// The rail joining this row's dot to the one above and the one below, or
+  /// null at the two ends of the list where there is nothing to join to.
+  ///
+  /// PASSED BEHIND EACH ROW rather than drawn once down the card, because the
+  /// rows are the only things that know where the dots actually sit. A single
+  /// full-height line would have to guess the first and last dot centres, and
+  /// would run past both into the collapsed summary row and the fade at the
+  /// bottom.
+  final Color? railAbove;
+  final Color? railBelow;
+
+  static const _rowHeight = 40.0;
+
+  /// Half the row, so the two segments meet exactly at the dot's centre.
+  static const _railHalf = _rowHeight / 2;
 
   @override
   Widget build(BuildContext context) {
@@ -401,10 +448,39 @@ class _ChainRow extends StatelessWidget {
       // 40, not 44: on a 1080x1920 phone the whole chain plus the wake card and
       // the End button did not fit, and a rider mid-journey should be able to
       // see where they are without scrolling for it.
-      height: 40,
+      height: _rowHeight,
       child: Row(
         children: [
-          SizedBox(width: 26, child: Center(child: _marker())),
+          SizedBox(
+            width: 26,
+            // HEIGHT IS LOAD-BEARING, and leaving it out drew nothing at all.
+            // A Stack sizes itself to its largest NON-positioned child, which
+            // here is the 22 px dot, so both rail halves were laid out against
+            // 22 px instead of the row's 40 and collapsed to a hairline and to
+            // nothing. Caught by rendering it, not by reading it.
+            height: _rowHeight,
+            // The rail is drawn FIRST so every dot sits on top of it. The
+            // "here" dot carries a 10 px glow, and a line crossing over that
+            // glow reads as a scratch through it.
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (railAbove != null)
+                  Positioned(
+                    top: 0,
+                    bottom: _railHalf,
+                    child: _rail(railAbove!),
+                  ),
+                if (railBelow != null)
+                  Positioned(
+                    top: _railHalf,
+                    bottom: 0,
+                    child: _rail(railBelow!),
+                  ),
+                _marker(),
+              ],
+            ),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -422,6 +498,11 @@ class _ChainRow extends StatelessWidget {
       ),
     );
   }
+
+  /// Half of the line between two dots. 2 px, which is thin enough to read as
+  /// track rather than as a border, and it lands on a whole pixel on the 3T's
+  /// 3x density.
+  static Widget _rail(Color color) => Container(width: 2, color: color);
 
   Widget _marker() => switch (kind) {
     _RowKind.passed => Container(
