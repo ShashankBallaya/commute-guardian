@@ -1154,13 +1154,19 @@ class _JourneySummary extends StatelessWidget {
         : ride.interchanges
               .map((i) {
                 final at = nameOf[i.stationId] ?? i.stationId;
-                if (i.walkToStationName != null) {
-                  return 'At $at walk across to ${i.walkToStationName}, then '
-                      '${i.toLineShortName} towards ${i.towardsStationName}.';
+                // .en, not the ride's language: this is the debug screen, and
+                // every word around it is English. A SpokenName interpolated
+                // whole would print "Instance of 'SpokenName'", which the
+                // analyzer is happy with and a reader is not.
+                final walkTo = i.walkToStationName?.en;
+                if (walkTo != null) {
+                  return 'At $at walk across to $walkTo, then '
+                      '${i.toLineShortName} towards '
+                      '${i.towardsStationName.en}.';
                 }
                 if (i.isSameNamedService) {
                   return 'Change at $at for the train towards '
-                      '${i.towardsStationName}.';
+                      '${i.towardsStationName.en}.';
                 }
                 return 'Change at $at onto ${i.toLineShortName}'
                     '${i.platform == null ? '' : ' (platform ${i.platform})'}.';

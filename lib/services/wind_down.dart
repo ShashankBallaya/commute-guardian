@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 
+import '../models/app_settings.dart';
 import '../models/journey.dart';
 import '../models/station.dart';
 import 'ride_progress.dart';
+import 'spoken_copy.dart';
 
 /// One thing the platform shell must do for the wind-down: speak a line, or
 /// end Travel Mode. Sealed so the shell's switch stays exhaustive. Named
@@ -51,8 +53,11 @@ class WindDownNote extends WindDownAction {
 /// unreachable on foot in any reasonable time; the anchor is reachable by
 /// definition.
 class WindDown {
-  WindDown({required this.destination, this.overshootStations = const []})
-    : _exitStation = destination;
+  WindDown({
+    required this.destination,
+    this.overshootStations = const [],
+    this.language = AppLanguage.english,
+  }) : _exitStation = destination;
 
   /// Build the engine from the journey it runs for. Everything this needs is
   /// already on [Journey], and every caller (the service and the replay tool)
@@ -60,14 +65,23 @@ class WindDown {
   /// created the chance for one of them to forget a field. Exactly that
   /// happened once: the replay tool stopped passing the overshoot pins and
   /// went silently blind to every overshoot for two commits.
-  factory WindDown.forJourney(Journey journey) => WindDown(
+  factory WindDown.forJourney(
+    Journey journey, {
+    AppLanguage language = AppLanguage.english,
+  }) => WindDown(
     destination: journey.chain.firstWhere(
       (s) => s.id == journey.destinationStationId,
     ),
     overshootStations: journey.overshootStations,
+    language: language,
   );
 
   final Station destination;
+
+  /// What the two wind-down lines are spoken in.
+  final AppLanguage language;
+
+  late final SpokenCopy _copy = SpokenCopy(language);
 
   /// The terminus pins for this journey, the stations a rider carried past
   /// the destination is told to alight at. Needed here (not just in
@@ -447,13 +461,7 @@ class WindDown {
       _countingDown = true;
       _endAt = now.add(countdown);
       _window = countdown;
-      return const [
-        WindDownSpeak(
-          'Looks like you have left the station. Travel Mode will end in '
-          'one minute. Use the notification to end it now, or keep it '
-          'running longer.',
-        ),
-      ];
+      return [WindDownSpeak(_copy.windDownStarted())];
     }
     return const [];
   }
@@ -481,9 +489,7 @@ class WindDown {
     if (_ended || !_countingDown) return const [];
     _endAt = now.add(extension);
     _window = extension;
-    return const [
-      WindDownSpeak('Travel Mode will stay on for ten more minutes.'),
-    ];
+    return [WindDownSpeak(_copy.windDownExtended())];
   }
 
   /// A clock tick from the shell. Fires the end exactly once when the

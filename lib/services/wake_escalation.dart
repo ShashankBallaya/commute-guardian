@@ -1,8 +1,11 @@
 import 'dart:math' as math;
 
+import '../models/app_settings.dart';
 import '../models/journey.dart';
 import '../models/station.dart';
+import 'announcement_templates.dart';
 import 'ride_progress.dart';
+import 'spoken_copy.dart';
 
 /// One thing the platform shell must do right now: speak, sound or silence
 /// the alarm tone, buzz, or give the ladder up entirely. Sealed so the W3
@@ -55,13 +58,18 @@ class WakeEscalation {
     required this.interchangeStationIds,
     required this.destinationStationId,
     this.walkInterchangeStationIds = const {},
+    this.language = AppLanguage.english,
   });
 
   /// Build the engine from the journey it runs for. The critical stations are
   /// exactly what the journey already knows: the interchanges THIS route
   /// requires, then the destination (locked decision 6), in the chain order
   /// the planner emits. See [WindDown.forJourney] for why this is a factory.
-  factory WakeEscalation.forJourney(Journey journey) => WakeEscalation(
+  factory WakeEscalation.forJourney(
+    Journey journey, {
+    AppLanguage language = AppLanguage.english,
+  }) => WakeEscalation(
+    language: language,
     chain: journey.chain,
     interchangeStationIds: [
       for (final interchange in journey.interchanges) interchange.stationId,
@@ -86,6 +94,13 @@ class WakeEscalation {
   /// Western one: ceilinging there would hard-stop the alarm at the exact
   /// moment the rider still has to get off and cross.
   final Set<String> walkInterchangeStationIds;
+
+  /// What the ladder speaks in. The alarm is the one feature the product
+  /// exists for, so its lines go through the same clip-backed templates the
+  /// station announcements use: see [WakeLine].
+  final AppLanguage language;
+
+  late final SpokenCopy _copy = SpokenCopy(language);
 
   // Ladder timings from the locked design (decision 7), named so bench
   // tuning is one edit. Same values the W1 spike proved on hardware.
@@ -272,20 +287,19 @@ class WakeEscalation {
     return [Speak(_checkInText())];
   }
 
-  String _checkInText() {
-    final what = _targetIsDestination
-        ? 'Your stop, ${_target.name},'
-        : 'Your train change at ${_target.name}';
-    return '$what is next. Tap your earphones, or press the I am awake '
-        'button, to show you are awake.';
-  }
+  String _checkInText() =>
+      (_targetIsDestination ? WakeLine.checkIn : WakeLine.checkInChange).render(
+        _target.nameIn(language),
+        language: language,
+      );
 
-  // The doubled "Wake up!" is owner-approved aggressive copy, synced with
-  // the Sarvam clip template so the TTS fallback speaks the same words as
-  // the clip (tool/build_clip_pack.py keeps en-IN byte-identical to code).
-  String _firmText() => _targetIsDestination
-      ? 'Wake up! Wake up. Your stop, ${_target.name}, is next.'
-      : 'Wake up! Wake up. Your train change at ${_target.name} is next.';
+  // The doubled "Wake up!" is owner-approved aggressive copy. It lives in
+  // announcement_templates.dart with the station lines, because the same
+  // wording is what tool/build_clip_pack.py cut the wake clips from and a
+  // hand-kept copy here is exactly the drift that file exists to stop.
+  String _firmText() =>
+      (_targetIsDestination ? WakeLine.wakeUpStop : WakeLine.wakeUpChange)
+          .render(_target.nameIn(language), language: language);
 
   /// Resolves the current target and arms the next one. Every ladder ends
   /// here, whichever way it ends.
@@ -362,10 +376,8 @@ class WakeEscalation {
         const Vibrate(),
         Speak(
           pastCeiling
-              ? 'While you were on your call, the train passed your stop, '
-                    '${_target.name}. Please get off the train now.'
-              : 'While you were on your call, the train reached your stop, '
-                    '${_target.name}. Get off the train now.',
+              ? _copy.postCallPassedStop(_target.nameIn(language))
+              : _copy.postCallReachedStop(_target.nameIn(language)),
         ),
       ];
     }
@@ -382,22 +394,18 @@ class WakeEscalation {
       final actions = _startLadder(now);
       if (_passedDuringCall.isEmpty) return actions;
       final names = _passedDuringCall
-          .map((id) => chain.firstWhere((s) => s.id == id).name)
+          .map((id) => chain.firstWhere((s) => s.id == id).nameIn(language))
           .toList();
       return [
         Speak(
-          'While you were on your call, the train passed '
-          '${_joinWithAnd(names)}. ${_checkInText()}',
+          _copy.postCallCatchUp(
+            stations: _copy.joinNames(names),
+            checkIn: _checkInText(),
+          ),
         ),
       ];
     }
     return const [];
-  }
-
-  static String _joinWithAnd(List<String> names) {
-    if (names.length == 1) return names.first;
-    return '${names.sublist(0, names.length - 1).join(', ')} '
-        'and ${names.last}';
   }
 
   /// Any proof of wakefulness: a media-remote tap forwarded by the shell,
@@ -411,7 +419,7 @@ class WakeEscalation {
     _standDown();
     return [
       if (toneWasPlaying) const StopTone(),
-      const Speak('Good, you are awake.'),
+      Speak(FixedLine.goodAwake.render(language: language)),
     ];
   }
 

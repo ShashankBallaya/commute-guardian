@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import '../models/app_settings.dart';
 import 'announcement_templates.dart';
 import 'ride_progress.dart';
 
@@ -21,24 +22,26 @@ import 'ride_progress.dart';
 ClipKind? announcementClipKind({
   required Announcement announcement,
   required String stationName,
+  AppLanguage language = AppLanguage.english,
 }) {
   final text = announcement.text;
   switch (announcement.kind) {
     case AnnouncementKind.approach:
     case AnnouncementKind.arrival:
-      if (text == ClipKind.approach.render(stationName)) {
+      if (text == ClipKind.approach.render(stationName, language: language)) {
         return ClipKind.approach;
       }
-      if (text == ClipKind.destination.render(stationName)) {
+      if (text ==
+          ClipKind.destination.render(stationName, language: language)) {
         return ClipKind.destination;
       }
       return null;
     case AnnouncementKind.passed:
-      return text == ClipKind.passed.render(stationName)
+      return text == ClipKind.passed.render(stationName, language: language)
           ? ClipKind.passed
           : null;
     case AnnouncementKind.overshoot:
-      return text == ClipKind.overshoot.render(stationName)
+      return text == ClipKind.overshoot.render(stationName, language: language)
           ? ClipKind.overshoot
           : null;
   }

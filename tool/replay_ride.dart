@@ -30,6 +30,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:commute_guardian/models/app_settings.dart';
 import 'package:commute_guardian/models/line.dart';
 import 'package:commute_guardian/models/station.dart';
 import 'package:commute_guardian/services/journey_planner.dart';
@@ -59,15 +60,27 @@ final _callKitPattern = RegExp(r'^(\S+) Call (started|ended) \(CallKit\)\.$');
 const _tick = Duration(seconds: 5);
 
 void main(List<String> args) {
-  if (args.isEmpty || args.length > 3) {
+  // The language is a FLAG rather than a positional, so every command in the
+  // notes and in docs/ keeps working unchanged and the six canonical replays
+  // stay byte-identical by default.
+  final languageArg = args.firstWhere(
+    (a) => a.startsWith('--lang='),
+    orElse: () => '',
+  );
+  final language = AppLanguage.fromTag(
+    languageArg.isEmpty ? null : languageArg.substring('--lang='.length),
+  );
+  final positional = args.where((a) => !a.startsWith('--')).toList();
+
+  if (positional.isEmpty || positional.length > 3) {
     stderr.writeln(
       'usage: dart run tool/replay_ride.dart <geofence_log.txt> '
-      '[origin] [destination]',
+      '[origin] [destination] [--lang=hi-IN]',
     );
     exit(64);
   }
-  final originId = args.length > 1 ? args[1] : 'kalyan';
-  final destinationId = args.length > 2 ? args[2] : 'thane';
+  final originId = positional.length > 1 ? positional[1] : 'kalyan';
+  final destinationId = positional.length > 2 ? positional[2] : 'thane';
 
   final doc =
       jsonDecode(
@@ -102,10 +115,10 @@ void main(List<String> args) {
   // the 22 Jul Kalyan-to-Shahad ride replayed as if the rider had simply
   // stopped after Kalyan. A replay that builds its engines differently from
   // the app is not replaying the app.
-  final ride = RideProgress.forJourney(journey);
-  final wake = WakeEscalation.forJourney(journey);
-  final windDown = WindDown.forJourney(journey);
-  final health = RideHealth.forJourney(journey);
+  final ride = RideProgress.forJourney(journey, language: language);
+  final wake = WakeEscalation.forJourney(journey, language: language);
+  final windDown = WindDown.forJourney(journey, language: language);
+  final health = RideHealth.forJourney(journey, language: language);
 
   var fixes = 0;
   var spoken = 0;

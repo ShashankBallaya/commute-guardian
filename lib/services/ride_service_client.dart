@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../foreground/geofence_task_handler.dart';
+import '../models/app_settings.dart';
 import 'wind_down.dart';
 
 /// One thing that happened on the other side of the isolate boundary.
@@ -556,6 +557,12 @@ class RideServiceClient {
     // began with it already set. Defaults to OFF so a caller that forgets it
     // sends nothing rather than sending without consent.
     bool shareAnonymousUsage = false,
+    // Same rule again: read at START, not only on change. Unlike the pulse
+    // interval this one has no mid-ride push at all, on purpose. Every engine
+    // renders its sentences from the language it was constructed with and the
+    // clip pack is opened from one directory, so a ride keeps the voice it
+    // began in and a rider who switches language hears it on the next ride.
+    AppLanguage language = AppLanguage.english,
   }) async {
     await FlutterForegroundTask.saveData(
       key: originIdKey,
@@ -601,6 +608,10 @@ class RideServiceClient {
     await FlutterForegroundTask.saveData(
       key: shareUsageKey,
       value: shareAnonymousUsage,
+    );
+    await FlutterForegroundTask.saveData(
+      key: languageKey,
+      value: language.tag,
     );
 
     final result = await FlutterForegroundTask.startService(

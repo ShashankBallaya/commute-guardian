@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../models/app_settings.dart';
 import '../models/journey.dart';
 import '../models/station.dart';
 import 'announcement_templates.dart';
@@ -36,17 +37,22 @@ class RideProgress {
     this.approachRadiusM = const {},
     this.arrivalAnnouncements = const {},
     this.maxAccuracyM = 150,
+    this.language = AppLanguage.english,
   });
 
   /// Build the engine from the journey it runs for. See [WindDown.forJourney]
   /// for why every caller should use these rather than wire the fields up by
   /// hand: this is the engine the replay tool went blind on.
-  factory RideProgress.forJourney(Journey journey) => RideProgress(
+  factory RideProgress.forJourney(
+    Journey journey, {
+    AppLanguage language = AppLanguage.english,
+  }) => RideProgress(
     chain: journey.chain,
     destinationStationId: journey.destinationStationId,
     overshootStations: journey.overshootStations,
     approachRadiusM: journey.approachRadiusM,
-    arrivalAnnouncements: journey.arrivalAnnouncements,
+    arrivalAnnouncements: journey.arrivalAnnouncementsIn(language),
+    language: language,
   );
 
   final List<Station> chain;
@@ -64,6 +70,11 @@ class RideProgress {
   final Map<String, int> approachRadiusM;
   final Map<String, String> arrivalAnnouncements;
   final double maxAccuracyM;
+
+  /// What the announcements are spoken in. Decides both the template and the
+  /// station name inside it, which must be the same language: see
+  /// [Station.nameIn].
+  final AppLanguage language;
 
   final Set<String> _announcedArrivals = {};
   final Set<String> _announcedApproaches = {};
@@ -114,7 +125,10 @@ class RideProgress {
           Announcement(
             stationId: pin.id,
             kind: AnnouncementKind.overshoot,
-            text: ClipKind.overshoot.render(pin.name),
+            text: ClipKind.overshoot.render(
+              pin.nameIn(language),
+              language: language,
+            ),
           ),
         ];
       }
@@ -225,7 +239,10 @@ class RideProgress {
         Announcement(
           stationId: nearest.id,
           kind: AnnouncementKind.approach,
-          text: ClipKind.approach.render(nearest.name),
+          text: ClipKind.approach.render(
+            nearest.nameIn(language),
+            language: language,
+          ),
         ),
       );
     }
@@ -245,7 +262,10 @@ class RideProgress {
       kind: AnnouncementKind.arrival,
       text:
           arrivalAnnouncements[station.id] ??
-          ClipKind.approach.render(station.name),
+          ClipKind.approach.render(
+            station.nameIn(language),
+            language: language,
+          ),
     );
   }
 
@@ -254,7 +274,10 @@ class RideProgress {
     return Announcement(
       stationId: station.id,
       kind: AnnouncementKind.passed,
-      text: ClipKind.passed.render(station.name),
+      text: ClipKind.passed.render(
+        station.nameIn(language),
+        language: language,
+      ),
     );
   }
 

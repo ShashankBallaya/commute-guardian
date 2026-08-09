@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:commute_guardian/models/app_settings.dart';
 import 'package:commute_guardian/services/ride_service_client.dart';
 
 /// A [RideServiceClient] with the isolate boundary removed.
@@ -92,6 +93,10 @@ class FakeRideServiceClient implements RideServiceClient {
   /// What the last startRide was told about the analytics opt-out.
   bool? shareAnonymousUsagePassed;
 
+  /// And what it was told to speak in. Same reason as above: the language is
+  /// read in the UI isolate and has to survive the crossing.
+  AppLanguage? languagePassed;
+
   @override
   Future<bool> startRide({
     required String originStationId,
@@ -104,8 +109,10 @@ class FakeRideServiceClient implements RideServiceClient {
     int? pulseIntervalSeconds,
     bool pulseVibrate = true,
     bool shareAnonymousUsage = false,
+    AppLanguage language = AppLanguage.english,
   }) async {
     commands.add('startRide:$originStationId->$destinationStationId');
+    languagePassed = language;
     // Recorded so a test can prove the rider's opt-out actually reaches the
     // service isolate, rather than being read in the UI and dropped at the
     // boundary the way the pulse interval once was.

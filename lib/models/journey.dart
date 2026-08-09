@@ -1,3 +1,6 @@
+import '../services/announcement_templates.dart';
+import '../services/spoken_copy.dart';
+import 'app_settings.dart';
 import 'station.dart';
 
 /// A point on a [Journey] where the rider has to change trains.
@@ -21,7 +24,10 @@ class Interchange {
   /// Spoken name of the station across the foot overbridge to walk to (Dadar
   /// Central alight, walk to `Dadar Western`). Null for an ordinary
   /// same-station change.
-  final String? walkToStationName;
+  ///
+  /// A [SpokenName] rather than a string because the planner resolves it at
+  /// Start, and the language the ride is announced in can change after that.
+  final SpokenName? walkToStationName;
   final String fromLineId;
   final String toLineId;
 
@@ -31,7 +37,7 @@ class Interchange {
   /// Spoken name of the station the onward line ends at in the direction of
   /// travel, e.g. `Karjat`. The only way to describe a change when both lines
   /// share a name (see [isSameNamedService]).
-  final String towardsStationName;
+  final SpokenName towardsStationName;
 
   /// True when both lines are spoken the same way (Kasara branch onto the
   /// Karjat branch: both are just "Central"). "Change here to the Central line"
@@ -125,48 +131,62 @@ class Journey {
   };
 
   /// What to say on ARRIVING at each station that needs more than the default
-  /// "Now approaching X" ping.
+  /// "Now approaching X" ping, in the language the ride is spoken in.
   ///
-  /// Phase 1 copy, English only. Phase 2 localizes this to Hindi and Marathi,
-  /// at which point it moves out of here and behind the station name lookup.
-  Map<String, String> get arrivalAnnouncements {
+  /// Was a getter with the English copy inline. It became a method taking a
+  /// language when Phase 2 localized the spoken output, and the copy moved to
+  /// SpokenCopy: none of these sentences has a clip (they are dynamic, so
+  /// ADR 0001 leaves them on the device TTS floor forever), and the wording of
+  /// a whole interchange script does not belong in a data model.
+  ///
+  /// THE DESTINATION LINE IS NOT WRITTEN HERE ANY MORE. It is
+  /// [ClipKind.destination], the same template the clip pack was cut from,
+  /// which it always had to be: this file used to carry its own copy of that
+  /// sentence, and two copies of a byte-identical contract is the exact drift
+  /// announcement_templates.dart exists to prevent.
+  Map<String, String> arrivalAnnouncementsIn([
+    AppLanguage language = AppLanguage.english,
+  ]) {
+    final copy = SpokenCopy(language);
     final byId = {for (final station in chain) station.id: station};
     final announcements = <String, String>{};
 
     for (final interchange in interchanges) {
-      final name = byId[interchange.stationId]?.name ?? interchange.stationId;
-      final platform = interchange.platform;
-      final toPlatform = platform == null
-          ? ''
-          : 'go to platform number $platform, then ';
+      final station =
+          byId[interchange.stationId]?.nameIn(language) ??
+          interchange.stationId;
+      final walkTo = interchange.walkToStationName;
       final String text;
-      if (interchange.walkToStationName != null) {
-        text =
-            'You have reached $name. Get off the train and walk across to '
-            '${interchange.walkToStationName}, then ${toPlatform}board the '
-            '${interchange.toLineShortName} train towards '
-            '${interchange.towardsStationName} to continue to your '
-            'destination.';
+      if (walkTo != null) {
+        text = copy.interchangeWalk(
+          station: station,
+          walkTo: walkTo.inLanguage(language),
+          line: interchange.toLineShortName,
+          towards: interchange.towardsStationName.inLanguage(language),
+          platform: interchange.platform,
+        );
       } else if (interchange.isSameNamedService) {
-        text =
-            'You have reached $name. Change trains here. Get off the train, '
-            '${toPlatform}board the train towards '
-            '${interchange.towardsStationName} to continue to your '
-            'destination.';
+        text = copy.interchangeSameService(
+          station: station,
+          towards: interchange.towardsStationName.inLanguage(language),
+          platform: interchange.platform,
+        );
       } else {
-        text =
-            'You have reached $name. Change here to the '
-            '${interchange.toLineShortName} line. Get off the train, '
-            '${toPlatform}board the ${interchange.toLineShortName} train to '
-            'continue to your destination.';
+        text = copy.interchangeLine(
+          station: station,
+          line: interchange.toLineShortName,
+          platform: interchange.platform,
+        );
       }
       announcements[interchange.stationId] = text;
     }
 
     final destination =
-        byId[destinationStationId]?.name ?? destinationStationId;
-    announcements[destinationStationId] =
-        'You have arrived at your destination, $destination.';
+        byId[destinationStationId]?.nameIn(language) ?? destinationStationId;
+    announcements[destinationStationId] = ClipKind.destination.render(
+      destination,
+      language: language,
+    );
 
     return announcements;
   }

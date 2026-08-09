@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
+import '../models/app_settings.dart';
 import '../services/analytics.dart';
 import '../services/crash_reporting.dart';
 import '../services/geofence_chain_service.dart';
@@ -74,6 +75,15 @@ const pulseCollidePrefix = 'test_pulse_collide:';
 /// to read them back.
 const pulseIntervalKey = 'pulse_interval_s';
 const pulseVibrateKey = 'pulse_vibrate';
+
+/// What Travel Mode speaks in, as the `AppLanguage` tag (`hi-IN`), crossing
+/// the isolate the same way and for the same reasons.
+///
+/// Absent means English, which is the language every string in the app is
+/// written in and the only one the bundled greeting clip exists for. A
+/// restarted service reads it back, so a ride that was announcing in Marathi
+/// before the swipe carries on in Marathi after it.
+const languageKey = 'announcement_language';
 
 /// The rider's analytics opt-out, `AppSettings.shareAnonymousUsage`.
 ///
@@ -337,6 +347,12 @@ class GeofenceTaskHandler extends TaskHandler {
       pulseVibrate:
           await FlutterForegroundTask.getData<bool>(key: pulseVibrateKey) ??
           true,
+      // fromTag falls back to English for a missing key and for a tag this
+      // build does not know, so a store written by an older or newer version
+      // can only ever cost the rider their language choice, never the ride.
+      language: AppLanguage.fromTag(
+        await FlutterForegroundTask.getData<String>(key: languageKey),
+      ),
     );
   }
 

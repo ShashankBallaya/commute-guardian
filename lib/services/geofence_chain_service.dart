@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../data/station_repository.dart';
+import '../models/app_settings.dart';
 import '../models/journey.dart';
 import '../models/station.dart';
 import 'analytics.dart';
@@ -23,6 +24,7 @@ import 'ride_health.dart';
 import 'ride_progress.dart';
 import 'ride_timeout.dart';
 import 'self_audio_interruption.dart';
+import 'spoken_copy.dart';
 import 'wake_alert_output.dart';
 import 'wake_escalation.dart';
 import 'wind_down.dart';
@@ -246,6 +248,15 @@ class GeofenceChainService {
   /// The pushed Sarvam clip pack, or null when clips are off or absent.
   ClipLibrary? _clips;
 
+  /// What this ride speaks in, fixed at Start. Every engine was built with
+  /// it, so nothing here may change it under a running ride.
+  AppLanguage _language = AppLanguage.english;
+
+  /// The ride's clipless sentences (welcome, farewell, the self test) in
+  /// [_language]. The station and wake lines come from the clip-backed
+  /// templates instead: see announcement_templates.dart.
+  SpokenCopy _copy = const SpokenCopy();
+
   /// Serializes clip playback the way [_speaking] serializes TTS: a burst of
   /// catch-up announcements (passed + arrival on one gap-end fix) must play
   /// one clip after another, not on top of each other. A TTS line landing in
@@ -282,6 +293,11 @@ class GeofenceChainService {
     // dependency circular.
     int pulseIntervalS = 0,
     bool pulseVibrate = true,
+    // Also a VALUE from the store, for the same reason. It is read once, at
+    // Start: a rider who changes language mid-ride keeps the voice the ride
+    // began in, because every engine renders its sentences from the language
+    // it was built with and the clip pack is opened from one directory.
+    AppLanguage language = AppLanguage.english,
     // FROM THE STORE, never DateTime.now() here. A service the OS recreated
     // mid-ride calls start() again, and a fresh clock would hand a forgotten
     // ride another four hours, every time it was recreated.
@@ -312,13 +328,18 @@ class GeofenceChainService {
       return;
     }
     _journey = journey;
+    _language = language;
+    _copy = SpokenCopy(language);
+    if (language != AppLanguage.english) {
+      _log('LANGUAGE ${language.tag}, announcements and clips both.');
+    }
     // Every journey-shaped engine is built from the journey and nothing else,
     // through the factories, so the replay tool cannot drift from the service
     // the way it did when it silently stopped passing the overshoot pins.
     // RideHealth joined them when WRONG_DIRECTION gave it pins of its own.
-    _rideProgress = RideProgress.forJourney(journey);
-    _windDown = WindDown.forJourney(journey);
-    _wakeEscalation = WakeEscalation.forJourney(journey);
+    _rideProgress = RideProgress.forJourney(journey, language: language);
+    _windDown = WindDown.forJourney(journey, language: language);
+    _wakeEscalation = WakeEscalation.forJourney(journey, language: language);
     // A ride starting on a service that already ran one must not inherit a
     // raised sustained flag: it would spend the whole new ride treating real
     // calls as our own alarm. stop() clears it, but a restart that never went
@@ -343,8 +364,11 @@ class GeofenceChainService {
       intervalS: pulseIntervalS,
       startedAt: DateTime.now(),
     );
-    _rideTimeout = RideTimeout(startedAt: rideStartedAt ?? DateTime.now());
-    _rideHealth = RideHealth.forJourney(journey);
+    _rideTimeout = RideTimeout(
+      startedAt: rideStartedAt ?? DateTime.now(),
+      language: language,
+    );
+    _rideHealth = RideHealth.forJourney(journey, language: language);
     // The count IS the measurement: weekly active riders means three or more
     // rides in a week, so this event carries no properties at all. Not
     // awaited, because nothing about starting a ride may wait on a network.
@@ -358,7 +382,13 @@ class GeofenceChainService {
 
     if (sarvamClips && Platform.isAndroid) {
       final dir = await getExternalStorageDirectory();
-      final root = dir == null ? null : Directory('${dir.path}/clips/en-IN');
+      // ONE DIRECTORY PER LANGUAGE, named by the same tag FlutterTts is given,
+      // which is what makes a pack physically unable to be played under the
+      // wrong voice: a Hindi ride looks in clips/hi-IN and finds nothing at
+      // all rather than finding English audio that matches no sentence.
+      final root = dir == null
+          ? null
+          : Directory('${dir.path}/clips/${language.tag}');
       final clips = root != null && await root.exists()
           ? ClipLibrary.open(root)
           : null;
@@ -377,7 +407,11 @@ class GeofenceChainService {
 
     await _configureAudio();
 
-    await _tts.setLanguage('en-IN');
+    // The Settings picker only offers languages TtsLanguageGateway found on
+    // this device, so this tag is one the engine answered to. If it somehow
+    // is not, flutter_tts keeps its default voice and the words still come
+    // out: wrong accent, never silence.
+    await _tts.setLanguage(language.tag);
     await _tts.setSpeechRate(0.45);
     await _tts.awaitSpeakCompletion(true);
     // The single source of truth for "the words have stopped". Registered on
@@ -453,7 +487,9 @@ class GeofenceChainService {
       _log(
         'Change trains at ${interchange.stationId} onto '
         '${interchange.toLineShortName} towards '
-        '${interchange.towardsStationName}'
+        // The ride log stays English whatever the ride speaks: it is read at
+        // a desk, beside English code, by one person.
+        '${interchange.towardsStationName.en}'
         '${interchange.platform == null ? '' : ' (platform ${interchange.platform})'}',
       );
     }
@@ -483,13 +519,18 @@ class GeofenceChainService {
     // actually started, and teaches the one gesture that ends it.
     final destinationName = journey.chain
         .firstWhere((s) => s.id == journey.destinationStationId)
-        .name;
-    final welcomeBody =
-        'Travel Mode is on, from '
-        '${journey.chain.first.name} to $destinationName. I will announce '
-        'each station along the way. To end the journey at any time, press '
-        'and hold the End journey button.';
-    if (sarvamGreeting && Platform.isAndroid) {
+        .nameIn(language);
+    final welcomeBody = _copy.welcomeBody(
+      origin: journey.chain.first.nameIn(language),
+      destination: destinationName,
+    );
+    // THE GREETING CLIP IS ENGLISH AUDIO, bundled in the APK (it is not part
+    // of the pushed pack), so it may only greet an English ride. The other
+    // two languages take the TTS path, which speaks the same sentence in the
+    // right voice.
+    if (sarvamGreeting &&
+        Platform.isAndroid &&
+        language == AppLanguage.english) {
       // Clip greets, TTS still speaks the dynamic route line: the route
       // confirmation and the TTS-path self-test both survive the clip.
       unawaited(_greetThenSpeak(welcomeBody));
@@ -502,8 +543,7 @@ class GeofenceChainService {
 
   /// The one place the spoken greeting sentence joins the route line, so the
   /// clipless path and the clip-failure path cannot drift apart.
-  static String _fullWelcome(String welcomeBody) =>
-      'Welcome to Commute Guardian. $welcomeBody';
+  String _fullWelcome(String welcomeBody) => '${_copy.welcome()} $welcomeBody';
 
   /// The Sarvam clip that can replace this announcement, or null for TTS.
   /// Null whenever clips are off, the pack lacks the file, or the sentence
@@ -517,7 +557,8 @@ class GeofenceChainService {
     if (index == -1) return null;
     final kind = announcementClipKind(
       announcement: announcement,
-      stationName: chain[index].name,
+      stationName: chain[index].nameIn(_language),
+      language: _language,
     );
     if (kind == null) return null;
     return clips.clipFor(
@@ -979,7 +1020,10 @@ class GeofenceChainService {
     final chain = _journey?.chain;
     if (_clips != null && chain != null && chain.isNotEmpty) {
       final origin = chain.first;
-      final text = ClipKind.approach.render(origin.name);
+      final text = ClipKind.approach.render(
+        origin.nameIn(_language),
+        language: _language,
+      );
       final clip = _clipForAnnouncement(
         Announcement(
           stationId: origin.id,
@@ -992,10 +1036,7 @@ class GeofenceChainService {
         return;
       }
     }
-    await _speak(
-      'This is a test announcement from Commute Guardian. '
-      'If you can hear this, text to speech is working.',
-    );
+    await _speak(_copy.testAnnouncement());
   }
 
   /// The rider changed the pulse interval MID-RIDE, from Settings.
@@ -1335,7 +1376,7 @@ class GeofenceChainService {
       // queueing behind, so switch back to flush for this last utterance.
       await _tts.setQueueMode(0);
     }
-    const farewell = 'Thank you for using Commute Guardian.';
+    final farewell = FixedLine.farewell.render(language: _language);
     _log('SPEAK farewell: $farewell');
     await _speak(
       farewell,

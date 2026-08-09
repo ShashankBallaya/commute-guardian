@@ -1,3 +1,6 @@
+import '../models/app_settings.dart';
+import 'spoken_copy.dart';
+
 /// What a [RideTimeout] wants done. Mirrors WindDown's shape on purpose: the
 /// engine decides, the service performs.
 sealed class RideTimeoutAction {
@@ -54,7 +57,10 @@ class RideTimeoutNote extends RideTimeoutAction {
 /// In both cases the clock keeps running rather than being cancelled: the ride
 /// ends on the tick after the alert does.
 class RideTimeout {
-  RideTimeout({required this.startedAt});
+  RideTimeout({required this.startedAt, this.language = AppLanguage.english});
+
+  /// What the one warning is spoken in.
+  final AppLanguage language;
 
   /// When the ride started. Read from the SHARED STORE by the caller, never
   /// from a field a restarted service would have lost: an OS recreation
@@ -115,10 +121,7 @@ class RideTimeout {
         // Says what will happen and what to do about it. A rider still aboard
         // has half an hour to answer it, and one who is not will simply never
         // hear it.
-        const RideTimeoutSpeak(
-          'Travel Mode has been on for four hours. It will switch itself off '
-          'in half an hour unless you are still travelling.',
-        ),
+        RideTimeoutSpeak(SpokenCopy(language).rideTimeoutWarning()),
       ];
     }
 

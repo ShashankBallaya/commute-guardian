@@ -245,13 +245,22 @@ class JourneyPlanner {
       // codes differ), so "walk across to Dadar" while standing at Dadar says
       // nothing. Qualify a same-named walk target with the line being boarded:
       // "Dadar Western", "Dadar Central".
-      String? walkTo;
+      //
+      // The qualifier is the LINE's short name, which exists in English only,
+      // so a Hindi or Marathi ride says "दादर Western". That is the same
+      // English-line-name compromise SpokenCopy documents, and it is how a
+      // Mumbai rider says it anyway.
+      SpokenName? walkTo;
       if (walked) {
         final alight = stationsById[legs[i - 1].toId]!;
         final board = stationsById[legs[i].fromId]!;
         walkTo = board.name == alight.name
-            ? '${board.name} ${onto.shortName}'
-            : board.name;
+            ? SpokenName(
+                en: '${board.name} ${onto.shortName}',
+                hi: '${board.nameHi} ${onto.shortName}',
+                mr: '${board.nameMr} ${onto.shortName}',
+              )
+            : board.spokenName;
       }
       interchanges.add(
         Interchange(
@@ -259,7 +268,8 @@ class JourneyPlanner {
           fromLineId: from.id,
           toLineId: onto.id,
           toLineShortName: onto.shortName,
-          towardsStationName: stationsById[_directionTerminalId(legs[i])]!.name,
+          towardsStationName:
+              stationsById[_directionTerminalId(legs[i])]!.spokenName,
           isSameNamedService: !walked && onto.shortName == from.shortName,
           walkToStationName: walkTo,
           platform: onto.platforms[legs[i].fromId],

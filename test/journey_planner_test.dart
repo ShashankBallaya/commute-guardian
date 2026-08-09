@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -96,13 +96,13 @@ void main() {
     final journey = _planner().plan(originId: 'kalyan', destinationId: 'digha');
 
     expect(
-      journey.arrivalAnnouncements['thane'],
+      journey.arrivalAnnouncementsIn()['thane'],
       'You have reached Thane. Change here to the Trans Harbour line. '
       'Get off the train, go to platform number 9, 10, or 10 A, then board the '
       'Trans Harbour train to continue to your destination.',
     );
     expect(
-      journey.arrivalAnnouncements['digha'],
+      journey.arrivalAnnouncementsIn()['digha'],
       'You have arrived at your destination, Digha Gaon.',
     );
 
@@ -162,7 +162,7 @@ void main() {
     expect(journey.overshootStationIds, ['kopar']);
 
     // And so the only thing said at Kalyan is the ordinary passing ping.
-    expect(journey.arrivalAnnouncements.containsKey('kalyan'), isFalse);
+    expect(journey.arrivalAnnouncementsIn().containsKey('kalyan'), isFalse);
     expect(journey.approachRadiusM.containsKey('kalyan'), isFalse);
   });
 
@@ -182,12 +182,12 @@ void main() {
     final change = journey.interchanges.single;
     expect(change.stationId, 'kalyan');
     expect(change.isSameNamedService, isTrue);
-    expect(change.towardsStationName, 'Karjat');
+    expect(change.towardsStationName.en, 'Karjat');
 
     // "Change here to the Central line" while sitting on a Central train says
     // nothing. Same-named changes are described by direction instead.
     expect(
-      journey.arrivalAnnouncements['kalyan'],
+      journey.arrivalAnnouncementsIn()['kalyan'],
       'You have reached Kalyan. Change trains here. Get off the train, '
       'board the train towards Karjat to continue to your destination.',
     );
@@ -278,9 +278,12 @@ void main() {
       expect(journey.interchanges, hasLength(1));
       final change = journey.interchanges.single;
       expect(change.stationId, 'dadar');
-      expect(change.walkToStationName, 'Dadar Western');
+      expect(change.walkToStationName?.en, 'Dadar Western');
+      // The line qualifier stays English in every language, because the line
+      // data has no Devanagari name to qualify it with.
+      expect(change.walkToStationName?.hi, 'दादर Western');
       expect(
-        journey.arrivalAnnouncements['dadar'],
+        journey.arrivalAnnouncementsIn()['dadar'],
         'You have reached Dadar. Get off the train and walk across to '
         'Dadar Western, then board the Western train towards Dahanu Road to '
         'continue to your destination.',

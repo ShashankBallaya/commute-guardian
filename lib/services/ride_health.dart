@@ -1,5 +1,7 @@
+import '../models/app_settings.dart';
 import '../models/journey.dart';
 import '../models/station.dart';
+import 'spoken_copy.dart';
 
 /// What a [RideHealth] wants said. The engine decides, the service speaks.
 sealed class RideHealthAction {
@@ -55,15 +57,22 @@ class RideHealth {
     this.origin,
     this.destinationName,
     this.wrongWayStations = const [],
+    this.language = AppLanguage.english,
   });
 
   /// Build the engine from the journey it runs for, like every other engine
   /// here. Wiring the fields by hand at the call site is what made the replay
   /// tool stop reproducing the app.
-  factory RideHealth.forJourney(Journey journey) => RideHealth(
+  factory RideHealth.forJourney(
+    Journey journey, {
+    AppLanguage language = AppLanguage.english,
+  }) => RideHealth(
     origin: journey.chain.isEmpty ? null : journey.chain.first,
-    destinationName: journey.chain.isEmpty ? null : journey.chain.last.name,
+    destinationName: journey.chain.isEmpty
+        ? null
+        : journey.chain.last.nameIn(language),
     wrongWayStations: journey.wrongWayStations,
+    language: language,
   );
 
   /// Where the rider boards. WRONG_DIRECTION is measured from here, and the
@@ -78,6 +87,12 @@ class RideHealth {
   /// The stations one stop behind [origin]. Matched by proximity, never by
   /// chain order. See [Journey.wrongWayStations].
   final List<Station> wrongWayStations;
+
+  /// What the three notices are spoken in. [destinationName] must already be
+  /// in this language: the factory takes care of that.
+  final AppLanguage language;
+
+  late final SpokenCopy _copy = SpokenCopy(language);
 
   /// No usable fix for this long and the rider is told. Usable means the same
   /// thing it means to RideProgress: inside its accuracy ceiling. A fix the OS
@@ -243,11 +258,7 @@ class RideHealth {
         // sentence is the one that says what happened, what to do, and that the
         // ride is still being watched. A rider who rode one stop back the other
         // way is picked up again by the chain when they come through the origin.
-        RideHealthSpeak(
-          'You seem to be heading away from $destination. If this is the wrong '
-          'train, get off at the next station and cross to the other platform. '
-          'Travel Mode is still on.',
-        ),
+        RideHealthSpeak(_copy.wrongDirection(destination)),
       ];
     }
     return const [];
@@ -326,15 +337,12 @@ class RideHealth {
       return const [RideHealthNote('GPS gap again, already said once')];
     }
     _gpsWarnings++;
-    return const [
-      RideHealthNote('no usable fix for two minutes'),
+    return [
+      const RideHealthNote('no usable fix for two minutes'),
       // Actionable, and true. It does NOT promise to keep counting stations,
       // because without fixes it cannot: what it promises is that the ride is
       // still running, which is the part a rider would otherwise doubt.
-      RideHealthSpeak(
-        'The signal is weak here. Travel Mode is still on. If you can, move '
-        'near a door or a window.',
-      ),
+      RideHealthSpeak(_copy.signalWeak()),
     ];
   }
 
@@ -361,10 +369,7 @@ class RideHealth {
       // GENTLE, and it says nothing about why. The app does not know whether
       // this is a signal failure at Diva or a chain snatching at Mumbra, and a
       // guess would be the thing a rider quotes back at it.
-      const RideHealthSpeak(
-        'The train seems to be held up. Travel Mode is still on and I am still '
-        'watching for your stop.',
-      ),
+      RideHealthSpeak(_copy.trainHeldUp()),
     ];
   }
 

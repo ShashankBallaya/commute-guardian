@@ -336,6 +336,10 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       pulseIntervalSeconds: pulseSettings.pulseIntervalSeconds,
       pulseVibrate: pulseSettings.vibrateWithPulse,
       shareAnonymousUsage: pulseSettings.shareAnonymousUsage,
+      // From the same awaited read. The picker only ever offers a language
+      // this device reported a voice for (TtsLanguageGateway), so what
+      // arrives here is speakable.
+      language: pulseSettings.language,
     );
 
     if (started) {
