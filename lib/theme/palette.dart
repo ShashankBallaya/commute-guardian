@@ -55,6 +55,28 @@ abstract final class Palette {
   /// kept opaque so the fill cannot shift when content scrolls beneath it.
   static const crimson = Color(0xFF55131D);
 
+  /// The white accent fill: THE PRIMARY ACTION OF A SCREEN.
+  ///
+  /// Not new, and named here because it was not named anywhere. Screen 3 has
+  /// drawn "Start the ride" as a white fill with [ground] text since it was
+  /// built (`_WideButton(filled: true)`), so the app already says "white means
+  /// the thing to press on this screen". Screen 1's New journey button did not
+  /// take part: it used [glassCard] at radius 18, which is the route cards' own
+  /// decoration, so the escape hatch read as a fourth shortcut (owner, 11 Aug
+  /// 2026: "it isn't distinguishable with the saved routes"). Dimming its label
+  /// made it quieter than the cards without making it DIFFERENT from them, and
+  /// loudness was never the axis that mattered.
+  ///
+  /// IT DOES NOT COMPETE WITH THE CRIMSON RULE. Crimson means start or end a
+  /// JOURNEY and nothing else may use it. White means the primary action of the
+  /// screen you are looking at, which on Screen 1 is navigation to the picker.
+  static const accent = text;
+
+  /// Text on [accent]. The ground rather than a true black: pure black on white
+  /// would out-contrast every other pairing in a dark system and read as a
+  /// foreign element.
+  static const onAccent = ground;
+
   static Color textDim(double opacity) => text.withValues(alpha: opacity);
 
   /// Fill, hairline border and shadow together: a glass card that is right by

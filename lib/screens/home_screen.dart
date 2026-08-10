@@ -496,16 +496,38 @@ class _NewJourneyButton extends StatelessWidget {
     return Pressable(
       key: const Key('new_journey'),
       onTap: onTap,
+      // WHITE, matching Screen 3's "Start the ride", because this is the
+      // primary action of this screen and it was drawn as a route card.
+      //
+      // The saved and recent cards above are shortcuts: a rider who sees their
+      // destination taps it and is done in two taps. This is what they press
+      // when none of the above is right, which is a different KIND of thing,
+      // and it was wearing the cards' own decoration (Palette.glassCard at
+      // radius 18) with a dimmer label. Dim made it quieter without making it
+      // different, so on a screen of three glass cards it read as a fourth.
+      //
+      // NO BORDER. A hairline exists to lift a near-invisible glass fill off
+      // the ground; on an opaque white fill it would only muddy the edge.
       child: Container(
-        decoration: Palette.glassCard(radius: 18),
+        decoration: BoxDecoration(
+          color: Palette.accent,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(
+              color: Palette.shadow,
+              blurRadius: 24,
+              offset: Offset(0, 8),
+            ),
+          ],
+        ),
         padding: const EdgeInsets.symmetric(vertical: _tapPadding),
         child: Center(
           child: Text(
             'New journey',
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: TypeScale.bodyLarge,
               fontWeight: FontWeight.w600,
-              color: Palette.textDim(0.85),
+              color: Palette.onAccent,
             ),
           ),
         ),
