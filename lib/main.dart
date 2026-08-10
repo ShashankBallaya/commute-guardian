@@ -195,7 +195,6 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
             journey: journey,
             reachedIndex: 2,
             wakeChoice: choice,
-            onWakeChoiceChanged: (next) => setLocal(() => choice = next),
             onEndJourney: () => Navigator.of(context).maybePop(),
           ),
         ),

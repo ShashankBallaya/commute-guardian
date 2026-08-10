@@ -189,9 +189,83 @@ void main() {
     );
   });
 
+  testWidgets('A SECOND BACK PRESS IS ANSWERED TOO, not swallowed', (
+    tester,
+  ) async {
+    // The apple-design pass's open item, fixed 11 Aug 2026. _refusePop used to
+    // early-return while a nudge was running, so a half-asleep hand mashing back
+    // got one answer and then nothing, which reads exactly like a frozen app at
+    // the moment the rider can least afford to wonder.
+    //
+    // Observed through the nudge itself: AnimatedScale goes to 1.04 while the
+    // refusal is being explained. The timing is the assertion. The nudge lasts
+    // 260 ms, so a second press at 200 ms must keep it alive past 260 ms from
+    // the FIRST press. Before the fix it died on the first press's schedule.
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () => Navigator.of(context).push<void>(
+              MaterialPageRoute(
+                builder: (_) => const WakeAlertScreen(
+                  destinationName: 'Kalyan',
+                  onAcknowledge: _noop,
+                ),
+              ),
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // Scoped to the ack button's own AnimatedScale. The alarm glyph has one
+    // too, so byType alone finds two and throws.
+    double nudgeScale() => tester
+        .widget<AnimatedScale>(
+          find
+              .ancestor(
+                of: find.byKey(const Key('wake_ack')),
+                matching: find.byType(AnimatedScale),
+              )
+              .first,
+        )
+        .scale;
+
+    expect(nudgeScale(), 1, reason: 'at rest before any back press');
+
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(nudgeScale(), 1.04, reason: 'the first press is answered');
+
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+
+    // 140 ms past the first press's 260 ms deadline. The old code would have
+    // dropped the nudge here and left the second press unanswered.
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(
+      nudgeScale(),
+      1.04,
+      reason: 'the second press restarted the nudge, it was not ignored',
+    );
+
+    // And it still ends on its own, from the LAST press.
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(nudgeScale(), 1, reason: 'the nudge is temporary, not a state');
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('nothing passed yet simply omits the line', (tester) async {
     await pumpAlert(tester, lastPassedLine: null);
     expect(find.textContaining('passed'), findsNothing);
     expect(find.text('Wake up\nKalyan is next'), findsOneWidget);
   });
 }
+
+/// A named no-op, so the alert can be const in a test that never acks.
+void _noop() {}

@@ -21,14 +21,13 @@ void main() {
     journey = repo.planner.plan(originId: 'thane', destinationId: 'kalyan');
   });
 
-  Future<({List<WakeChoice> choices, List<int> ends})> pump(
+  Future<({List<int> ends})> pump(
     WidgetTester tester, {
     required int reachedIndex,
     bool atStation = false,
     WakeChoice choice = WakeChoice.lastTwoStations,
     String? etaLine,
   }) async {
-    final choices = <WakeChoice>[];
     final ends = <int>[];
     await tester.pumpWidget(
       MaterialApp(
@@ -38,13 +37,12 @@ void main() {
           atStation: atStation,
           wakeChoice: choice,
           etaLine: etaLine,
-          onWakeChoiceChanged: choices.add,
           onEndJourney: () => ends.add(1),
         ),
       ),
     );
     await tester.pumpAndSettle();
-    return (choices: choices, ends: ends);
+    return (ends: ends);
   }
 
   testWidgets('the countdown is what is still ahead, not what has passed', (
@@ -102,11 +100,32 @@ void main() {
     expect(find.text('Arriving 19:52 (estimate)'), findsOneWidget);
   });
 
-  testWidgets('the wake choice reports both ways', (tester) async {
-    final r = await pump(tester, reachedIndex: 2);
-    await tester.tap(find.byKey(const Key('wake_only_destination')));
-    await tester.pumpAndSettle();
-    expect(r.choices, [WakeChoice.onlyDestination]);
+  group('THE WAKE CARD STATES THE RULE, it does not offer a choice', () {
+    // The segmented control was removed on 11 Aug 2026: it changed nothing (the
+    // ladder runs on locked rules), a tap could not even redraw the screen, and
+    // choosing the distance is a Guardian Plus surface. A control that invites a
+    // tap and ignores it is worse than no control on the screen a half-asleep
+    // rider is holding.
+
+    testWidgets('it names the rule and the stop, in words', (tester) async {
+      await pump(tester, reachedIndex: 2);
+      expect(find.text('Wake me up'), findsOneWidget);
+      expect(find.text('2 stations before Kalyan'), findsOneWidget);
+    });
+
+    testWidgets('the other rule reads differently, so it cannot drift', (
+      tester,
+    ) async {
+      await pump(tester, reachedIndex: 2, choice: WakeChoice.onlyDestination);
+      expect(find.text('at Kalyan'), findsOneWidget);
+      expect(find.text('2 stations before Kalyan'), findsNothing);
+    });
+
+    testWidgets('NO TAPPABLE SEGMENTS SURVIVE', (tester) async {
+      await pump(tester, reachedIndex: 2);
+      expect(find.byKey(const Key('wake_last_two')), findsNothing);
+      expect(find.byKey(const Key('wake_only_destination')), findsNothing);
+    });
   });
 
   testWidgets('a tap never ends the journey, only a full hold does', (
@@ -181,7 +200,6 @@ void main() {
           journey: longest,
           reachedIndex: 2,
           wakeChoice: WakeChoice.lastTwoStations,
-          onWakeChoiceChanged: (_) {},
           onEndJourney: () {},
         ),
       ),
@@ -189,12 +207,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
-    // The label must not wrap: it is what pushed the toggle off the row.
     final label = tester.widget<Text>(find.text('Wake me up'));
     expect(label.maxLines, 1);
-    // Both segments still reachable and tappable.
-    expect(find.byKey(const Key('wake_last_two')), findsOneWidget);
-    expect(find.byKey(const Key('wake_only_destination')), findsOneWidget);
     expect(find.byKey(const Key('end_journey')), findsOneWidget);
   });
 
@@ -216,7 +230,6 @@ void main() {
           journey: longest,
           reachedIndex: 1,
           wakeChoice: WakeChoice.onlyDestination,
-          onWakeChoiceChanged: (_) {},
           onEndJourney: () {},
         ),
       ),
@@ -227,9 +240,22 @@ void main() {
     expect(find.byType(SingleChildScrollView), findsOneWidget);
   });
 
-  testWidgets('the shield says the app is watching', (tester) async {
+  testWidgets('the shield says the app is watching, on one line', (
+    tester,
+  ) async {
+    // A PILL since 11 Aug 2026, matching Screen 1's status chip. It was a bare
+    // icon beside a hard-wrapped two-line label, which is why the icon looked
+    // misaligned: a 22 px glyph centred against two lines sits level with the
+    // gap between them. The copy shortened to fit one line, because a pill that
+    // wraps is not a pill.
     await pump(tester, reachedIndex: 2);
-    expect(find.text('Wake-up\nmode active'), findsOneWidget);
+    expect(find.text('Wake-up on'), findsOneWidget);
+    final label = tester.widget<Text>(find.text('Wake-up on'));
+    expect(
+      label.maxLines,
+      1,
+      reason: 'the badge gives way by ellipsis, not by wrapping',
+    );
   });
 
   group('AT a station reads differently from PAST it', () {

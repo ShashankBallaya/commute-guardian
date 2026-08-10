@@ -47,11 +47,13 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
   late final StreamSubscription<ServiceEvent> _serviceEvents;
 
-  /// Screen 4's wake control. Held here so it survives the screen being popped
-  /// and re-pushed within a ride.
+  /// WHICH RULE THE LADDER IS RUNNING, for Screen 4 to state. Not a control any
+  /// more: the segmented toggle was removed on 11 Aug 2026 because nothing
+  /// consumed it, and choosing the distance is a Guardian Plus surface.
   ///
-  /// NOTHING CONSUMES IT YET. The wake ladder still fires on its locked rules,
-  /// and this must not quietly become a second way to change leadTimeS.
+  /// Still a field rather than a constant, because it is the seam Plus lands on
+  /// and because it must survive the screen being popped and re-pushed within a
+  /// ride. It must never become a second way to change leadTimeS.
   WakeChoice wakeChoice = WakeChoice.lastTwoStations;
 
   /// The freshest fix streamed up from the running service. At ride end this is
@@ -708,7 +710,6 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
               reachedIndex: live?.reachedIndex ?? -1,
               atStation: live?.atStation ?? false,
               wakeChoice: wakeChoice,
-              onWakeChoiceChanged: (next) => setState(() => wakeChoice = next),
               onEndJourney: () async {
                 await stop();
                 if (routeContext.mounted) {

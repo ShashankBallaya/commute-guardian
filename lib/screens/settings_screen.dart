@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../models/app_settings.dart';
@@ -36,10 +38,13 @@ class ReadinessItem {
 /// THREE ITEMS FROM THE HANDOVER'S SCREEN 6 LIST ARE DELIBERATELY ABSENT, and
 /// they are worth naming so nobody adds them back as an oversight:
 ///
-///   - The wake "stations before" stepper. Screen 4's WakeChoice toggle already
-///     owns that choice, and it must never become a second way to change
-///     leadTimeS, which is locked at 90 s. Two controls for one behaviour is the
-///     same disease as two projectors for one position.
+///   - The wake "stations before" stepper. Nothing may become a second way to
+///     change leadTimeS, which is locked at 90 s, and two controls for one
+///     behaviour is the same disease as two projectors for one position. This
+///     used to say "Screen 4's WakeChoice toggle already owns that choice"; that
+///     toggle was REMOVED on 11 Aug 2026 because it owned nothing and changed
+///     nothing. Choosing the distance is where the stepper belongs when Guardian
+///     Plus exists, on THIS screen, before a ride rather than during one.
 ///   - Alarm volume behaviour. The ladder is [0.3, 0.6, 1.0] and climbs until
 ///     acknowledged. A volume control's only function would be to make the alarm
 ///     worse at the single job this product exists to do.
@@ -191,17 +196,36 @@ class SettingsScreen extends StatelessWidget {
         onChanged: onCrowdMode,
         switchKey: const Key('settings_crowd_mode'),
       ),
-      const _Divider(),
+      // HIDDEN ON iOS, and written as the limitation rather than as a platform
+      // allow-list.
+      //
+      // iOS forbids background haptics, which is a founding premise of this
+      // project, so PulseOutput.buzz returns at its first line there and this
+      // switch could never do anything on an iPhone. A control that cannot work
+      // is worse than an absent one: it invites a rider to solve a problem with
+      // a switch that will not solve it. Proven on the device rather than
+      // assumed, by a 10 Aug 2026 iPhone ride log that recorded "PULSE every
+      // 45s, with vibration" for a buzz that never happened.
+      //
+      // `!Platform.isIOS`, NOT `Platform.isAndroid`. The two are identical on
+      // the two platforms this app ships to, and they differ where it is tested:
+      // the widget-test host is neither, so an allow-list would have hidden this
+      // row from the test that asserts its copy and quietly stopped checking it.
+      // State the constraint you actually have.
+      //
       // MOVED INSIDE THIS CARD from a card of its own. It is scoped to the
       // pulse, and position makes that scope self-evident where a caption
       // alone had to be read and believed.
-      _SwitchRow(
-        label: 'Vibrate with the pulse',
-        detail: 'The wake alarm always vibrates.',
-        value: settings.vibrateWithPulse,
-        onChanged: onVibrateWithPulse,
-        switchKey: const Key('settings_vibrate'),
-      ),
+      if (!Platform.isIOS) ...[
+        const _Divider(),
+        _SwitchRow(
+          label: 'Vibrate with the pulse',
+          detail: 'The wake alarm always vibrates.',
+          value: settings.vibrateWithPulse,
+          onChanged: onVibrateWithPulse,
+          switchKey: const Key('settings_vibrate'),
+        ),
+      ],
       if (onPreviewPulse != null) ...[
         const _Divider(),
         Pressable(

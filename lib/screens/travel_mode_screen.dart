@@ -6,7 +6,6 @@ import '../models/journey.dart';
 import '../models/station.dart';
 import '../theme/palette.dart';
 import '../theme/type_scale.dart';
-import '../widgets/pressable.dart';
 
 /// Screen 4, Travel Mode. The app's home for the whole journey.
 ///
@@ -40,7 +39,6 @@ class TravelModeScreen extends StatelessWidget {
     required this.reachedIndex,
     this.atStation = false,
     required this.wakeChoice,
-    required this.onWakeChoiceChanged,
     required this.onEndJourney,
     this.etaLine,
   });
@@ -57,7 +55,6 @@ class TravelModeScreen extends StatelessWidget {
   final bool atStation;
 
   final WakeChoice wakeChoice;
-  final ValueChanged<WakeChoice> onWakeChoiceChanged;
 
   /// Held to confirm. An accidental brush must never end a ride the rider is
   /// asleep on.
@@ -110,7 +107,7 @@ class TravelModeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              _WakeCard(choice: wakeChoice, onChanged: onWakeChoiceChanged),
+              _WakeCard(choice: wakeChoice, destinationName: _destinationName),
               const SizedBox(height: 16),
               _EndJourneyButton(onConfirmed: onEndJourney),
             ],
@@ -121,13 +118,17 @@ class TravelModeScreen extends StatelessWidget {
   }
 }
 
-/// When the wake alert fires.
+/// When the wake alert fires. REPORTED BY THE SCREEN, not chosen on it.
 ///
-/// NOTE FOR LATER: this control is the Guardian Plus surface per the locked
-/// monetization design (free fires the pre-warning EARLIER, Plus sells the
-/// CHOICE, never adequacy). MVP has no paywalls, so both options ship free.
-/// It deliberately does NOT touch leadTimeS, which stays locked at 90 s, nor
-/// the rule that one acknowledgement stands the ladder down permanently.
+/// Fixed at [lastTwoStations] today, which is the free tier's promise, and the
+/// screen states it rather than offering it (see [_WakeCard]). Choosing it is a
+/// Guardian Plus surface per the locked monetization design: free gets the
+/// two-station warning, Plus sells the CHOICE and never adequacy. When Plus
+/// exists it belongs in Settings, before a ride, not on the screen a
+/// half-asleep rider is holding.
+///
+/// It has never touched leadTimeS, which stays locked at 90 s, nor the rule
+/// that one acknowledgement stands the ladder down permanently.
 enum WakeChoice {
   /// Warned with two stations to go, then again at the destination.
   lastTwoStations,
@@ -242,24 +243,48 @@ class _Header extends StatelessWidget {
 }
 
 /// The reassurance the rider checks before pocketing the phone.
+///
+/// A PILL, matching the status chip on Screen 1, since 11 Aug 2026. It used to
+/// be a bare icon and a hard-wrapped two-line label with a `top: 6` nudge
+/// holding it roughly level with the headline. Three things were wrong with
+/// that, and the owner's report was simply "the shield is not perfectly
+/// aligned":
+///
+///   - A 22 px icon centred against two lines of text sits level with the gap
+///     BETWEEN them, so it reads as floating no matter what the padding says.
+///   - The `\n` was hard, so it stacked even where a single line fitted, and it
+///     was the two-line height that made the icon look wrong in the first place.
+///   - With no container it is loose text beside a 46 px green number, which
+///     reads as debris rather than as a badge. This app already had the answer:
+///     Screen 1's chip is a glass pill with a mark and one line of text.
+///
+/// The copy shortened to fit one line. "Wake-up mode active" was 19 characters
+/// and the previous shape existed to wrap it; a pill that wraps is not a pill.
+/// The 5 Aug measurement that drove the old two-line label still stands (a
+/// growing label squeezes the station count into the gutter on a 320 dp phone),
+/// which is why the label ellipsises and the whole pill stays [Flexible]: it
+/// gives way before the headline does, because it is the reassurance and not the
+/// news.
 class _ShieldBadge extends StatelessWidget {
   const _ShieldBadge();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
+    return Container(
+      decoration: Palette.glassCard(radius: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.shield, color: Palette.text, size: 22),
-          const SizedBox(width: 7),
+          const Icon(Icons.shield, color: Palette.text, size: 18),
+          const SizedBox(width: 8),
           Flexible(
             child: Text(
-              'Wake-up\nmode active',
+              'Wake-up on',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: TypeScale.caption,
-                height: 1.25,
                 color: Palette.textDim(0.85),
               ),
             ),
@@ -551,27 +576,53 @@ class _ChainRow extends StatelessWidget {
   };
 }
 
+/// What the alarm is going to do, stated. NOT a control.
+///
+/// IT WAS A SEGMENTED CONTROL UNTIL 11 AUG 2026, AND IT CHANGED NOTHING. The
+/// class comment on [WakeChoice] has said so since it was written: the ladder
+/// fires on its locked rules and nothing consumes the choice. So the ride screen
+/// carried a prominent control that invited a tap and ignored it, and the owner
+/// found exactly that on the device ("I can't toggle between Only destination
+/// and Last 2 stops"). Two further faults fell out of the same card: the tap
+/// could not redraw the screen at all, because it called setState on a host that
+/// does not rebuild a pushed route, and the label and the toggle competed for
+/// width so the control scaled below the 48 dp floor on a narrow phone.
+///
+/// All three go away by removing the control rather than repairing it, and the
+/// removal is the correct product answer independently: CHOOSING the pre-warning
+/// distance is a Guardian Plus surface by the locked monetization design, where
+/// free gets the two-station warning and Plus sells the choice. It reappears in
+/// Settings when Plus exists, not on the screen a half-asleep rider is holding.
+///
+/// What is left is the thing the rider actually wants at this moment, which is
+/// to know what will happen without having to do anything: a sentence. The
+/// [choice] still drives the wording, so the card cannot drift from the rule in
+/// force, and it is the Phase 3 seam in the same shape [TravelModeScreen.etaLine]
+/// already uses.
 class _WakeCard extends StatelessWidget {
-  const _WakeCard({required this.choice, required this.onChanged});
+  const _WakeCard({required this.choice, required this.destinationName});
 
   final WakeChoice choice;
-  final ValueChanged<WakeChoice> onChanged;
+  final String destinationName;
+
+  String get _line => switch (choice) {
+    WakeChoice.lastTwoStations => '2 stations before $destinationName',
+    WakeChoice.onlyDestination => 'at $destinationName',
+  };
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: Palette.glassCard(radius: 20),
-      padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
       child: Row(
         children: [
           const Icon(Icons.notifications, color: Palette.text, size: 24),
           const SizedBox(width: 12),
-          // Flexible, not Expanded: on the 3T (1080 wide, narrower than the
-          // 390pt frame) an Expanded label took the room the toggle needed and
-          // wrapped "Wake me up before my stop" onto THREE lines. The label
-          // gives way to the control, because the control is the thing a rider
-          // came here to change.
-          Flexible(
+          // Expanded now, not Flexible. There is no control left to give way
+          // to, so the sentence gets the whole row, which is what stopped
+          // "Wake me up before my stop" being squeezed onto three lines.
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -587,8 +638,8 @@ class _WakeCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'before my stop',
-                  maxLines: 1,
+                  _line,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: TypeScale.label,
@@ -598,115 +649,12 @@ class _WakeCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 10),
-          // scaleDown, not shrink-to-nothing: the toggle keeps its drawn size
-          // wherever it fits and only gives up pixels on a narrow phone, which
-          // is what the 3T is next to the 390pt frame.
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerRight,
-              child: _WakeToggle(choice: choice, onChanged: onChanged),
-            ),
-          ),
         ],
       ),
     );
   }
 }
 
-class _WakeToggle extends StatelessWidget {
-  const _WakeToggle({required this.choice, required this.onChanged});
-
-  final WakeChoice choice;
-  final ValueChanged<WakeChoice> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Palette.hairline),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _segment(
-            key: const Key('wake_last_two'),
-            top: 'Last 2',
-            bottom: 'stations',
-            selected: choice == WakeChoice.lastTwoStations,
-            onTap: () => onChanged(WakeChoice.lastTwoStations),
-          ),
-          _segment(
-            key: const Key('wake_only_destination'),
-            top: 'Only',
-            bottom: 'destination',
-            selected: choice == WakeChoice.onlyDestination,
-            onTap: () => onChanged(WakeChoice.onlyDestination),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _segment({
-    required Key key,
-    required String top,
-    required String bottom,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return Pressable(
-      key: key,
-      onTap: onTap,
-      child: AnimatedContainer(
-        // A select-class control, so it sits in the 150 to 250 ms band. The
-        // wash used to snap, which made a deliberate choice feel like a
-        // rendering glitch. greenSoft is the locked wash for a selected
-        // segment.
-        duration: const Duration(milliseconds: 180),
-        curve: const Cubic(0.23, 1, 0.32, 1),
-        decoration: BoxDecoration(
-          color: selected
-              ? Palette.greenSoft
-              : Palette.greenSoft.withValues(alpha: 0),
-          borderRadius: BorderRadius.circular(11),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 180),
-              style: TextStyle(
-                fontSize: TypeScale.label,
-                color: selected ? Palette.dotGreen : Palette.text,
-              ),
-              child: Text(top),
-            ),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 180),
-              style: TextStyle(
-                fontSize: TypeScale.caption,
-                color: selected
-                    ? Palette.dotGreen.withValues(alpha: 0.85)
-                    : Palette.textDim(0.7),
-              ),
-              child: Text(bottom),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Crimson, and the one place on this screen that may use it: ending a journey
-/// is exactly what the palette reserves it for.
-///
-/// HOLD TO CONFIRM, because the rider is asleep and the phone is in a pocket.
-/// The press is slow and deliberate; the release snaps back.
 class _EndJourneyButton extends StatefulWidget {
   const _EndJourneyButton({required this.onConfirmed});
 

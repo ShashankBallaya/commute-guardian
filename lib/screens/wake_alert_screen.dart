@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../theme/palette.dart';
@@ -67,6 +69,11 @@ class _WakeAlertScreenState extends State<WakeAlertScreen> {
   /// Raised briefly when the rider tries to back out, to point at the way out.
   bool _nudging = false;
 
+  /// Held so a second back press can cancel the first one's release. A bare
+  /// Future.delayed cannot be cancelled, which is why the version before 11 Aug
+  /// 2026 had to ignore the second press instead of answering it.
+  Timer? _nudgeReset;
+
   /// What the ladder is actually doing, with no invented total.
   String get statusLine => widget.climbing
       ? 'Getting louder until you answer'
@@ -86,12 +93,32 @@ class _WakeAlertScreenState extends State<WakeAlertScreen> {
   ///
   /// Back is deliberately NOT treated as an acknowledgement. An accidental back
   /// must never silence an alarm.
+  ///
+  /// AND IT ANSWERS EVERY PRESS, not just the first of a burst (fixed 11 Aug
+  /// 2026, an item the apple-design pass raised and never closed). It used to
+  /// early-return while a nudge was already running, so a half-asleep hand
+  /// pressing back twice got one answer and then nothing, which is
+  /// indistinguishable from the app having frozen, at the moment the rider is
+  /// least able to reason about it. The nudge is the ONLY thing saying the
+  /// refusal was deliberate, so a refusal that stops explaining itself reads as
+  /// a crash. Restarting the timer is what makes the second press visible: the
+  /// nudge runs its full length again from the new press rather than finishing
+  /// on the old schedule.
   void _refusePop() {
-    if (_nudging) return;
-    setState(() => _nudging = true);
-    Future.delayed(const Duration(milliseconds: 260), () {
+    _nudgeReset?.cancel();
+    if (!_nudging) setState(() => _nudging = true);
+    _nudgeReset = Timer(const Duration(milliseconds: 260), () {
       if (mounted) setState(() => _nudging = false);
     });
+  }
+
+  @override
+  void dispose() {
+    // A pending nudge outliving the screen would call setState on a dead State.
+    // Harmless in release and a red screen in debug, which on THIS screen is the
+    // worst possible place to find out.
+    _nudgeReset?.cancel();
+    super.dispose();
   }
 
   @override

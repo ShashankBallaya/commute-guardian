@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:commute_guardian/models/app_settings.dart';
 import 'package:commute_guardian/screens/settings_screen.dart';
 import 'package:flutter/material.dart';
@@ -231,5 +232,28 @@ void main() {
               decoration.color == const Color(0xFF55131D);
         });
     expect(crimsonBoxes, isEmpty);
+  });
+  test('THE VIBRATION SWITCH IS HIDDEN ON iOS, not disabled', () {
+    // iOS forbids background haptics, so PulseOutput.buzz returns at its first
+    // line there and this switch could never do anything on an iPhone. A control
+    // that cannot work invites a rider to solve a problem with a switch that
+    // will not solve it.
+    //
+    // Read from the source, because Platform.isAndroid cannot be overridden in a
+    // widget test: whichever branch the host takes is the only one that renders.
+    final source = File('lib/screens/settings_screen.dart').readAsStringSync();
+    final row = source.indexOf("switchKey: const Key('settings_vibrate')");
+    expect(row, isNonNegative, reason: 'the row must exist');
+
+    final guard = source.lastIndexOf('!Platform.isIOS', row);
+    expect(guard, isNonNegative, reason: 'the row must sit behind a guard');
+    // Nothing else may open a block between the guard and the row, or the guard
+    // is guarding something else.
+    final between = source.substring(guard, row);
+    expect(
+      between.contains('_SwitchRow(') && !between.contains('],'),
+      isTrue,
+      reason: 'the guard must wrap THIS row',
+    );
   });
 }
