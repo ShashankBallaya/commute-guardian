@@ -2,7 +2,9 @@ import 'dart:io';
 
 import 'package:aptabase_flutter/aptabase_flutter.dart';
 import 'package:commute_guardian/services/analytics.dart';
+import 'package:commute_guardian/services/analytics_event_queue.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Analytics, and the two things that can go wrong with it.
 ///
@@ -134,8 +136,14 @@ void main() {
       ).readAsStringSync();
 
       // Aptabase: fired and forgotten outright.
-      expect(source, contains('unawaited(Analytics.init('));
-      expect(source, isNot(contains('await Analytics.init(')));
+      //
+      // Matched with whitespace allowed, not as one literal. The first version
+      // demanded `unawaited(Analytics.init(` on a single line, so adding the
+      // isolate argument reformatted the call and failed a test about network
+      // timeouts. A guard that breaks on a line wrap teaches its reader to
+      // reformat code to please it, which is backwards.
+      expect(source, matches(RegExp(r'unawaited\(\s*Analytics\.init\(')));
+      expect(source, isNot(matches(RegExp(r'await\s+Analytics\.init\('))));
 
       // Sentry: awaited, but bounded, because an early crash report is worth
       // two seconds and never worth a ride.
@@ -185,6 +193,93 @@ void main() {
       'android/app/src/main/AndroidManifest.xml',
     ).readAsStringSync();
     expect(manifest, contains('android.permission.INTERNET'));
+  });
+
+  group('one event queue per isolate, so a ride is counted once', () {
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+
+    test('NEITHER ISOLATE CAN SEE THE OTHER\'S PENDING EVENTS', () async {
+      // The 9 Aug duplicate, reproduced as the thing that used to happen. The
+      // service isolate queues a ride and has not flushed it yet; the UI
+      // isolate then starts, which is what a force-stop and reopen mid-ride
+      // does. Before this fix the UI's snapshot picked the event up and sent it
+      // a second time, with the original timestamp.
+      final service = IsolateEventQueue(AnalyticsIsolate.service.name);
+      await service.init();
+      await service.addEvent('aptabase_1_ride_started', '{"e":"ride_started"}');
+
+      final ui = IsolateEventQueue(AnalyticsIsolate.ui.name);
+      await ui.init();
+
+      expect(await ui.getItems(25), isEmpty);
+      expect((await service.getItems(25)).length, 1);
+    });
+
+    test('a queue recovers its own events after the isolate died', () async {
+      // The other half of the rule, and the reason this is not simply "do not
+      // persist". A service isolate the OS killed mid-ride must still get its
+      // ride counted by the next one.
+      final died = IsolateEventQueue(AnalyticsIsolate.service.name);
+      await died.init();
+      await died.addEvent('aptabase_1_ride_ended', '{"e":"ride_ended"}');
+
+      final next = IsolateEventQueue(AnalyticsIsolate.service.name);
+      await next.init();
+
+      final items = await next.getItems(25);
+      expect(items.map((e) => e.key), ['aptabase_1_ride_ended']);
+      expect(
+        items.single.value,
+        '{"e":"ride_ended"}',
+        reason: 'the prefix belongs to storage, never to the caller',
+      );
+    });
+
+    test('a sent event is gone, from memory and from disk', () async {
+      final queue = IsolateEventQueue(AnalyticsIsolate.service.name);
+      await queue.init();
+      await queue.addEvent('aptabase_1_ride_started', '{}');
+      await queue.deleteEvents({'aptabase_1_ride_started'});
+
+      expect(await queue.getItems(25), isEmpty);
+      final reopened = IsolateEventQueue(AnalyticsIsolate.service.name);
+      await reopened.init();
+      expect(
+        await reopened.getItems(25),
+        isEmpty,
+        reason: 'a delete that only cleared memory would resend on restart',
+      );
+    });
+
+    test('events from the old shared queue are ignored, not adopted', () async {
+      // Left on a phone by a build before this fix. Those are 9 Aug events at
+      // the latest, and re-sending a stale ride is the fault being fixed.
+      SharedPreferences.setMockInitialValues({
+        'aptabase_1_ride_started': '{"e":"stale"}',
+      });
+      final queue = IsolateEventQueue(AnalyticsIsolate.service.name);
+      await queue.init();
+
+      expect(await queue.getItems(25), isEmpty);
+    });
+
+    test('BOTH ISOLATES ARE NAMED, and the enum is what names them', () {
+      // A typo in a scope string would open a third queue in silence, which is
+      // the same class of invisible fault as the empty secret. Read from the
+      // source: every Analytics.init call site must pass an AnalyticsIsolate.
+      for (final path in const [
+        'lib/state/settings_providers.dart',
+        'lib/foreground/geofence_task_handler.dart',
+      ]) {
+        final source = File(path).readAsStringSync();
+        expect(
+          source,
+          contains('isolate: AnalyticsIsolate.'),
+          reason: '$path must name its queue',
+        );
+      }
+      expect(AnalyticsIsolate.values.map((i) => i.name), ['ui', 'service']);
+    });
   });
 
   group('the outcome the bars are read from', () {

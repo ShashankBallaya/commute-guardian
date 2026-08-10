@@ -21,15 +21,30 @@ The project has five pre-committed numbers from the locked monetization design:
 
 | Bar | Deadline | What reads it |
 |---|---|---|
-| 500 installs | 3 months | Aptabase's own device identity |
+| 500 installs | 3 months | sessions, see the warning below |
 | 100 weekly active riders | 3 months | `ride_started` |
 | Wake success 95 percent | 3 months | `ride_ended` outcome |
-| D30 retention 40 percent | 3 months | Aptabase retention |
-| Kill floor: under 50 weekly active OR D30 under 20 percent | 6 months | both of the above |
+| D30 retention 40 percent | 3 months | **NOTHING. Not measurable.** |
+| Kill floor: under 50 weekly active OR D30 under 20 percent | 6 months | half of it is not measurable |
 
-Installs and retention need **no event at all**: initialising the SDK is the
-whole implementation, because Aptabase derives both from an anonymous
-per-device identity it generates itself.
+### Retention is not measurable on this stack, and this doc used to say it was
+
+This section claimed installs and retention needed no event at all, because
+"Aptabase derives both from an anonymous per-device identity it generates
+itself". **There is no such identity.** Aptabase has no device id, no cookie and
+no fingerprint, by design and as advertised. Read the SDK: an event carries a
+timestamp, a session id, the system properties and the props, and nothing that
+survives the session.
+
+The evidence is in the 9 Aug 2026 export. One 3T, one evening, five rides,
+**three different `user_id` values**, changing while the phone moved between
+towers. Whatever the server derives that column from, it is not a device.
+
+So the two bars that count PEOPLE OVER TIME have nothing reading them. The two
+that count EVENTS are fine, because we send those ourselves. Deciding what to do
+about it is the owner's call, not this file's: it weighs a pre-committed bar
+against the "no identifiers" position that made this design defensible in the
+first place. Until that decision exists, do not report a retention number.
 
 "Weekly active rider" means three or more Travel Mode rides in a week, so it
 needs a ride count and nothing else. `ride_started` therefore carries **no
@@ -86,8 +101,19 @@ the app.
 ## Both isolates, and why the ride events come from the service
 
 - **UI isolate**: `analyticsBootProvider` starts the SDK once the opt-out has
-  been read from drift. This records the app open, which is installs and D30.
+  been read from drift. This records the app open, which is a session and no
+  more than a session (see the retention warning above).
 - **Service isolate**: `ride_started` and `ride_ended` fire here.
+
+**THE TWO ISOLATES SHARE ONE EVENT QUEUE, AND THAT DOUBLE-COUNTED RIDES.**
+`aptabase_flutter` queues events in SharedPreferences and flushes them on a
+30 second timer, and `StorageManagerSharedPrefs.init()` copies every queued event
+into an in-memory map ONCE, at startup. So an isolate that starts while the other
+has events waiting adopts them and sends them a second time, with the original
+timestamp, because the event's local key never leaves the device and nothing
+de-duplicates at the far end. The 9 Aug export shows it: two of five rides
+double-counted, identical timestamps, on the evening the app was force-stopped
+and reopened mid-ride. Every isolate now gets its own queue.
 
 The ride events are **not** sent from the UI, and that is the important
 decision. The 30 Jul swipe bench proved the UI can die mid-ride while the

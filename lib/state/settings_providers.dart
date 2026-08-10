@@ -126,5 +126,8 @@ final availableLanguagesProvider = FutureProvider<Set<AppLanguage>>(
 /// re-runs whenever settings change.
 final analyticsBootProvider = FutureProvider<void>((ref) async {
   final settings = await ref.watch(appSettingsProvider.future);
-  await Analytics.init(enabled: settings.shareAnonymousUsage);
+  await Analytics.init(
+    enabled: settings.shareAnonymousUsage,
+    isolate: AnalyticsIsolate.ui,
+  );
 });

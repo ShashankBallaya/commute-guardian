@@ -53,6 +53,11 @@ dependencies:
   flutter_riverpod: ^2.6.1
   sentry_flutter: 9.26.0
   aptabase_flutter: ^0.5.0
+  # Direct because IsolateEventQueue implements aptabase_flutter's own
+  # StorageManager against it, to give each isolate its own event queue. It was
+  # already here transitively, through both aptabase_flutter and
+  # flutter_foreground_task.
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:

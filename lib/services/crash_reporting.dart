@@ -26,10 +26,19 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 ///      scrubbed, because a breadcrumb is context and context that had to be
 ///      censored is not worth sending.
 ///
-/// THE DSN IS NOT COMPILED IN. The repository is public, so it arrives through
-/// `--dart-define-from-file=sentry.json` (gitignored, see `docs/sentry.md`).
-/// With no DSN this class does nothing at all and the app runs normally, which
-/// is what every clone and every test gets.
+/// THE DSN IS NOT IN THE TREE. The repository is public, so it arrives through
+/// `--dart-define-from-file=secrets.json` (gitignored, see `docs/sentry.md`) on
+/// a local build, and from a repository secret in CI. With no DSN this class
+/// does nothing at all and the app runs normally, which is what every clone and
+/// every test gets.
+///
+/// AN EMPTY DSN IS COMPILED OUT, NOT SWITCHED OFF. [dsn] is a const from the
+/// environment, so `isEnabled` is a compile-time constant and the AOT compiler
+/// deletes everything behind it, including [sendTestEvent]'s success message.
+/// That is how the 9 Aug IPA was diagnosed a day later, from strings in the
+/// binary: a build with a real DSN contains "Sent to Sentry:", a dark one keeps
+/// only "Crash reporting is OFF". Useful, and worth knowing before trusting a
+/// scan of a build for a key.
 class CrashReporting {
   const CrashReporting._();
 

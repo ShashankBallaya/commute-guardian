@@ -19,9 +19,37 @@ jobs:
 
       - run: flutter pub get
 
+      # SAYS WHETHER THE KEYS EXIST, BEFORE SPENDING SIX MINUTES OF MAC RUNNER
+      # ON A BUILD THAT CANNOT REPORT.
+      #
+      # An empty secret is not a loud failure, it is a silent one. Both secrets
+      # were created empty on 9 Aug 2026 and this workflow built an IPA with two
+      # empty dart-defines. The compiler then folded both keys to '' and deleted
+      # the reporting paths, so the app behaved perfectly, rode a real train, and
+      # sent nothing. It took a binary scan the next day to find out.
+      #
+      # Lengths only. A value never reaches the log, and GitHub would mask it
+      # anyway, which is the very thing that makes an empty secret and a real one
+      # look alike in a run log: a real one prints ***, an empty one prints
+      # nothing, and nobody reads a blank line as a fault.
+      - name: Say whether the keys are actually present
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
+        run: |
+          for name in SENTRY_DSN APTABASE_APP_KEY; do
+            value="${!name}"
+            if [ -z "$value" ]; then
+              echo "::warning title=$name is empty::This IPA cannot report. The feature is compiled out, not merely switched off."
+              echo "- \`$name\`: **EMPTY**, compiled out of this build" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- \`$name\`: present, ${#value} characters" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
       # Both keys are repository SECRETS, never files in the tree: this repo is
-      # public. An empty secret is a valid state and simply builds an IPA with
-      # that feature off, which is what a fork gets.
+      # public. An empty secret still builds, because that is what a fork gets,
+      # and the step above is what stops it being a surprise.
       - name: Build with the Sentry DSN and the Aptabase key
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}

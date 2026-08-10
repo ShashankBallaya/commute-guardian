@@ -244,7 +244,9 @@ class GeofenceTaskHandler extends TaskHandler {
     // hung socket between the rider and Travel Mode starting. Counting a ride
     // must never delay one. Events queued meanwhile still go out: Analytics
     // waits for readiness on the send side, where nothing is blocked.
-    unawaited(Analytics.init(enabled: shareUsage));
+    unawaited(
+      Analytics.init(enabled: shareUsage, isolate: AnalyticsIsolate.service),
+    );
 
     _chain = GeofenceChainService(
       onLog: _sendLog,

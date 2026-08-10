@@ -1,6 +1,19 @@
 import 'package:aptabase_flutter/aptabase_flutter.dart';
 import 'package:flutter/foundation.dart';
 
+import 'analytics_event_queue.dart';
+
+/// Which isolate is starting the SDK. An enum rather than a string because it
+/// names an event QUEUE: a typo would open a third one, silently, and the fault
+/// it guards against is already invisible enough. See [IsolateEventQueue].
+enum AnalyticsIsolate {
+  /// Records the app open. Dies with the app, so it never reports a ride.
+  ui,
+
+  /// Where every ride event comes from, because the UI can die mid-ride.
+  service,
+}
+
 /// How a ride finished. The only thing analytics ever learns about a journey.
 ///
 /// Deliberately a closed set of four words. Anything richer (which station,
@@ -42,8 +55,18 @@ enum RideOutcome {
 ///
 /// So the event list is derived from that table, not from curiosity:
 ///
-///   - installs and D30 come from Aptabase's own anonymous per-device identity.
-///     No event. Initialising the SDK is the whole implementation.
+///   - installs and D30 were believed to come from Aptabase's own anonymous
+///     per-device identity, with initialising the SDK as the whole
+///     implementation. THAT WAS WRONG, and it was wrong when it was written.
+///     Aptabase has NO per-device identity, deliberately: it uses no device id,
+///     no cookie and no fingerprint, and the payload this file sends carries a
+///     timestamp, a session id, system properties and props, and nothing else.
+///     The `user_id` column in a CSV export is derived server-side from
+///     something unstable; one 3T produced THREE of them in one evening on a
+///     moving train (9 Aug 2026 export). So D30 at 40 percent and the D30 kill
+///     floor, two of the five pre-committed bars, are NOT MEASURABLE on this
+///     stack as it stands. OPEN DECISION, and an owner's one: it trades the
+///     "no identifiers" position against a bar the project committed to.
 ///   - weekly active riders means three or more Travel Mode rides in a week, so
 ///     it needs [trackRideStarted] and nothing else.
 ///   - wake success means: of the rides where the alarm actually had to work,
@@ -128,13 +151,23 @@ class Analytics {
   /// onStart meant a hung socket could delay Travel Mode itself. Analytics
   /// delaying the thing that wakes a sleeping rider is the wrong way round in
   /// every possible case, so the ride path fires this and walks away.
-  static Future<void> init({required bool enabled}) {
+  /// [isolate] names this isolate's own event queue. Both isolates used to share
+  /// the package's single queue in SharedPreferences, and each took a snapshot of
+  /// it at startup, so whichever started second ADOPTED the other's pending
+  /// events and sent them again. Two of five rides in the 9 Aug 2026 export are
+  /// duplicated for exactly that reason. See [IsolateEventQueue].
+  static Future<void> init({
+    required bool enabled,
+    required AnalyticsIsolate isolate,
+  }) {
     if (!isConfigured || !enabled || _started) return Future.value();
     _started = true;
     // Held so events queued before init finishes still go out, and so a hung
     // init cannot leave them waiting forever.
     _ready = Aptabase.init(
       appKey,
+      const InitOptions(),
+      IsolateEventQueue(isolate.name),
     ).timeout(startupTimeout).catchError((Object _) {});
     return _ready!;
   }
