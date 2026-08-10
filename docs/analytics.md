@@ -21,11 +21,23 @@ The project has five pre-committed numbers from the locked monetization design:
 
 | Bar | Deadline | What reads it |
 |---|---|---|
-| 500 installs | 3 months | sessions, see the warning below |
+| 500 installs | 3 months | the Play Console, NOT Aptabase |
 | 100 weekly active riders | 3 months | `ride_started` |
 | Wake success 95 percent | 3 months | `ride_ended` outcome |
 | D30 retention 40 percent | 3 months | **NOTHING. Not measurable.** |
 | Kill floor: under 50 weekly active OR D30 under 20 percent | 6 months | half of it is not measurable |
+
+### An app open sends NOTHING, so "initialising the SDK is the measurement" was wrong twice
+
+Read `Aptabase._tick`: it pulls items from storage and, `if (items.isEmpty)
+return`. Nothing is transmitted unless an event was queued, and this app queues
+exactly two, both from a ride. **So opening the app produces no data at all**, and
+a session only exists on the dashboard because a ride created one.
+
+This is separate from the identity problem below and compounds it. Installs are
+still measurable, just not here: the Play Console and App Store Connect report
+them directly, which is the right source anyway. Retention is not measurable at
+all.
 
 ### Retention is not measurable on this stack, and this doc used to say it was
 

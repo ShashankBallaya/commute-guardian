@@ -57,7 +57,11 @@ enum RideOutcome {
 ///
 ///   - installs and D30 were believed to come from Aptabase's own anonymous
 ///     per-device identity, with initialising the SDK as the whole
-///     implementation. THAT WAS WRONG, and it was wrong when it was written.
+///     implementation. THAT WAS WRONG TWICE OVER, and it was wrong when it was
+///     written. `Aptabase._tick` returns early when the queue is empty, so an
+///     app open transmits NOTHING; the only data this app produces comes from
+///     the two ride events. Installs come from the Play Console instead, which
+///     was always the better source. And on identity:
 ///     Aptabase has NO per-device identity, deliberately: it uses no device id,
 ///     no cookie and no fingerprint, and the payload this file sends carries a
 ///     timestamp, a session id, system properties and props, and nothing else.
