@@ -228,8 +228,18 @@ handler). Then, in order:
 4. **Cadence under lock.** Crowd mode, screen locked, 30 minutes: does the 45 s
    cadence hold through Doze on the 3T, and what is the battery delta against
    the same 30 minutes without pulses?
-5. **The speaker question.** No earphones, packed-train volume: how obnoxious is
-   it really? This answers decision 2 with a fact.
+5. ~~**The speaker question.**~~ **ANSWERED 10 Aug 2026 BY THE 9 AUG RIDE, not
+   by this bench.** The 3T carried NO EARPHONES for the whole of 9 Aug, so its
+   98 chimes all played on the speaker, in a real carriage, across five rides
+   including one 43 minute leg: cadence 45.1 to 45.2 s on two legs and 40.1 to
+   50.1 s on the long one, zero failures, and 4 ladder suppressions each
+   followed by a resume. The owner heard them and did not find the speaker
+   intolerable. An iPhone chimed on its own speaker too. **DECISION 2: KEEP
+   PLAYING ON THE SPEAKER, do not skip.** Skipping needs new code AND a new
+   message, because silence that means "we chose not to" is indistinguishable
+   from silence that means the phone is gone, which is the one thing this
+   feature exists to rule out. Playing is self-correcting: the rider hears the
+   first chime and decides. Settings now names the speaker in its own copy.
 
 Numbers that are bench-tunable and must not become folklore: the 60 s deferral
 cap, the chime length, the vibrate duration. The INTERVALS are product values

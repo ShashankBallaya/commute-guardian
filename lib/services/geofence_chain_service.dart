@@ -362,7 +362,15 @@ class GeofenceChainService {
     // isolate never opens that database. The store is also what a RESTARTED
     // service reads, which is what keeps the pulse alive across the restart
     // the 30 Jul swipe bench showed is possible.
-    _pulseVibrate = pulseVibrate;
+    // ANDed WITH THE PLATFORM, not just honoured. iOS forbids background
+    // haptics, which is a founding premise of this project, so PulseOutput.buzz
+    // returns at its first line there. Storing the rider's raw preference made
+    // an iPhone ride log claim "PULSE every 45s, with vibration" (10 Aug 2026,
+    // 21:28, Shahad to Dombivli) for a buzz that could not physically happen.
+    // A log that claims an output it cannot produce sends the next diagnosis
+    // looking for a broken vibrator instead of a dead control, which is the same
+    // lesson as the 22 Jul farewell that read as an auto-off.
+    _pulseVibrate = pulseVibrate && Platform.isAndroid;
     _pocketPulse = PocketPulse(
       intervalS: pulseIntervalS,
       startedAt: DateTime.now(),

@@ -167,9 +167,16 @@ class SettingsScreen extends StatelessWidget {
     // bag, and the pulse never proved possession anyway: it proves the
     // audio link is alive to wherever the phone is. The old copy quietly
     // excluded the bag carriers it actually serves.
+    //
+    // AND IT NAMES THE SPEAKER, because the code has always used it and this
+    // copy used to promise earphones only. With no earphones the chime plays
+    // out loud, which the 9 Aug 2026 ride did for two hours and 98 chimes
+    // (decision 2 in docs/design/pocket-pulse.md, answered by that ride). A
+    // rider about to sit in a quiet carriage is owed that sentence BEFORE they
+    // switch it on, not at the first chime.
     subtitle:
-        'A quiet sound through your earphones, so you know your phone '
-        'is still with you without checking.',
+        'A quiet sound, in your earphones or out loud, so you know your '
+        'phone is still with you without checking.',
     children: [
       _Segmented(
         labels: [for (final m in _intervals) m == 0 ? 'Off' : '$m min'],

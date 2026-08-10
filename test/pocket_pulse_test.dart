@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:commute_guardian/services/pocket_pulse.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -264,5 +266,60 @@ void main() {
       'pulse suppressed: wake ladder live',
       'pulse resumed: ladder stood down',
     ]);
+  });
+
+  group('THE RIDE LOG MAY NOT CLAIM AN OUTPUT THE PLATFORM CANNOT PRODUCE', () {
+    // An iPhone ride log said "PULSE every 45s, with vibration" on 10 Aug 2026
+    // (21:28, Shahad to Dombivli, in Hindi). iOS forbids background haptics, a
+    // founding premise of this project, so PulseOutput.buzz returns at its first
+    // line there and that buzz could not physically have happened. A log that
+    // claims an output it cannot produce sends the next diagnosis after a broken
+    // vibrator instead of a dead control.
+    //
+    // Read from the source because the flag lives in the service isolate, which
+    // needs a device and a foreground task to instantiate.
+
+    /// The assignment that takes the RIDER'S preference, not the field's
+    /// declaration.
+    ///
+    /// The first version of this guard used firstMatch and caught
+    /// `bool _pulseVibrate = true;` instead, so it failed against correct code.
+    /// Same family as every other source-reading guard this project has had to
+    /// repair: the check must name the thing it means, not the first text that
+    /// looks like it.
+    String? platformAnd(String source) {
+      for (final m in RegExp(r'_pulseVibrate = ([^;]+);').allMatches(source)) {
+        final rhs = m.group(1)!;
+        if (rhs.contains('pulseVibrate')) return rhs;
+      }
+      return null;
+    }
+
+    test('the vibrate flag is ANDed with the platform, not just honoured', () {
+      final rhs = platformAnd(
+        File('lib/services/geofence_chain_service.dart').readAsStringSync(),
+      );
+
+      expect(
+        rhs,
+        isNotNull,
+        reason: 'the parameter must be assigned somewhere',
+      );
+      expect(
+        rhs,
+        contains('Platform.isAndroid'),
+        reason: 'iOS cannot buzz, so it must not be recorded as buzzing',
+      );
+    });
+
+    test('the guard can still fail', () {
+      // The shape the bug actually had, plus the declaration that fooled the
+      // first draft of the guard.
+      const broken = '''
+  bool _pulseVibrate = true;
+  _pulseVibrate = pulseVibrate;''';
+      expect(platformAnd(broken), 'pulseVibrate');
+      expect(platformAnd(broken), isNot(contains('Platform.isAndroid')));
+    });
   });
 }
