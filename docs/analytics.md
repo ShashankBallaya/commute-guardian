@@ -27,6 +27,24 @@ The project has five pre-committed numbers from the locked monetization design:
 | D30 retention 40 percent | 3 months | **NOTHING. Not measurable.** |
 | Kill floor: under 50 weekly active OR D30 under 20 percent | 6 months | half of it is not measurable |
 
+### DEBUG AND RELEASE ARE TWO SEPARATE DATASETS. Read the bars from RELEASE
+
+The SDK sends `isDebug: kDebugMode` with every event and Aptabase splits the data
+on it. So:
+
+- the 3T's debug APK, which is what every ride test runs, lands in **debug**;
+- an IPA or a store build, `--release`, lands in **release**.
+
+**Every bar in the table above must be read from the release dataset**, because
+that is what a beta tester runs. The debug dataset is the owner's own two phones.
+Noticed on 10 Aug 2026, when the first iOS event appeared under release while
+every Android row sat under debug, which also explains why an export named
+`commuteguardian-debug-*.csv` contained nothing but Android.
+
+The cut goes both ways and both are correct: bench rides can never pollute the
+real numbers, and a verification ride on the debug build does not count toward
+wake success either.
+
 ### An app open sends NOTHING, so "initialising the SDK is the measurement" was wrong twice
 
 Read `Aptabase._tick`: it pulls items from storage and, `if (items.isEmpty)
