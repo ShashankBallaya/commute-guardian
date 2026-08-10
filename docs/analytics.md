@@ -27,6 +27,27 @@ The project has five pre-committed numbers from the locked monetization design:
 | D30 retention 40 percent | 3 months | **NOTHING. Not measurable.** |
 | Kill floor: under 50 weekly active OR D30 under 20 percent | 6 months | half of it is not measurable |
 
+### A ride_ended is DELAYED, never lost, and the flush trigger is not ours
+
+`trackRideEnded` fires unawaited at the top of `GeofenceChainService.stop`, before
+the teardown, so a slow endpoint can never hold up the end of a ride. The SDK then
+transmits on a 30 second timer, on `init`, and on `AppLifecycleListener.onInactive`.
+The service isolate is usually gone before its timer fires, so the event waits on
+disk.
+
+Nothing is lost by that: events are persisted before sending and deleted only after
+a send the SDK accepts. Observed on iOS 10 Aug 2026, where a bench ride's
+`ride_ended` appeared the moment the app went into the app switcher, which is the
+lifecycle flush.
+
+**OPEN QUESTION, and it is not about analytics.** Whether iOS runs the foreground
+task handler in a genuinely separate isolate decides whether that lifecycle flush
+could have sent a SERVICE queue's event at all. The hint is that it did. If iOS
+shares the isolate, then the reason ride events fire from the service at all, that
+the UI can die mid-ride while the ride goes on (30 Jul swipe bench), is an Android
+guarantee only. Worth settling before the beta, and it is a `flutter_foreground_task`
+question rather than an Aptabase one.
+
 ### DEBUG AND RELEASE ARE TWO SEPARATE DATASETS. Read the bars from RELEASE
 
 The SDK sends `isDebug: kDebugMode` with every event and Aptabase splits the data
