@@ -41,15 +41,36 @@ final stationsAlphabeticalProvider = Provider<List<Station>>((ref) {
 // What the rider has picked
 // ---------------------------------------------------------------------------
 
+/// Who put the origin in the draft.
+///
+/// The draft has to hold this because an id alone cannot answer the one
+/// question that matters when a fix lands: may this be corrected? An origin
+/// the rider never chose is the app's guess about where they are, and a fix
+/// knows that better. An origin they chose is not the app's business.
+enum OriginSource {
+  /// The rider chose it: in the picker, or by pressing Start on it.
+  picked,
+
+  /// The app filled it in: from a GPS fix, or from where the last ride ended.
+  defaulted,
+}
+
 /// The origin and destination the rider has chosen, and nothing else.
 ///
-/// Two nullable ids is the whole of it: a draft is not a Journey, it is what a
-/// Journey gets planned FROM.
+/// Two nullable ids is nearly the whole of it: a draft is not a Journey, it is
+/// what a Journey gets planned FROM.
 class JourneyDraft {
-  const JourneyDraft({this.originId, this.destinationId});
+  const JourneyDraft({
+    this.originId,
+    this.destinationId,
+    this.originSource = OriginSource.defaulted,
+  });
 
   final String? originId;
   final String? destinationId;
+
+  /// Only meaningful while [originId] is non-null.
+  final OriginSource originSource;
 }
 
 class JourneyDraftNotifier extends Notifier<JourneyDraft> {
@@ -59,23 +80,66 @@ class JourneyDraftNotifier extends Notifier<JourneyDraft> {
   /// Explicit setters rather than copyWith: both fields are nullable and both
   /// are legitimately cleared, which copyWith cannot express without a
   /// sentinel.
-  void setOrigin(String? id) =>
-      state = JourneyDraft(originId: id, destinationId: state.destinationId);
+  ///
+  /// Every caller of this is the rider speaking, either through the picker or
+  /// through the service store restoring a ride they started, so it marks the
+  /// origin PICKED and puts it beyond the reach of a fix.
+  void setOrigin(String? id) => state = JourneyDraft(
+    originId: id,
+    destinationId: state.destinationId,
+    originSource: OriginSource.picked,
+  );
 
-  void setDestination(String? id) =>
-      state = JourneyDraft(originId: state.originId, destinationId: id);
+  void setDestination(String? id) => state = JourneyDraft(
+    originId: state.originId,
+    destinationId: id,
+    originSource: state.originSource,
+  );
 
   /// After a ride ends: the next one usually starts where the last finished,
   /// so the origin carries over (when the ride provably got there) and the
   /// destination is always cleared for a fresh pick.
+  ///
+  /// DEFAULTED, not picked. The rider did not ask to depart from where they
+  /// arrived, the app assumed it, and [defaultOriginTo] may correct it.
   void resetAfterRide({String? originId}) =>
       state = JourneyDraft(originId: originId);
 
-  /// Fills the origin only when the rider has not chosen one. A fix must never
-  /// overwrite a deliberate choice.
+  /// The rider pressed Start on this origin, so it is their choice now
+  /// whatever put it there, and no later fix may move it.
+  ///
+  /// Without this, a ride begun from a GPS-filled origin would keep a
+  /// correctable origin for its whole length, and the streamed fixes that keep
+  /// the status chip alive would walk the origin along the line behind the
+  /// train.
+  void confirmOrigin() {
+    if (state.originId == null) return;
+    setOrigin(state.originId);
+  }
+
+  /// Fills the origin from a fix, and corrects one the APP filled in.
+  ///
+  /// A choice of the rider's is never touched. A default is, and that is the
+  /// 9 Aug bug: a bench ride ended at Shahad, the turnaround left Shahad in the
+  /// draft, and the rider then stood at Kalyan. The chip read Kalyan from a real
+  /// fix while the draft still said Shahad, so the ride planned from Shahad,
+  /// invented an interchange, and fired the wake ladder 30 seconds in. A false
+  /// alarm is the one thing that teaches a rider to ignore the voice meant to
+  /// wake them. A fix knows where the rider IS; a leftover default only knows
+  /// where they WERE.
+  ///
+  /// Returns whether the draft changed.
   bool defaultOriginTo(String stationId) {
-    if (state.originId != null) return false;
-    setOrigin(stationId);
+    if (state.originId != null && state.originSource == OriginSource.picked) {
+      return false;
+    }
+    // Already the answer. Skipped rather than rewritten because a new draft
+    // object replans the journey, and a stationary rider streams fixes.
+    if (state.originId == stationId) return false;
+    state = JourneyDraft(
+      originId: stationId,
+      destinationId: state.destinationId,
+    );
     return true;
   }
 }
@@ -198,10 +262,10 @@ class NearestStationNotifier extends Notifier<NearestStation> {
     }
   }
 
-  /// Names the nearest station from a fix: updates the chip, and fills the
-  /// origin when the rider has not picked one. The ONE GATE for every fix
-  /// source, live GPS or the service stream. Returns whether the fix could
-  /// name a station.
+  /// Names the nearest station from a fix: updates the chip, and fills or
+  /// corrects the origin unless the rider picked it (see [defaultOriginTo]).
+  /// The ONE GATE for every fix source, live GPS or the service stream.
+  /// Returns whether the fix could name a station.
   ///
   /// Only from a fix worth trusting. The nearest station to a vague fix is a
   /// guess, and a wrong guess here silently plans a ride the rider is not on,

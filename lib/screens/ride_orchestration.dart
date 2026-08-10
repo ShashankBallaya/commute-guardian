@@ -276,7 +276,8 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // never resolves under the widget-test binding (same trap as the location
     // fix), and the GPS fill must not hang behind it. When it does resolve
     // mid-ride, its explicit write wins over whatever the GPS fill guessed,
-    // because the fill never overwrites and the restore always writes.
+    // because the restore always writes and it writes as a PICK, which no
+    // later fix may move.
     unawaited(_restoreRunningRide());
     await ref.read(nearestStationProvider.notifier).locate();
   }
@@ -327,8 +328,9 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
           accuracyM: accuracyM,
           at: DateTime.now(),
         );
-        // Keeps the chip live during the ride too; the origin cannot change
-        // mid-ride because it is already set (see NearestStationNotifier).
+        // Keeps the chip live during the ride too. The origin cannot follow the
+        // train because start() confirmed it as the rider's pick, and a fix
+        // never moves a pick (see JourneyDraftNotifier.confirmOrigin).
         ref.read(nearestStationProvider.notifier).applyFix(lat, lng, accuracyM);
     }
   }
@@ -347,6 +349,11 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   Future<void> start() async {
     final journey = ref.read(plannedJourneyProvider).journey;
     if (journey == null) return;
+
+    // The rider pressed Start on THIS journey, so its origin is now their
+    // choice however it got there. Done before the awaits below, so the plan
+    // held here and the draft cannot disagree while permissions are answered.
+    ref.read(journeyDraftProvider.notifier).confirmOrigin();
 
     await _requestPermissions();
 
@@ -559,6 +566,10 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// planted Kalyan as the origin this way (13 Jul). A ride stopped early falls
   /// back to the GPS fill instead, and either way the status chip is re-asked
   /// from a real fix, never assumed from the ride.
+  ///
+  /// The origin this plants is a DEFAULT, so the fix below can overrule it. A
+  /// bench ride that "arrives" somewhere the rider never went used to survive
+  /// as an origin until the app was killed (9 Aug, the Shahad false alarm).
   Future<void> _defaultOriginToRideEnd() async {
     final persisted = await service.readPersistedRide();
     if (!mounted) return;

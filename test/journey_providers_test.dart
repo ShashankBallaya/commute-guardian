@@ -135,6 +135,54 @@ void main() {
         expect(draft.defaultOriginTo('mumbra'), isTrue);
       },
     );
+
+    test('a fix corrects a turnaround origin the rider never chose', () {
+      // The 9 Aug false alarm. A bench ride "arrived" at Shahad, so the
+      // turnaround planted Shahad, and the rider was standing at Kalyan.
+      final c = makeContainer();
+      final draft = c.read(journeyDraftProvider.notifier);
+      draft.resetAfterRide(originId: 'shahad');
+
+      expect(draft.defaultOriginTo('kalyan'), isTrue);
+      expect(c.read(journeyDraftProvider).originId, 'kalyan');
+    });
+
+    test('a fix does not replan when it agrees with the origin already there', () {
+      final c = makeContainer();
+      final draft = c.read(journeyDraftProvider.notifier);
+      draft.resetAfterRide(originId: 'kalyan');
+      final before = c.read(journeyDraftProvider);
+
+      expect(draft.defaultOriginTo('kalyan'), isFalse);
+      expect(
+        c.read(journeyDraftProvider),
+        same(before),
+        reason: 'a stationary rider streams fixes; each new draft replans',
+      );
+    });
+
+    test('Start makes a filled origin the rider own it, and a fix leaves it', () {
+      final c = makeContainer();
+      final draft = c.read(journeyDraftProvider.notifier);
+      expect(draft.defaultOriginTo('kalyan'), isTrue);
+      draft.confirmOrigin();
+
+      expect(
+        draft.defaultOriginTo('thane'),
+        isFalse,
+        reason: 'otherwise the origin walks along the line behind the train',
+      );
+      expect(c.read(journeyDraftProvider).originId, 'kalyan');
+    });
+
+    test('Start with no origin confirms nothing', () {
+      final c = makeContainer();
+      final draft = c.read(journeyDraftProvider.notifier);
+      draft.confirmOrigin();
+
+      expect(c.read(journeyDraftProvider).originId, isNull);
+      expect(draft.defaultOriginTo('kalyan'), isTrue);
+    });
   });
 
   group('nearestStation.applyFix, the one gate for every fix', () {
@@ -186,6 +234,38 @@ void main() {
 
         expect(c.read(nearestStationProvider).stationName, 'Thane');
         expect(c.read(journeyDraftProvider).originId, 'kalyan');
+      },
+    );
+
+    test(
+      'a GPS-filled origin also stays put once the ride has started',
+      () {
+        // The ordinary ride: nobody touched the picker, the fix filled Kalyan,
+        // Start confirmed it. The streamed fixes must not walk it to Thane.
+        final c = makeContainer();
+        final nearest = c.read(nearestStationProvider.notifier);
+        nearest.applyFix(19.2358216, 73.1308101, 13);
+        expect(c.read(journeyDraftProvider).originId, 'kalyan');
+
+        c.read(journeyDraftProvider.notifier).confirmOrigin();
+        nearest.applyFix(19.1864830, 72.9757664, 12);
+
+        expect(c.read(nearestStationProvider).stationName, 'Thane');
+        expect(c.read(journeyDraftProvider).originId, 'kalyan');
+      },
+    );
+
+    test(
+      'a fix before Start moves the origin, because the rider is walking in',
+      () {
+        // The other half of the same rule, and why the fix is allowed to move a
+        // default at all: the app opens on the walk to the platform.
+        final c = makeContainer();
+        final nearest = c.read(nearestStationProvider.notifier);
+        nearest.applyFix(19.2358216, 73.1308101, 13);
+        nearest.applyFix(19.1864830, 72.9757664, 12);
+
+        expect(c.read(journeyDraftProvider).originId, 'thane');
       },
     );
   });
