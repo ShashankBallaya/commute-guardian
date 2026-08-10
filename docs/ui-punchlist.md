@@ -11,7 +11,7 @@ instruction: at the start of the work, not as a review afterwards.
 
 ## Screen 4, Travel Mode
 
-### 1. The wake toggle does nothing. DECIDE BEFORE POLISHING.
+### 1. ~~The wake toggle does nothing.~~ DONE 11 Aug, `63580d5`: the control was REMOVED
 
 `ride_orchestration.dart:53`: "NOTHING CONSUMES IT YET. The wake ladder still
 fires on its locked rules, and this must not quietly become a second way to
@@ -23,7 +23,7 @@ pre-warning DISTANCE is exactly what Guardian Plus sells, with two stations as
 the free default. **Owner's call: wire it or remove it.** Polishing a control
 that changes nothing is the wrong order.
 
-### 2. Tapping the toggle does not redraw the screen. THE FLAG IS NOT THE STATE, again.
+### 2. ~~Tapping the toggle does not redraw the screen.~~ DONE 11 Aug: moot, the control is gone
 
 `onWakeChoiceChanged` calls `setState` on the HOST state
 (`ride_orchestration.dart:711`), but Screen 4 is built inside a
@@ -40,7 +40,7 @@ where the screen is watching.
 No device needed. It is testable: pump Screen 4 inside a route, tap, expect the
 selection to move without any provider changing.
 
-### 3. The wake card is cramped, and the tap targets shrink with it
+### 3. ~~The wake card is cramped.~~ DONE 11 Aug: one Expanded sentence, no control to compete with
 
 Owner: "isn't perfectly spaced looks very unaesthetic". `_WakeCard` puts the
 label and the toggle in two competing `Flexible`s with a 10 px gap, and the
@@ -48,7 +48,7 @@ toggle sits in a `FittedBox(scaleDown)`, so on a narrow phone the control is
 scaled DOWN and its two segments go under the 48 dp floor. Judge on the 3T, and
 measure rather than infer, per the button-sizing rule.
 
-### 4. The "Wake-up mode active" shield chip is misaligned
+### 4. ~~The shield chip is misaligned.~~ DONE 11 Aug: a pill matching Screen 1's status chip, one line
 
 Owner: "the Shield is not perfectly aligned need some UI treatment". The icon
 sits against two lines of text and the chip crowds the "N stations to
@@ -72,7 +72,7 @@ No device needed. Owner's call on which way it resolves.
 
 ## Carried over from the apple-design pass, agreed and never done
 
-### 6. The wake alert swallows repeated back presses
+### 6. ~~The wake alert swallows repeated back presses.~~ DONE 11 Aug, mutation-proven
 
 `_refusePop` early-returns while nudging, so a second back press within the nudge
 does nothing at all. A half-asleep rider pressing twice deserves the same answer
@@ -91,7 +91,7 @@ fixing.)
 
 ## Settings
 
-### 8. The vibration toggle is a dead control on iOS
+### 8. ~~The vibration toggle is a dead control on iOS.~~ DONE 11 Aug: hidden, as `!Platform.isIOS`
 
 iOS forbids background haptics, so `PulseOutput.buzz` returns at its first line
 there. The switch should be hidden on iOS rather than offered. Confirmed by a
@@ -137,3 +137,14 @@ with no recorded audio. The station announcements in
 - **Settings promising "a quiet sound through your earphones".** Fixed 11 Aug: the
   chime has always used the speaker when there are none, and the copy now says
   so before a rider switches it on.
+
+---
+
+## What is actually left, after 11 Aug
+
+- **5**, the two treatments for opening the picker (crimson vs white). Owner's call.
+- **7**, `TypeScale` tracking. Needs the 3T and an eye, deliberately not done at 01:00.
+- **9**, the Hindi and Marathi register. Owner supplies the wording.
+
+Everything else on this list was closed on 11 Aug in `d445fa9`, `3dc475d` and
+`63580d5`.
