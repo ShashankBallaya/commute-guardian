@@ -82,6 +82,7 @@ class CrashReporting {
   /// still caught. A report is worth less than the screen, every time.
   static Future<void> startUiIsolate() async {
     if (!isEnabled) return;
+    _uiInit = 'starting';
     try {
       await SentryFlutter.init((options) {
         _configure(options, isolate: 'ui');
@@ -95,17 +96,34 @@ class CrashReporting {
         // ignore: experimental_member_use
         options.attachViewHierarchy = false;
       }).timeout(uiInitTimeout);
-    } catch (_) {
-      // Deliberately empty, and it can no longer matter: nothing waits on this
-      // future. The timeout exists so a hang cannot keep the init future alive
-      // for the life of the process, not to protect the app, which is already
-      // running by the time this is called.
+      _uiInit = 'ready';
+    } on TimeoutException {
+      // An integration that never returned. Distinct from a throw, and the
+      // distinction is the whole point: one is a hang, the other is an error
+      // with a name.
+      _uiInit = 'still hung after ${uiInitTimeout.inSeconds}s';
+    } catch (error) {
+      // NOT SWALLOWED ANY MORE, and the first version of this fix did swallow
+      // it. On 10 Aug the iPhone opened correctly with the DSN compiled in and
+      // then reported an empty event id, which means the SDK was never up, and
+      // this catch block held the only description of why. An instrument that
+      // hides the cause of the fault it exists to find is not an instrument.
+      _uiInit = 'failed: $error';
     }
   }
 
   /// How long the UI isolate's init is given before it is abandoned. Generous,
   /// because nothing is waiting for it.
   static const uiInitTimeout = Duration(seconds: 20);
+
+  /// What happened to the UI isolate's init, in words, for the debug screen.
+  ///
+  /// Deliberately a string rather than an enum: its only reader is a human
+  /// looking at a phone that will not report, and the useful part is the
+  /// platform's own error text, which no closed set can hold.
+  static String _uiInit = 'not started';
+
+  static String get uiInitState => _uiInit;
 
   /// Reports the SERVICE isolate, where the ride actually runs.
   ///
@@ -127,6 +145,14 @@ class CrashReporting {
   /// SILENCE: a wrong DSN, a missing define or a blocked network all look
   /// exactly like an app that has not crashed. Returns what to show the
   /// person who pressed it.
+  /// THREE STATES, NOT TWO, and the 10 Aug iPhone is why.
+  ///
+  /// This used to answer an empty event id with "Sentry rejected the event.
+  /// Check the DSN", which sent the reader after the one thing that was not
+  /// wrong: the same DSN was reporting from Android the same evening. An empty
+  /// id means the SDK IS NOT UP, and the SDK not being up has a cause, which
+  /// [uiInitState] now holds. A wrong DSN and a failed init are different faults
+  /// and must not share a sentence.
   static Future<String> sendTestEvent() async {
     if (!isEnabled) {
       return 'Crash reporting is OFF: no DSN in this build.';
@@ -135,9 +161,9 @@ class CrashReporting {
       'Test event from the debug screen',
       level: SentryLevel.info,
     );
-    return id == const SentryId.empty()
-        ? 'Sentry rejected the event. Check the DSN.'
-        : 'Sent to Sentry: $id';
+    if (id != const SentryId.empty()) return 'Sent to Sentry: $id';
+    return 'No event id. DSN is compiled in, so the SDK is not up: '
+        '$uiInitState';
   }
 
   static void _configure(SentryOptions options, {required String isolate}) {

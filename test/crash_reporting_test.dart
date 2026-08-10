@@ -116,6 +116,43 @@ void main() {
       // what every clone, every test and every keyless build gets.
       await CrashReporting.startUiIsolate();
       expect(CrashReporting.isEnabled, isFalse);
+      expect(
+        CrashReporting.uiInitState,
+        'not started',
+        reason: 'a keyless build must not even claim to have tried',
+      );
+    });
+
+    test('THE TEST BUTTON MAY NOT BLAME THE DSN FOR A FAILED INIT', () async {
+      // 10 Aug 2026: the iPhone opened with a real DSN compiled in and answered
+      // "Sentry rejected the event. Check the DSN", which pointed at the one
+      // thing that was provably right, since the same DSN was reporting from
+      // Android that evening. An empty event id means the SDK is not up.
+      final message = await CrashReporting.sendTestEvent();
+
+      // This checkout has no DSN, so it must say exactly that and nothing about
+      // rejection.
+      expect(message, contains('no DSN in this build'));
+
+      // Read the source for the branch a keyed build takes, because reaching it
+      // here would need a live SDK and a network.
+      final source = File(
+        'lib/services/crash_reporting.dart',
+      ).readAsStringSync();
+      final body = source.substring(
+        source.indexOf('Future<String> sendTestEvent'),
+      );
+      final method = body.substring(0, body.indexOf('\n  }'));
+      expect(
+        method,
+        contains('uiInitState'),
+        reason: 'an empty id must report WHY the SDK is not up',
+      );
+      expect(
+        method,
+        isNot(contains('Check the DSN')),
+        reason: 'a failed init and a wrong DSN are different faults',
+      );
     });
   });
 
