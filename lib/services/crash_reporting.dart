@@ -48,26 +48,64 @@ class CrashReporting {
 
   static bool get isEnabled => dsn.isNotEmpty;
 
-  /// Runs [body] with the UI isolate reported. Falls straight through to
-  /// [body] when no DSN is configured.
-  static Future<void> runUiIsolate(FutureOr<void> Function() body) async {
-    if (!isEnabled) {
-      await body();
-      return;
+  /// Brings crash reporting up for the UI isolate, and NEVER HOLDS THE FIRST
+  /// FRAME. Call it AFTER `runApp`, without awaiting it.
+  ///
+  /// THIS USED TO WRAP `runApp` in SentryFlutter's `appRunner`, and on 10 Aug
+  /// 2026 that cost the whole app on iOS: the first IPA ever built with a real
+  /// DSN showed a WHITE SCREEN forever and never reached the home screen, while
+  /// the same commit started normally on the 3T. A build with the DSN left out
+  /// and the Aptabase key kept opened immediately, which is what identified the
+  /// culprit.
+  ///
+  /// The mechanism is in the package, not in our options. `Sentry._init`
+  /// (sentry 9.26.0) does:
+  ///
+  ///     await _callIntegrations(integrations, options);
+  ///     await appRunner();
+  ///
+  /// Every integration is awaited BEFORE the app runs, with no timeout around
+  /// the loop, and one of them initialises the native SDK over a method channel.
+  /// So an integration that never returns is an app that never draws.
+  ///
+  /// This is the same rule the rest of the project already follows, and the UI
+  /// isolate was the one place it had never been applied: `Aptabase.init` is
+  /// fired and forgotten, [initServiceIsolate] is awaited but bounded, and
+  /// `_EntryGate` ignores the analytics boot on purpose. Nothing that observes a
+  /// ride may prevent one.
+  ///
+  /// WHAT THIS COSTS, stated plainly: an error thrown in the first few hundred
+  /// milliseconds, before init finishes, is not reported, and the zone-based
+  /// capture that `appRunner` provides is gone. `FlutterError.onError` and
+  /// `PlatformDispatcher.instance.onError` are still installed by Sentry's own
+  /// default integrations once init completes, so everything after startup is
+  /// still caught. A report is worth less than the screen, every time.
+  static Future<void> startUiIsolate() async {
+    if (!isEnabled) return;
+    try {
+      await SentryFlutter.init((options) {
+        _configure(options, isolate: 'ui');
+        // Flutter-only collectors, and both of them can see a journey: Screen 4
+        // draws the whole chain, so a screenshot of it IS the rider's route,
+        // and the view hierarchy carries every station name on screen.
+        options.attachScreenshot = false;
+        // Experimental in the SDK, and set anyway: if it is removed the build
+        // breaks here loudly, which is the correct way for this particular
+        // setting to fail.
+        // ignore: experimental_member_use
+        options.attachViewHierarchy = false;
+      }).timeout(uiInitTimeout);
+    } catch (_) {
+      // Deliberately empty, and it can no longer matter: nothing waits on this
+      // future. The timeout exists so a hang cannot keep the init future alive
+      // for the life of the process, not to protect the app, which is already
+      // running by the time this is called.
     }
-    await SentryFlutter.init((options) {
-      _configure(options, isolate: 'ui');
-      // Flutter-only collectors, and both of them can see a journey: Screen 4
-      // draws the whole chain, so a screenshot of it IS the rider's route,
-      // and the view hierarchy carries every station name on screen.
-      options.attachScreenshot = false;
-      // Experimental in the SDK, and set anyway: if it is removed the build
-      // breaks here loudly, which is the correct way for this particular
-      // setting to fail.
-      // ignore: experimental_member_use
-      options.attachViewHierarchy = false;
-    }, appRunner: () => body());
   }
+
+  /// How long the UI isolate's init is given before it is abandoned. Generous,
+  /// because nothing is waiting for it.
+  static const uiInitTimeout = Duration(seconds: 20);
 
   /// Reports the SERVICE isolate, where the ride actually runs.
   ///

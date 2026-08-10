@@ -60,11 +60,46 @@ eats version numbers and durations is a scrubber somebody switches off.
 
 ## Both isolates report
 
-- **UI isolate** (`main.dart`): `SentryFlutter.init` with an `appRunner`.
+- **UI isolate** (`main.dart`): `CrashReporting.startUiIsolate()`, called
+  **after `runApp` and never awaited**. See the warning below, which is the most
+  expensive thing this file has to say.
 - **Service isolate** (`geofence_task_handler.dart`): the pure Dart
-  `Sentry.init`, awaited at the top of `onStart`. It runs in a background
-  isolate spawned by the foreground service and must not touch Flutter's
-  native bindings a second time.
+  `Sentry.init`, awaited at the top of `onStart` but bounded to two seconds. It
+  runs in a background isolate spawned by the foreground service and must not
+  touch Flutter's native bindings a second time.
+
+### CRASH REPORTING MAY NEVER HOLD THE FIRST FRAME
+
+This used to be `SentryFlutter.init(..., appRunner: () => runApp(...))`, which is
+the arrangement the SDK documents and which reads as the safer one. It is not.
+
+On 10 Aug 2026 the first IPA ever built with a real DSN **showed a white screen
+forever on the iPhone and never reached the home screen.** The same commit started
+normally on Android, and a build with the DSN removed and the Aptabase key kept
+opened instantly, which is what identified the culprit instead of guessing at it.
+
+The mechanism is in the package. `Sentry._init` (sentry 9.26.0) does:
+
+```dart
+await _callIntegrations(integrations, options);
+await appRunner();
+```
+
+**Every integration is awaited before the app runs, with no timeout around the
+loop**, and one of them initialises the native SDK over a method channel. An
+integration that never returns is therefore an app that never draws.
+
+So the app starts first and Sentry comes up behind it. The cost is real and
+accepted: an error thrown in the first few hundred milliseconds is not reported,
+and the zone capture `appRunner` provided is gone. `FlutterError.onError` and
+`PlatformDispatcher.instance.onError` are still installed by Sentry's own default
+integrations once init finishes, so everything after startup is still caught.
+
+This is the same rule the rest of the project already follows: `Aptabase.init` is
+fired and forgotten, the service isolate's init is bounded, and `_EntryGate`
+ignores the analytics boot on purpose. **Nothing that observes a ride may prevent
+one.** Four tests in `crash_reporting_test.dart` read `main()` and assert the
+order, including one that proves the guard can still fail.
 
 Every event is tagged `isolate: ui` or `isolate: service`. **The service
 isolate is the half that matters.** It has no screen, so a crash there is

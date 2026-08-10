@@ -24,18 +24,31 @@ import 'widgets/slide_to_start.dart';
 import 'widgets/status_chip.dart';
 
 void main() {
-  // Wraps the whole app so an uncaught error anywhere in the UI isolate is
-  // reported. Does nothing without a DSN, which is what every checkout of this
-  // public repository gets. See lib/services/crash_reporting.dart for the rules
-  // that keep a rider's journey out of the reports.
-  CrashReporting.runUiIsolate(() {
-    RideServiceClient.initCommunicationPort();
-    // ProviderScope holds the UI isolate's providers. It is deliberately absent
-    // from the service isolate (lib/foreground/geofence_task_handler.dart):
-    // providers do not cross isolates, and the ride's truth lives over there.
-    // See docs/design/riverpod-adoption.md.
-    runApp(const ProviderScope(child: CommuteGuardianDebugApp()));
-  });
+  RideServiceClient.initCommunicationPort();
+  // ProviderScope holds the UI isolate's providers. It is deliberately absent
+  // from the service isolate (lib/foreground/geofence_task_handler.dart):
+  // providers do not cross isolates, and the ride's truth lives over there.
+  // See docs/design/riverpod-adoption.md.
+  runApp(const ProviderScope(child: CommuteGuardianDebugApp()));
+
+  // AFTER runApp, AND NOT AWAITED. THE ORDER OF THESE TWO LINES IS THE FIX FOR
+  // A WHITE SCREEN THAT COST THE ENTIRE APP ON iOS (10 Aug 2026).
+  //
+  // Sentry used to wrap runApp through its own appRunner, which reads as the
+  // safer arrangement and is not: `Sentry._init` awaits EVERY integration before
+  // it calls appRunner, with no timeout, and one of them initialises the native
+  // SDK over a method channel. On the first IPA ever built with a real DSN, one
+  // of those integrations never returned, so runApp was never reached and the
+  // iPhone showed a white screen forever. The same commit started normally on
+  // Android, and a build with the DSN removed opened instantly, which is how the
+  // culprit was identified rather than guessed.
+  //
+  // What this costs is written out in CrashReporting.startUiIsolate. The short
+  // version: errors in the first few hundred milliseconds go unreported, and
+  // that is the correct side to lose. Nothing that watches a ride may prevent
+  // one, which is the same rule Aptabase's init and the analytics boot already
+  // follow.
+  unawaited(CrashReporting.startUiIsolate());
 }
 
 class CommuteGuardianDebugApp extends StatelessWidget {

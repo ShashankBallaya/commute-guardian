@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:commute_guardian/services/crash_reporting.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -109,10 +111,107 @@ void main() {
       expect(CrashReporting.isEnabled, isFalse);
     });
 
-    test('a disabled reporter still runs the app', () async {
-      var ran = false;
-      await CrashReporting.runUiIsolate(() => ran = true);
-      expect(ran, isTrue);
+    test('a disabled reporter comes up and does nothing', () async {
+      // With no DSN this must return without touching the SDK at all, which is
+      // what every clone, every test and every keyless build gets.
+      await CrashReporting.startUiIsolate();
+      expect(CrashReporting.isEnabled, isFalse);
     });
   });
+
+  group('CRASH REPORTING MAY NEVER HOLD THE FIRST FRAME', () {
+    // THE 10 AUG 2026 WHITE SCREEN. The first IPA built with a real DSN never
+    // reached the home screen on iOS, because Sentry used to wrap runApp in its
+    // appRunner and `Sentry._init` awaits EVERY integration before calling it,
+    // with no timeout. One of them, on iOS, never returned. Android was fine and
+    // a DSN-less build opened instantly, which is what named the culprit.
+    //
+    // Read from the source, because the invariant is an ORDER of two statements
+    // in main(), and there is no way to assert that by running main() in a test:
+    // runApp needs a binding, and a hanging integration would hang the test the
+    // same way it hung the phone.
+
+    test('main() calls runApp BEFORE it starts crash reporting', () {
+      final main = _mainFunction();
+      final runApp = main.indexOf('runApp(');
+      final sentry = main.indexOf('CrashReporting.startUiIsolate()');
+
+      expect(runApp, isNonNegative, reason: 'main() must run the app');
+      expect(sentry, isNonNegative, reason: 'main() must start reporting');
+      expect(
+        runApp,
+        lessThan(sentry),
+        reason: 'the app must be drawing before Sentry is allowed to try',
+      );
+    });
+
+    test('main() never awaits crash reporting, and never wraps the app', () {
+      final main = _mainFunction();
+      expect(
+        main,
+        matches(RegExp(r'unawaited\(\s*CrashReporting\.startUiIsolate\(')),
+        reason: 'awaiting it would restore the hang',
+      );
+      // The exact shape of the old bug: any callback handed to crash reporting
+      // is an appRunner by another name.
+      expect(
+        main,
+        isNot(contains('CrashReporting.runUiIsolate')),
+        reason: 'appRunner is what held the first frame',
+      );
+      expect(main, isNot(matches(RegExp(r'await\s+CrashReporting\.'))));
+    });
+
+    test('the guard can still fail', () {
+      // Per the twice-learned lesson about guards nobody has seen fail. These
+      // are the two orderings the real bug had, checked against the same
+      // assertions the test above makes.
+      const broken = '''
+void main() {
+  CrashReporting.runUiIsolate(() {
+    runApp(const ProviderScope(child: App()));
+  });
+}''';
+      expect(broken, contains('CrashReporting.runUiIsolate'));
+      expect(
+        broken.indexOf('runApp('),
+        greaterThan(broken.indexOf('CrashReporting.runUiIsolate')),
+        reason: 'the old code must fail the ordering assertion',
+      );
+
+      const awaited = '''
+void main() async {
+  runApp(const ProviderScope(child: App()));
+  await CrashReporting.startUiIsolate();
+}''';
+      expect(
+        awaited,
+        isNot(
+          matches(RegExp(r'unawaited\(\s*CrashReporting\.startUiIsolate\(')),
+        ),
+        reason: 'an awaited init must fail the unawaited assertion',
+      );
+    });
+  });
+}
+
+/// The body of `main()` in lib/main.dart, comments stripped.
+///
+/// Comments are removed because this file's own explanation has to name
+/// `runUiIsolate` and `appRunner`, which are the very strings the guard forbids.
+/// That is the third time this project has made that mistake, so it is now the
+/// default assumption when a guard reads source.
+String _mainFunction() {
+  final source = File('lib/main.dart').readAsStringSync();
+  final start = source.indexOf('void main()');
+  expect(start, isNonNegative, reason: 'main() must exist');
+  final body = source.substring(start, source.indexOf('\n}', start));
+  return body
+      .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
+      .split('\n')
+      .map((line) {
+        final comment = line.indexOf('//');
+        return comment == -1 ? line : line.substring(0, comment);
+      })
+      .join('\n');
 }
