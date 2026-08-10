@@ -79,6 +79,37 @@ jobs:
             fi
           done
 
+          # AND THE SHAPE, WHICH IS THE FAULT THAT ACTUALLY HAPPENED.
+          #
+          # On 10 Aug 2026 both secrets were pasted as the whole JSON LINE out of
+          # secrets.json, quotes, key name, trailing comma and all. Present and
+          # non-empty, so the check above passed them happily. What followed:
+          # Uri.parse threw a FormatException on the DSN, which killed the app
+          # before it drew a frame, and the Aptabase key split into three parts by
+          # accident so the SDK ran on with a bogus App-Key and DISCARDED every
+          # event in silence, because a release build never inspects the status
+          # code. One loud failure, one silent one, from one paste.
+          #
+          # A shape this app cannot use must fail the build, not ship in it. Only
+          # the shape is asserted and only the reason is printed, never the value.
+          fail=0
+          if [ -n "$SENTRY_DSN" ]; then
+            case "$SENTRY_DSN" in
+              https://*@*/*) ;;
+              *) echo "::error title=SENTRY_DSN is malformed::Expected https://KEY@HOST/PROJECT. Paste only the value, with no quotes, key name or comma."; fail=1 ;;
+            esac
+          fi
+          if [ -n "$APTABASE_APP_KEY" ]; then
+            case "$APTABASE_APP_KEY" in
+              A-US-*|A-EU-*|A-SH-*) ;;
+              *) echo "::error title=APTABASE_APP_KEY is malformed::Expected A-REG-0000000000. Paste only the value, with no quotes, key name or comma."; fail=1 ;;
+            esac
+          fi
+          if [ "$fail" = 1 ]; then
+            echo "- **A key is malformed. Build stopped.**" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       # Both keys are repository SECRETS, never files in the tree: this repo is
       # public. An empty secret still builds, because that is what a fork gets,
       # and the step above is what stops it being a surprise. Both values arrive
