@@ -5,6 +5,23 @@ name: iOS build (unsigned IPA)
 # free plan, roughly 8-12 builds), so this must never run on every push.
 on:
   workflow_dispatch:
+    inputs:
+      # DIAGNOSTIC, and it exists because of 10 Aug 2026. The first IPA that
+      # actually carried the keys showed a white screen forever on the iPhone,
+      # while the same commit opened normally on Android. Sentry's init sits in
+      # front of runApp (SentryFlutter.init's appRunner), so a build with one key
+      # omitted says which SDK is at fault in six minutes and without a Mac.
+      #
+      # Leave this alone for a build meant to be ridden.
+      keys:
+        description: "Which keys to compile in"
+        type: choice
+        default: both
+        options:
+          - both
+          - aptabase_only
+          - sentry_only
+          - none
 
 jobs:
   build-ios:
@@ -32,11 +49,26 @@ jobs:
       # anyway, which is the very thing that makes an empty secret and a real one
       # look alike in a run log: a real one prints ***, an empty one prints
       # nothing, and nobody reads a blank line as a fault.
+      # The `keys` input is applied HERE, once, into the environment both this
+      # step and the build step read. One place decides, so the run summary can
+      # never disagree with the binary.
       - name: Say whether the keys are actually present
         env:
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
+          KEYS: ${{ inputs.keys }}
+          SECRET_SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          SECRET_APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
         run: |
+          case "${KEYS:-both}" in
+            both)          SENTRY_DSN="$SECRET_SENTRY_DSN"; APTABASE_APP_KEY="$SECRET_APTABASE_APP_KEY" ;;
+            aptabase_only) SENTRY_DSN="";                   APTABASE_APP_KEY="$SECRET_APTABASE_APP_KEY" ;;
+            sentry_only)   SENTRY_DSN="$SECRET_SENTRY_DSN"; APTABASE_APP_KEY="" ;;
+            none)          SENTRY_DSN="";                   APTABASE_APP_KEY="" ;;
+            *) echo "::error::unknown keys input '${KEYS}'"; exit 1 ;;
+          esac
+          # Carried to the build step, which must not re-derive this.
+          echo "SENTRY_DSN=$SENTRY_DSN" >> "$GITHUB_ENV"
+          echo "APTABASE_APP_KEY=$APTABASE_APP_KEY" >> "$GITHUB_ENV"
+          echo "### Keys in this IPA (\`keys=${KEYS:-both}\`)" >> "$GITHUB_STEP_SUMMARY"
           for name in SENTRY_DSN APTABASE_APP_KEY; do
             value="${!name}"
             if [ -z "$value" ]; then
@@ -49,11 +81,9 @@ jobs:
 
       # Both keys are repository SECRETS, never files in the tree: this repo is
       # public. An empty secret still builds, because that is what a fork gets,
-      # and the step above is what stops it being a surprise.
+      # and the step above is what stops it being a surprise. Both values arrive
+      # from GITHUB_ENV, set by that step.
       - name: Build with the Sentry DSN and the Aptabase key
-        env:
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY }}
         run: >
           flutter build ios --release --no-codesign
           --dart-define=SENTRY_DSN="$SENTRY_DSN"
