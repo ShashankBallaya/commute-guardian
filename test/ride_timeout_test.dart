@@ -56,8 +56,10 @@ void main() {
     // Ticks are five seconds apart. Saying it again every tick for half an
     // hour would be its own kind of failure.
     expect(
-      tickAt(engine, const Duration(hours: 4, seconds: 5))
-          .whereType<RideTimeoutSpeak>(),
+      tickAt(
+        engine,
+        const Duration(hours: 4, seconds: 5),
+      ).whereType<RideTimeoutSpeak>(),
       isEmpty,
     );
   });
@@ -127,8 +129,10 @@ void main() {
       isEmpty,
     );
     expect(
-      tickAt(engine, const Duration(hours: 5, minutes: 1))
-          .whereType<RideTimeoutEnd>(),
+      tickAt(
+        engine,
+        const Duration(hours: 5, minutes: 1),
+      ).whereType<RideTimeoutEnd>(),
       hasLength(1),
     );
   });

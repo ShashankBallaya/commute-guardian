@@ -122,10 +122,7 @@ class LiveRideNotifier extends AsyncNotifier<LiveRide?> {
         final current = state.valueOrNull;
         if (current != null) {
           state = AsyncData(
-            current.withIndex(
-              event.reachedIndex,
-              atStation: event.atStation,
-            ),
+            current.withIndex(event.reachedIndex, atStation: event.atStation),
           );
         }
       }

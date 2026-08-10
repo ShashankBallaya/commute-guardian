@@ -25,7 +25,10 @@ void main() {
       'Wake up! Wake up. Your stop, Kalyan, is next.',
     );
     expect(FixedLine.goodAwake.render(), 'Good, you are awake.');
-    expect(FixedLine.farewell.render(), 'Thank you for using Commute Guardian.');
+    expect(
+      FixedLine.farewell.render(),
+      'Thank you for using Commute Guardian.',
+    );
   });
 
   test('English stays the default, so an unset language cannot go silent', () {

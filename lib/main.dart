@@ -20,7 +20,7 @@ import 'state/ride_providers.dart';
 import 'state/settings_providers.dart';
 import 'theme/app_theme.dart';
 import 'theme/palette.dart';
-import 'widgets/slide_to_start.dart';
+import 'widgets/primary_button.dart';
 import 'widgets/status_chip.dart';
 
 void main() {
@@ -1308,13 +1308,20 @@ class _JourneyCta extends StatelessWidget {
     );
 
     if (!isRunning) {
-      // Slide, not tap. Both ends of a ride are deliberate gestures now, and
-      // deliberately different ones: slide to begin, hold to stop, so a
-      // half-asleep rider cannot do one while meaning the other.
-      return SlideToStart(
-        label: 'Slide to start',
+      // TAP, and the same button Screen 3 uses. This was a slide until 11 Aug
+      // 2026, on the reasoning that both ends of a ride should be deliberate
+      // gestures and deliberately different ones. That reasoning does not
+      // survive the product, and the arguments are written out in
+      // [PrimaryButton]: the short version is that a partial drag which snaps
+      // back leaves a rider believing the alarm is armed when no ride is
+      // running, and this app cannot afford an input whose failure mode is "you
+      // think you did it". The product path never had the slide, so this also
+      // ends a split where the debug screen and Screen 3 started rides
+      // differently and only the debug one carried the rationale.
+      return PrimaryButton(
+        label: 'Start the ride',
         enabled: canStart,
-        onStart: onStart,
+        onTap: onStart,
       );
     }
 

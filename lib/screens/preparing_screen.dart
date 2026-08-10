@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/palette.dart';
 import '../theme/type_scale.dart';
 import '../widgets/fill_or_scroll.dart';
+import '../widgets/primary_button.dart';
 import '../widgets/pressable.dart';
 
 /// Screen 3, Preparing. The moment the rider hands the ride over to their
@@ -189,14 +190,13 @@ class CannotLocateScreen extends StatelessWidget {
       bottom: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _WideButton(
+          PrimaryButton(
             key: const Key('cannot_locate_retry'),
             label: 'Try again',
-            filled: true,
             onTap: onRetry,
           ),
           const SizedBox(height: 12),
-          _WideButton(
+          PrimaryButton(
             key: const Key('cannot_locate_set_station'),
             label: 'Set my station',
             filled: false,
@@ -304,10 +304,9 @@ class BackgroundLocationScreen extends StatelessWidget {
       bottom: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _WideButton(
+          PrimaryButton(
             key: const Key('background_location_settings'),
             label: 'Open settings',
-            filled: true,
             onTap: onOpenSettings,
           ),
           const SizedBox(height: 4),
@@ -396,10 +395,9 @@ class PreflightScreen extends StatelessWidget {
       bottom: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _WideButton(
+          PrimaryButton(
             key: const Key('preflight_start'),
             label: 'Start the ride',
-            filled: true,
             onTap: onStart,
           ),
           const SizedBox(height: 4),
@@ -471,44 +469,6 @@ class _PreparingScaffold extends StatelessWidget {
 /// a journey, and Try again retries a fix. It does introduce a surface this app
 /// has not used before, so it is worth deciding whether it is the app's primary
 /// button everywhere or only here.
-class _WideButton extends StatelessWidget {
-  const _WideButton({
-    super.key,
-    required this.label,
-    required this.filled,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool filled;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Pressable(
-      onTap: onTap,
-      child: Container(
-        decoration: filled
-            ? BoxDecoration(
-                color: Palette.text,
-                borderRadius: BorderRadius.circular(16),
-              )
-            : Palette.glassCard(radius: 16),
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: TypeScale.body,
-              fontWeight: FontWeight.w600,
-              color: filled ? Palette.ground : Palette.textDim(0.85),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// A text-only action. Available, never encouraged: this is the shape for the
 /// choice we would rather the rider did not make (Start anyway) and for the one

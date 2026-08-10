@@ -129,7 +129,8 @@ enum WakeLine {
       WakeLine.checkInChange =>
         '$stationName पर आपकी ट्रेन बदलनी है, वह अगला स्टेशन है। जागे हैं यह '
             'बताने के लिए अपने ईयरफ़ोन को टैप करें, या \'मैं जाग गया\' बटन दबाएँ।',
-      WakeLine.wakeUpStop => 'जागिए! जागिए! आपका स्टेशन, $stationName, अगला है।',
+      WakeLine.wakeUpStop =>
+        'जागिए! जागिए! आपका स्टेशन, $stationName, अगला है।',
       WakeLine.wakeUpChange =>
         'जागिए! जागिए! $stationName पर आपकी ट्रेन बदलनी है, '
             'वह अगला स्टेशन है।',

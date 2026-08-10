@@ -180,17 +180,15 @@ class SpokenCopy {
 
   /// Re-orientation after a call, not a history replay: what the call
   /// swallowed, then the check-in it doubles as.
-  String postCallCatchUp({
-    required String stations,
-    required String checkIn,
-  }) => switch (language) {
-    AppLanguage.english =>
-      'While you were on your call, the train passed $stations. $checkIn',
-    AppLanguage.hindi =>
-      'आप कॉल पर थे, तब ट्रेन $stations पार कर गई। $checkIn',
-    AppLanguage.marathi =>
-      'तुम्ही कॉलवर असताना गाडी $stations ओलांडून गेली. $checkIn',
-  };
+  String postCallCatchUp({required String stations, required String checkIn}) =>
+      switch (language) {
+        AppLanguage.english =>
+          'While you were on your call, the train passed $stations. $checkIn',
+        AppLanguage.hindi =>
+          'आप कॉल पर थे, तब ट्रेन $stations पार कर गई। $checkIn',
+        AppLanguage.marathi =>
+          'तुम्ही कॉलवर असताना गाडी $stations ओलांडून गेली. $checkIn',
+      };
 
   /// "Thane, Kalwa and Mumbra", in this language's conjunction.
   String joinNames(List<String> names) {

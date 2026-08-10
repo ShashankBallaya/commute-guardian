@@ -629,10 +629,7 @@ class RideServiceClient {
       key: shareUsageKey,
       value: shareAnonymousUsage,
     );
-    await FlutterForegroundTask.saveData(
-      key: languageKey,
-      value: language.tag,
-    );
+    await FlutterForegroundTask.saveData(key: languageKey, value: language.tag);
 
     final result = await FlutterForegroundTask.startService(
       serviceId: 1,

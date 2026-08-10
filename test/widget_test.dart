@@ -14,7 +14,7 @@ import 'package:commute_guardian/screens/ride_orchestration.dart';
 import 'package:commute_guardian/screens/wake_alert_screen.dart';
 import 'package:commute_guardian/services/ride_service_client.dart';
 import 'package:commute_guardian/theme/app_theme.dart';
-import 'package:commute_guardian/widgets/slide_to_start.dart';
+import 'package:commute_guardian/widgets/primary_button.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
 
@@ -162,11 +162,10 @@ void main() {
 
     expect(find.text('Pick an origin and a destination.'), findsOneWidget);
 
-    // Starting the service with no journey would run a ride nobody chose. The
-    // track stays dead until JourneyPlanner has actually planned one, and a
-    // dead track does not move at all: a slider that travels and then snaps
-    // back says "broken" where a still one says "not yet".
-    final start = tester.widget<SlideToStart>(find.byType(SlideToStart));
+    // Starting the service with no journey would run a ride nobody chose, so
+    // the button is present and INERT rather than absent: a control that
+    // appears out of nowhere reads as the app changing its mind.
+    final start = tester.widget<PrimaryButton>(find.byType(PrimaryButton));
     expect(start.enabled, isFalse);
   });
 
@@ -196,7 +195,7 @@ void main() {
     expect(find.textContaining('Kalyan → Thakurli'), findsOneWidget);
     expect(find.textContaining('No change of train.'), findsOneWidget);
 
-    final start = tester.widget<SlideToStart>(find.byType(SlideToStart));
+    final start = tester.widget<PrimaryButton>(find.byType(PrimaryButton));
     expect(start.enabled, isTrue);
   });
 
