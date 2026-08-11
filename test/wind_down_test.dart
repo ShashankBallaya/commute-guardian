@@ -120,11 +120,21 @@ List<WindDownAction> _trainLeaves(
 ) {
   var last = const <WindDownAction>[];
   // 10 s apart, inside the 12 s continuity gap, so the streak survives.
+  //
+  // EXTENDED 11 Aug 2026 by one step, when [WindDown.vehicleMinRecessionM] was
+  // added. The old run ended at 600 m, which cleared the 400 m floor on its
+  // final fix ONLY, and a disarm needs two. This is a limit of the fixture's
+  // 10 s sampling rather than a cost the product pays: a real train at 15 m/s
+  // passes 400 m at about 27 s and the next 1 Hz fix a second later is already
+  // past it, and on the one real carried-past ride in the archive (22 Jul,
+  // Kalyan to Shahad) the floor delayed the verdict by nothing at all, because
+  // 1058 m was on the clock the instant it fired.
   for (final (seconds, metres) in [
     (10, 100.0),
     (20, 200.0),
     (30, 300.0),
     (40, 600.0),
+    (50, 900.0),
   ]) {
     last = windDown.onFix(
       lat: _northOf(station, metres),
@@ -284,9 +294,17 @@ void main() {
     // from the anchor before the recession counts at all, and it has to stay
     // CONTINUOUS to get there: a single long gap would both break the streak
     // and mark the anchor for re-setting.
+    //
+    // THE POSITION RECEDES, corrected 11 Aug 2026. This fixture used to hold
+    // the phone at _outsideLat, 180 m from the platform, while reporting a
+    // departing train. That is physically incoherent (a train covers 600 m in
+    // the 40 s this loop runs) and it only ever passed because the old rule had
+    // no distance floor. The reported speed stays in the ambiguous 3.2 m/s
+    // band, which is the point of the test: the verdict must come from ground
+    // covered, not from what the provider claims about pace.
     for (var t = 5; t <= 40; t += 5) {
       windDown.onFix(
-        lat: _outsideLat,
+        lat: _northOf(_digha, t * 15.0),
         lng: _outsideLng,
         accuracyM: 20,
         speedMps: 3.2,
@@ -531,9 +549,12 @@ void main() {
     // continuous vehicle-speed fixes past vehicleMinElapsed are proof the
     // "alight" did not stick; the run before them keeps the stream continuous
     // so the streak can build.
+    // The position recedes at the 12 m/s it reports, corrected 11 Aug 2026: the
+    // fixture used to hold the phone 180 m from the platform for the whole
+    // departure, which no train does.
     for (var t = 5; t <= 35; t += 5) {
       windDown.onFix(
-        lat: _outsideLat,
+        lat: _northOf(_digha, t * 12.0),
         lng: _outsideLng,
         accuracyM: 20,
         speedMps: 12,
@@ -541,7 +562,7 @@ void main() {
       );
     }
     final departing = windDown.onFix(
-      lat: _outsideLat,
+      lat: _northOf(_digha, 480),
       lng: _outsideLng,
       accuracyM: 20,
       speedMps: 12,
@@ -1013,5 +1034,133 @@ void main() {
     final atAiroli = _t0.add(const Duration(minutes: 7));
     _alightAtAiroli(windDown, atAiroli);
     expect(_walkOutOfAiroli(windDown, atAiroli), silent);
+  });
+
+  // THE 9 AUG 2026 iPHONE WIND-DOWN FAULT, and the two rules that close it.
+  //
+  // Three legs that evening disarmed auto-off on a rider standing on a
+  // platform, so wind-down never completed once on iOS. The 3T wound down
+  // correctly at the same minute, which made it look like an iOS fault. It was
+  // not: the 3T's stream simply goes sparse after arrival, so its recession was
+  // never judged. A dense stream on either platform would have done the same.
+
+  test('a braking train does not anchor on its own 0.0 reading (the 9 Aug '
+      'Badlapur false stop)', () {
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+
+    // The real shape, at Badlapur 20:08:45 to 20:09:03. The train decelerates
+    // through the fence, iOS drops in an isolated 0.0 m/s reading that REPEATS
+    // the previous coordinate, and the train then rolls another twelve seconds
+    // before it truly stops.
+    var at = _t0;
+    final anchored = <String>[];
+    void fix(double metresFromPlatform, double speed) {
+      anchored.addAll(
+        windDown
+            .onFix(
+              lat: _northOf(_digha, metresFromPlatform),
+              lng: _digha.lng,
+              accuracyM: 30,
+              speedMps: speed,
+              now: at,
+            )
+            .whereType<WindDownNote>()
+            .map((n) => n.reason)
+            .where((r) => r.startsWith('alight anchor set')),
+      );
+      at = at.add(const Duration(seconds: 1));
+    }
+
+    // Still braking: ~4 m/s of real ground covered per second.
+    for (var m = 120.0; m > 100; m -= 4) {
+      fix(m, 5.5);
+    }
+    // The false stop. Reported 0.0, but the five seconds behind it moved 20 m.
+    fix(100, 0.0);
+
+    expect(
+      anchored,
+      isEmpty,
+      reason: 'a 0.0 reading with a braking train behind it is not an alight; '
+          'anchoring here charged the remaining braking distance to the '
+          "rider's walk and disarmed auto-off 31 s later",
+    );
+
+    // Now the train really stops: several seconds of no displacement at all.
+    for (var i = 0; i < 6; i++) {
+      fix(100, 0.0);
+    }
+    expect(
+      anchored,
+      isNotEmpty,
+      reason: 'a real stop still anchors, or the platform exit never arms',
+    );
+  });
+
+  test('a sparse stream with no lookback still anchors (the 3T after arrival)',
+      () {
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+
+    // The 3T routinely goes 7 to 30 s between fixes once the ride is over, so
+    // there is no sample inside the lookback window to judge against. Refusing
+    // to anchor there would break the platform exit on the quieter platform in
+    // order to fix a fault only a dense stream can produce. No evidence means
+    // yes, and this test is what holds that decision in place.
+    final actions = windDown.onFix(
+      lat: _digha.lat,
+      lng: _digha.lng,
+      accuracyM: 88,
+      speedMps: 0.0,
+      now: _t0.add(const Duration(seconds: 40)),
+    );
+
+    expect(
+      actions.whereType<WindDownNote>().map((n) => n.reason),
+      contains(startsWith('alight anchor set')),
+    );
+  });
+
+  test('a recession under the vehicle floor never disarms, however fast it '
+      'reads (the three 9 Aug iPhone legs)', () {
+    final windDown = _newWindDown();
+    windDown.onStationEvent(_dighaArrival(), _t0);
+    _alightAt(windDown, _digha, _t0);
+
+    // 220 m in 30 s: the worst of the three real legs, 7.3 m/s, comfortably
+    // over vehicleSpeedMps and comfortably under vehicleMinRecessionM. It is a
+    // braking train and a walk added together, not a train leaving.
+    var last = const <WindDownAction>[];
+    for (final (seconds, metres) in [(20, 150.0), (30, 220.0)]) {
+      last = windDown.onFix(
+        lat: _northOf(_digha, metres),
+        lng: _digha.lng,
+        accuracyM: 30,
+        speedMps: 0.0,
+        now: _t0.add(Duration(seconds: seconds)),
+      );
+    }
+
+    expect(
+      last.whereType<WindDownNote>().map((n) => n.reason),
+      isNot(contains(startsWith('disarmed: receded'))),
+      reason: 'the one true carried-past ride in the archive covered 1058 m; '
+          'these three covered 153 to 220 m and were all wrong',
+    );
+
+    // And the floor must not have quietly disabled the verdict altogether. A
+    // fresh engine, because _trainLeaves times its run from the anchor and the
+    // fixes above have already carried this one past that window.
+    final departing = _newWindDown();
+    departing.onStationEvent(_dighaArrival(), _t0);
+    _alightAt(departing, _digha, _t0);
+    final left = _trainLeaves(departing, _digha, _t0);
+    expect(
+      left.whereType<WindDownNote>().map((n) => n.reason),
+      contains(startsWith('disarmed: receded')),
+      reason: 'a train that really leaves must still disarm, or the floor has '
+          'traded one fault for a worse one',
+    );
   });
 }

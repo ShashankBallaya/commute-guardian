@@ -174,6 +174,55 @@ class WindDown {
   /// Same gate as the other engines: blackout-quality fixes prove nothing.
   static const maxAccuracyM = 150.0;
 
+  /// How far back the anchor looks to prove the train really stopped.
+  ///
+  /// The anchor used to be set on ONE reported `speed <= alightSpeedMaxMps`
+  /// reading, which contradicted this file's own rule twelve lines below: never
+  /// trust the reported per-fix speed, key off displacement. The 9 Aug 2026
+  /// iPhone ride is what the contradiction cost. iOS emits an isolated 0.0 m/s
+  /// reading while the train is still braking, sometimes with the previous
+  /// coordinate repeated verbatim:
+  ///
+  ///     20:08:49  19.16668, 73.23845  speed 5.5 m/s
+  ///     20:08:50  19.16668, 73.23845  speed 0.0 m/s   <- anchored here
+  ///     20:08:51  19.16667, 73.23851  speed 4.6 m/s
+  ///     ...deceleration continues...
+  ///     20:09:02  19.16658, 73.23879  speed 0.0 m/s   <- the train stops here
+  ///
+  /// So the anchor landed twelve seconds up the line from the true stop, and
+  /// every displacement measured from it charged the train's remaining braking
+  /// distance to the rider's walk. At Ambernath the same evening the anchor
+  /// went in 35 s early, on the first of SEVEN fixes carrying an identical
+  /// coordinate with the accuracy decaying 14 m to 21 m underneath it, which is
+  /// a held fix and not a stationary train.
+  ///
+  /// Now the anchor asks the same question the recession judge asks: how far
+  /// has this thing actually moved. Five seconds is long enough that a braking
+  /// train cannot hide inside it and short enough that the rider has not left
+  /// the platform yet.
+  static const anchorLookback = Duration(seconds: 5);
+
+  /// A vehicle verdict needs this much ground covered, whatever the arithmetic
+  /// says about pace. MEASURED, and it is the one constant here set from a true
+  /// positive rather than from reasoning.
+  ///
+  /// Replaying every real leg gives one correct disarm and three wrong ones:
+  ///
+  ///   22 Jul thane to kalyan   1058 m over 257 s   4.1 m/s   CORRECT
+  ///   9 Aug iPhone ambernath    190 m over  32 s   5.9 m/s   wrong
+  ///   9 Aug iPhone badlapur     153 m over  31 s   4.9 m/s   wrong
+  ///   9 Aug iPhone kalyan       220 m over  30 s   7.3 m/s   wrong
+  ///
+  /// PACE DOES NOT SEPARATE THEM. The true positive is the slowest of the four,
+  /// because the rider sat in a stationary train at Kalyan for most of those
+  /// 257 s before it pulled out with him aboard. Distance separates them by
+  /// five times over, and it is also the honest question: a train that has not
+  /// carried the rider 400 m has not carried them anywhere yet.
+  ///
+  /// This costs the true positive NOTHING. 1058 m was already on the clock at
+  /// the instant it fired, so the verdict lands on the same fix as before.
+  static const vehicleMinRecessionM = 400.0;
+
   /// Whether this engine has already called the ride over. Terminal: a
   /// WindDownEnd is emitted at most once per ride, and nothing this engine is
   /// told afterwards produces anything.
@@ -196,6 +245,10 @@ class WindDown {
   int _qualifyingFixes = 0;
   int _vehicleFixes = 0;
   DateTime? _lastFixAt;
+
+  /// Recent fixes, oldest first, trimmed to [anchorLookback]. Only the anchor
+  /// gate reads this, and it holds a handful of entries at a 1 Hz stream.
+  final List<_Anchor> _recent = [];
   bool _countingDown = false;
   DateTime? _endAt;
 
@@ -318,6 +371,31 @@ class WindDown {
   /// artifacts of an alighting that did not happen, and a stale anchor
   /// hundreds of metres back down the line would read as a phantom vehicle
   /// and disarm again immediately.
+  /// Has the rider actually come to rest over the last [anchorLookback]?
+  ///
+  /// Displacement over the preceding few seconds, never the reported speed. A
+  /// braking train covers twenty metres in five seconds and a stopped one
+  /// covers almost none, so this is the question the anchor should always have
+  /// asked.
+  ///
+  /// NO EVIDENCE MEANS YES, deliberately. A sparse stream (the 3T routinely
+  /// goes 7 to 30 s between fixes after arrival, and several correct anchors on
+  /// real logs sit right after a gap) carries no lookback sample, and refusing
+  /// to anchor there would break the platform exit on the quieter platform to
+  /// fix a fault that only a dense stream can produce. This tightens the 1 Hz
+  /// case, which is the only one that ever misfired.
+  bool _settledOverLookback(double lat, double lng, DateTime now) {
+    _recent.removeWhere((f) => now.difference(f.at) > anchorLookback);
+    if (_recent.isEmpty) return true;
+    final oldest = _recent.first;
+    final elapsed = now.difference(oldest.at);
+    // Too recent to say anything: a walker and a train look identical over one
+    // second at these accuracies.
+    if (elapsed < const Duration(seconds: 3)) return true;
+    final moved = _distanceM(lat, lng, oldest.lat, oldest.lng);
+    return moved <= walkingSpeedMaxMps * elapsed.inSeconds;
+  }
+
   void _rearmAt(Station station) {
     _exitStation = station;
     _armed = true;
@@ -351,6 +429,11 @@ class WindDown {
     // where a 15 s gap produced a lone 6.2 m/s reading.
     final lastAt = _lastFixAt;
     _lastFixAt = now;
+    // Recorded before any decision below, and read by the anchor gate through
+    // _settledOverLookback, which trims to the window and ignores this entry by
+    // comparing against the OLDEST one.
+    _recent.add(_Anchor(lat: lat, lng: lng, at: now));
+    _recent.removeWhere((f) => now.difference(f.at) > anchorLookback);
     final continuous =
         lastAt != null && now.difference(lastAt) <= vehicleStreakGap;
     // A gap after we anchored may have hidden the train's final approach, so
@@ -372,7 +455,8 @@ class WindDown {
     if ((!_alightSeen || canReanchor) &&
         distanceM <= _exitStation.radiusM &&
         speedMps >= 0 &&
-        speedMps <= alightSpeedMaxMps) {
+        speedMps <= alightSpeedMaxMps &&
+        _settledOverLookback(lat, lng, now)) {
       // Checked before the anchor moves, because _alightSeen reads the anchor.
       if (_alightSeen) _reanchored = true;
       _anchor = _Anchor(lat: lat, lng: lng, at: now);
@@ -415,6 +499,7 @@ class WindDown {
     if (!_reanchorPending &&
         continuous &&
         elapsedS >= vehicleMinElapsed.inSeconds &&
+        walkedM >= vehicleMinRecessionM &&
         walkedM > vehicleReachM) {
       _vehicleFixes++;
       if (_vehicleFixes >= vehicleFixesToDisarm) {
