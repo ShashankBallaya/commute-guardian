@@ -70,6 +70,16 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   bool get sarvamGreeting => false;
   bool get sarvamClips => false;
 
+  /// Should a host that comes up mid-ride open Screen 4 by itself?
+  ///
+  /// TRUE FOR THE PRODUCT HOST, FALSE FOR THE DEBUG SCREEN, and the split is
+  /// the whole point. A rider reopening the app after swiping it out of recents
+  /// wants the ride they are on. Someone who has long-pressed the version line
+  /// to reach the debug screen wants the BENCH, and covering it with Screen 4
+  /// the instant it opens would make the wake ladder and wind-down benches
+  /// unreachable during the only state they are worth running in.
+  bool get resumesTravelModeScreen => false;
+
   /// The long press on Settings' version line, or null where there is nothing
   /// behind it (the debug screen itself, which is already there).
   ///
@@ -300,6 +310,26 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     draft.setOrigin(origin.id);
     draft.setDestination(destination.id);
     onOrchestrationLog('Restored the running ride from the service store.');
+
+    // AND PUT THE RIDER BACK ON THE RIDE. Reported on device 11 Aug 2026: swipe
+    // the app out of recents on Android and the service keeps running correctly,
+    // but reopening lands on Home. The chain, the next station and End journey
+    // are all somewhere the rider cannot reach, on a ride that is still running.
+    //
+    // The cause was narrow. showTravelMode() had exactly two callers and both of
+    // them START a ride, so a UI that came up mid-ride restored the pickers
+    // underneath and never opened the screen they feed. Restoring the DRAFT was
+    // the 15 Jul fix for a blank destination; it was never the whole job.
+    //
+    // Safe to push from here: an arrival that already happened opens Screen 5
+    // over the top through _watchForArrival, which is the same order a ride
+    // produces live, and a wake ladder outranks both by design.
+    //
+    // Gated on the host, not on the platform. The debug screen shares this
+    // mixin, and pushing Screen 4 over it would cover the bench that forces the
+    // ladder and the wind-down at the exact moment those benches need a ride to
+    // be running. See [resumesTravelModeScreen].
+    if (resumesTravelModeScreen) await showTravelMode();
   }
 
   /// One event from the other side of the isolate boundary, already parsed

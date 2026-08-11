@@ -32,6 +32,10 @@ class _HomeShellState extends ConsumerState<HomeShell> with RideOrchestration {
   @override
   VoidCallback? get debugDoor => widget.onOpenDebug;
 
+  /// The product host, so a rider who comes back to a running ride lands on it.
+  @override
+  bool get resumesTravelModeScreen => true;
+
   @override
   void initState() {
     super.initState();

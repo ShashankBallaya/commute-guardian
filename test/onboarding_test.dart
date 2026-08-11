@@ -5,6 +5,7 @@ import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/main.dart';
 import 'package:commute_guardian/screens/home_screen.dart';
 import 'package:commute_guardian/screens/onboarding_screen.dart';
+import 'package:commute_guardian/screens/travel_mode_screen.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
 import 'package:commute_guardian/services/permissions_gateway.dart';
@@ -207,7 +208,11 @@ void main() {
 /// The entry gate. What a rider sees when they open the app, which is the
 /// whole point of having built onboarding.
 void _entryGateTests() {
-  Future<AppDatabase> pumpApp(WidgetTester tester, {required bool seen}) async {
+  Future<AppDatabase> pumpApp(
+    WidgetTester tester, {
+    required bool seen,
+    FakeRideServiceClient? service,
+  }) async {
     final db = AppDatabase.inMemory();
     addTearDown(db.close);
     if (seen) await db.markOnboardingSeen();
@@ -225,7 +230,9 @@ void _entryGateTests() {
           fixAcquirerProvider.overrideWithValue(
             () async => throw StateError('no GPS'),
           ),
-          rideServiceClientProvider.overrideWithValue(FakeRideServiceClient()),
+          rideServiceClientProvider.overrideWithValue(
+            service ?? FakeRideServiceClient(),
+          ),
         ],
         child: const CommuteGuardianDebugApp(),
       ),
@@ -233,6 +240,45 @@ void _entryGateTests() {
     await tester.pumpAndSettle();
     return db;
   }
+
+  testWidgets(
+    'REOPENING MID-RIDE LANDS ON THE RIDE, not on Home (the 11 Aug recents '
+    'swipe)',
+    (tester) async {
+      // Reported on device 11 Aug 2026, Android: swiping the app out of recents
+      // leaves the foreground service running correctly (the 30 Jul swipe bench
+      // proved that), but reopening the app landed on Home. The chain, the next
+      // station and End journey were all unreachable on a ride that was still
+      // running.
+      //
+      // The cause was narrow: showTravelMode() had two callers and both of them
+      // START a ride. Restoring the pickers was the 15 Jul fix and was never the
+      // whole job.
+      //
+      // Nothing below taps anything, which is the assertion.
+      await pumpApp(
+        tester,
+        seen: true,
+        service: FakeRideServiceClient(
+          running: true,
+          originId: 'kalyan',
+          destinationId: 'thane',
+        ),
+      );
+
+      expect(find.byType(TravelModeScreen), findsOneWidget);
+    },
+  );
+
+  testWidgets('reopening with no ride running still lands on Home', (
+    tester,
+  ) async {
+    // The other half, and the one that would fail if the restore ever pushed
+    // Screen 4 unconditionally.
+    await pumpApp(tester, seen: true);
+    expect(find.byType(TravelModeScreen), findsNothing);
+    expect(find.byType(HomeScreen), findsOneWidget);
+  });
 
   testWidgets('a first-time rider lands in onboarding, not the app', (
     tester,
