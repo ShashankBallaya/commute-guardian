@@ -340,6 +340,7 @@ class PreflightScreen extends StatelessWidget {
     required this.steps,
     required this.onStart,
     required this.onRecheck,
+    this.recheckState = RecheckState.idle,
   });
 
   /// Null until the fix lands. State A exists precisely because the origin is
@@ -357,6 +358,21 @@ class PreflightScreen extends StatelessWidget {
   /// "I've fixed it, check again". Cheaper than making the rider guess whether
   /// plugging in mid-screen registered.
   final VoidCallback onRecheck;
+
+  /// What the recheck control is currently saying. See [RecheckState].
+  final RecheckState recheckState;
+
+  /// How long "Checking…" is held even if the probe answers instantly.
+  ///
+  /// 500 ms is above the ~100 ms at which a change reads as instantaneous and
+  /// well under the 1 s where a rider starts wondering whether it hung. It is
+  /// not a fake delay on the RESULT: the probe has already returned and the
+  /// rows are already correct underneath. It buys the rider a frame they can
+  /// actually perceive.
+  static const recheckMinimum = Duration(milliseconds: 500);
+
+  /// How long "No change yet" stays before the control returns to idle.
+  static const recheckSettle = Duration(milliseconds: 1600);
 
   int get _warningCount =>
       steps.where((s) => s.status == PrepStatus.active).length;
@@ -403,8 +419,12 @@ class PreflightScreen extends StatelessWidget {
           const SizedBox(height: 4),
           _PlainButton(
             key: const Key('preflight_recheck'),
-            label: "I've fixed it, check again",
-            onTap: onRecheck,
+            label: recheckState.label,
+            // Refuses a second press while it is working or reporting. A
+            // control that can be pressed during its own answer invites the
+            // rider to press it again and see nothing, which is the fault this
+            // whole state machine exists to remove.
+            onTap: recheckState == RecheckState.idle ? onRecheck : null,
           ),
         ],
       ),
@@ -473,29 +493,75 @@ class _PreparingScaffold extends StatelessWidget {
 /// A text-only action. Available, never encouraged: this is the shape for the
 /// choice we would rather the rider did not make (Start anyway) and for the one
 /// that simply leaves (Cancel).
+/// What "I've fixed it, check again" is saying right now.
+///
+/// THE PROBE IS TOO FAST TO SEE, which is the whole problem. Reading the
+/// earphone route and the system volume takes milliseconds, so a correct answer
+/// arrives before the rider's finger is off the glass. If nothing changed, the
+/// screen is byte-identical to the one they were looking at, and the only
+/// reasonable conclusion is that the button is broken. Reported on device
+/// 11 Aug 2026: "there's no refresh/delay or something to know if it works as
+/// the screen remains stale which is Bad UX".
+///
+/// So the states below are not decoration. They are the answer.
+enum RecheckState {
+  idle("I've fixed it, check again"),
+
+  /// Held for [PreflightScreen.recheckMinimum] even when the probe returns
+  /// sooner, because a state that flashes for 4 ms did not happen as far as the
+  /// rider is concerned.
+  checking('Checking…'),
+
+  /// The probe ran and the answer is the same. Says so, rather than returning
+  /// silently to a screen that looks untouched. Factual, not scolding: the
+  /// rider may have turned up the ringer rather than the media volume, which is
+  /// exactly the mistake this app has to help with on iOS.
+  unchanged('No change yet');
+
+  const RecheckState(this.label);
+
+  final String label;
+}
+
 class _PlainButton extends StatelessWidget {
   const _PlainButton({super.key, required this.label, required this.onTap});
 
   final String label;
-  final VoidCallback onTap;
+
+  /// Null disables the control, which is how the recheck refuses a second press
+  /// while it is answering the first.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Pressable(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        child: Center(
+    final tap = onTap;
+    final child = Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Center(
+        // Crossfades between the three labels rather than swapping them. A hard
+        // swap on a line of text reads as a glitch; 160 ms of opacity reads as
+        // the same control changing its mind. Text only, no movement, so it
+        // survives reduced motion unchanged.
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 160),
           child: Text(
             label,
+            // Keyed on the label so the switcher knows the text CHANGED. Without
+            // this it sees one Text widget and animates nothing.
+            key: ValueKey(label),
             style: TextStyle(
               fontSize: TypeScale.body,
-              color: Palette.textDim(0.5),
+              color: Palette.textDim(tap == null ? 0.35 : 0.5),
             ),
           ),
         ),
       ),
     );
+
+    // Not wrapped in a Pressable when disabled: a scale-down on a control that
+    // will not act is a lie about what the press did.
+    if (tap == null) return child;
+    return Pressable(onTap: tap, child: child);
   }
 }
 

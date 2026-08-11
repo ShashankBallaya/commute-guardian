@@ -150,11 +150,33 @@ import flutter_foreground_task
   /// built on that category, so a low reading here is the failure worth
   /// warning about and the switch is not.
   ///
-  /// Read from the shared instance without activating it. Activating a session
-  /// to measure it would interrupt whatever the rider is listening to, before a
-  /// ride has even started, to answer a question that is only a warning.
+  /// THE SESSION HAS TO BE ACTIVE OR THE NUMBER IS STALE, corrected 11 Aug 2026
+  /// the same evening this was written. `outputVolume` is only documented as
+  /// valid on an ACTIVE session; on an inactive one it returns whatever was last
+  /// true, which on Screen 3 means the pre-flight check answers a question about
+  /// the past. The rider then turns their volume up, presses "check again", and
+  /// is told nothing changed. That is the bug they reported.
+  ///
+  /// AMBIENT plus MIX-WITH-OTHERS, chosen so activating cannot cost anything.
+  /// Ambient never interrupts, so a rider listening to music keeps listening.
+  /// Activating the DEFAULT category (soloAmbient) would have stopped their
+  /// audio to measure a volume, before a ride had even started, which is a
+  /// worse thing than the warning is worth.
+  ///
+  /// Not deactivated afterwards, deliberately. Deactivating can notify other
+  /// apps that they may resume, which is a side effect this has no business
+  /// causing, and the ride's own `seizeSession` overrides the category anyway.
   private func alarmVolume() -> NSNumber? {
-    let volume = AVAudioSession.sharedInstance().outputVolume
+    let session = AVAudioSession.sharedInstance()
+    do {
+      try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+      try session.setActive(true)
+    } catch {
+      // Fall through and read anyway: a stale number beats no number, and the
+      // Dart side treats an implausible one as "would not say".
+      NSLog("AlarmVolume: could not activate to measure: \(error)")
+    }
+    let volume = session.outputVolume
     guard volume.isFinite, volume >= 0 else { return nil }
     return NSNumber(value: volume)
   }

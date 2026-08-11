@@ -46,6 +46,7 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow> {
   String? _originName;
   bool _earphonesConnected = true;
   bool _volumeLow = false;
+  RecheckState _recheck = RecheckState.idle;
 
   @override
   void initState() {
@@ -111,15 +112,65 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow> {
   /// Both audio probes, because Recheck is one button and the rider may have
   /// fixed either. Turning the volume up and being told only about earphones
   /// would read as the button not working.
+  ///
+  /// AND IT SAYS WHAT IT DID, added 11 Aug 2026. The probes return in
+  /// milliseconds, so a correct answer used to arrive before the rider's finger
+  /// left the glass, and if nothing had changed the screen was byte-identical.
+  /// The only reasonable conclusion was that the button did nothing. See
+  /// [RecheckState].
   Future<void> _recheckAudio() async {
-    final connected = await widget.audio.earphonesConnected();
-    final volume = await ref.read(rideServiceClientProvider).alarmVolume();
+    if (_recheck != RecheckState.idle) return;
+    setState(() => _recheck = RecheckState.checking);
+
+    final startedAt = DateTime.now();
+    // BOUNDED, because a probe that never answers would strand this control on
+    // "Checking…" for the rest of the ride. earphonesConnected times out its
+    // own getDevices call but NOT `AudioSession.instance`, which is the await
+    // that hangs under the widget-test binding and could hang on a device in a
+    // state nobody has met yet. Falling back to the values already on screen
+    // means a timeout reads as "no change", which is the honest answer: we
+    // asked and learned nothing.
+    //
+    // NULL means the probe did not answer, and a probe that did not answer must
+    // change NOTHING. Returning "volume unreadable" on a timeout would clear a
+    // warning that is still true, which is the one direction this screen must
+    // never fail in.
+    final probe = await Future.wait([
+      widget.audio.earphonesConnected(),
+      ref.read(rideServiceClientProvider).alarmVolume(),
+    ]).timeout(const Duration(seconds: 3), onTimeout: () => const []);
+
+    final answered = probe.isNotEmpty;
+    final connected = answered ? probe[0] as bool : _earphonesConnected;
+    final volume = answered ? probe[1] as double? : null;
+    final volumeLow = answered
+        ? volume != null && volume < AudioOutputGateway.lowVolume
+        : _volumeLow;
+    final changed =
+        connected != _earphonesConnected || volumeLow != _volumeLow;
+
+    // Hold "Checking…" long enough to be seen. Measured from the tap, so a slow
+    // probe waits no longer than it already took.
+    final elapsed = DateTime.now().difference(startedAt);
+    final remaining = PreflightScreen.recheckMinimum - elapsed;
+    if (remaining > Duration.zero) await Future<void>.delayed(remaining);
     if (!mounted) return;
+
     setState(() {
       _earphonesConnected = connected;
-      _volumeLow = volume != null && volume < AudioOutputGateway.lowVolume;
+      _volumeLow = volumeLow;
+      // A change speaks for itself: the row disappears and the headline counts
+      // one fewer. Only an unchanged answer needs words, because that is the
+      // case where the screen would otherwise look untouched.
+      _recheck = changed ? RecheckState.idle : RecheckState.unchanged;
     });
     _settleIfClear();
+
+    if (!changed) {
+      await Future<void>.delayed(PreflightScreen.recheckSettle);
+      if (!mounted) return;
+      setState(() => _recheck = RecheckState.idle);
+    }
   }
 
   @override
@@ -192,6 +243,7 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow> {
         ],
         onStart: () => Navigator.of(context).pop(true),
         onRecheck: () => unawaited(_recheckAudio()),
+        recheckState: _recheck,
       ),
     };
   }

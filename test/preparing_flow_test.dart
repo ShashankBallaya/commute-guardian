@@ -3,12 +3,17 @@ import 'dart:io';
 
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/screens/preparing_flow.dart';
+import 'package:commute_guardian/screens/preparing_screen.dart';
 import 'package:commute_guardian/services/audio_output_gateway.dart';
+import 'package:commute_guardian/widgets/pressable.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
+import 'package:commute_guardian/state/ride_providers.dart';
 import 'package:fl_location/fl_location.dart' as fl;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'support/fake_ride_service_client.dart';
 
 /// Screen 3, wired.
 ///
@@ -212,6 +217,125 @@ void main() {
     },
   );
 
+  // "I'VE FIXED IT, CHECK AGAIN" HAD NO ANSWER, reported on device 11 Aug 2026:
+  // "there's no refresh/delay or something to know if it works as the screen
+  // remains stale which is Bad UX". The probes return in milliseconds, so a
+  // correct result landed before the finger left the glass, and an unchanged
+  // one left a byte-identical screen.
+  group('the recheck control says what it did', () {
+    Future<void> pumpPreflight(
+      WidgetTester tester, {
+      required FakeRideServiceClient client,
+      AudioOutputGateway audio = const _EarphonesIn(),
+    }) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            stationRepositoryProvider.overrideWith(
+              (ref) async => StationRepository.parse(stationsJson),
+            ),
+            fixAcquirerProvider.overrideWithValue(
+              () async => fixAt(shahadLat, shahadLng),
+            ),
+            rideServiceClientProvider.overrideWithValue(client),
+          ],
+          child: MaterialApp(
+            home: PreparingFlow(
+              destinationName: 'Kalyan',
+              audio: audio,
+              report: const PreparingReport(
+                hasFix: true,
+                originName: 'Shahad',
+                backgroundLocationGranted: true,
+                earphonesConnected: true,
+                alarmVolume: 0.05,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    testWidgets('an unchanged answer SAYS SO instead of looking untouched', (
+      tester,
+    ) async {
+      // Still low. The old build returned silently to an identical screen.
+      final client = FakeRideServiceClient()..alarmVolumeValue = 0.05;
+      await pumpPreflight(tester, client: client);
+      expect(find.text("I've fixed it, check again"), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('preflight_recheck')));
+      await tester.pump();
+      expect(
+        find.text('Checking…'),
+        findsOneWidget,
+        reason: 'the tap must be visible before the answer is',
+      );
+
+      // Held past the minimum even though the probe already returned.
+      await tester.pump(PreflightScreen.recheckMinimum);
+      await tester.pumpAndSettle();
+      expect(find.text('No change yet'), findsOneWidget);
+      expect(
+        find.text('Volume is low'),
+        findsOneWidget,
+        reason: 'the warning is still true, so it stays',
+      );
+
+      // And it goes back, so the control is usable again.
+      await tester.pump(PreflightScreen.recheckSettle);
+      await tester.pumpAndSettle();
+      expect(find.text("I've fixed it, check again"), findsOneWidget);
+    });
+
+    testWidgets('a fixed volume clears the row and needs no words', (
+      tester,
+    ) async {
+      final client = FakeRideServiceClient()..alarmVolumeValue = 0.05;
+      await pumpPreflight(tester, client: client);
+      expect(find.text('Volume is low'), findsOneWidget);
+
+      // The rider turns it up between the screen appearing and the press.
+      client.alarmVolumeValue = 0.8;
+      await tester.tap(find.byKey(const Key('preflight_recheck')));
+      await tester.pump();
+      await tester.pump(PreflightScreen.recheckMinimum);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Volume is low'), findsNothing);
+      expect(
+        find.text('No change yet'),
+        findsNothing,
+        reason: 'a row disappearing is its own feedback; do not narrate it',
+      );
+    });
+
+    testWidgets('a second press during the check is refused', (tester) async {
+      // A control that can be pressed during its own answer invites the rider
+      // to press again and see nothing, which is the original complaint.
+      final client = FakeRideServiceClient()..alarmVolumeValue = 0.05;
+      await pumpPreflight(tester, client: client);
+
+      await tester.tap(find.byKey(const Key('preflight_recheck')));
+      await tester.pump();
+      expect(find.text('Checking…'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const Key('preflight_recheck')),
+          matching: find.byType(Pressable),
+        ),
+        findsNothing,
+        reason: 'a disabled control must not scale down as though it acted',
+      );
+
+      await tester.pump(PreflightScreen.recheckMinimum);
+      await tester.pumpAndSettle();
+      await tester.pump(PreflightScreen.recheckSettle);
+      await tester.pumpAndSettle();
+    });
+  });
+
   testWidgets('the promise never invents an origin it does not have', (
     tester,
   ) async {
@@ -384,4 +508,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('go'), findsOneWidget, reason: 'back where they started');
   });
+}
+
+/// Earphones always in, answering instantly.
+///
+/// The REAL gateway cannot be used here: `AudioSession.instance` never resolves
+/// under the widget-test binding, and unlike the getDevices call inside it there
+/// is no timeout on that await. That hang is what these tests found, and it is
+/// now bounded in the flow itself.
+class _EarphonesIn implements AudioOutputGateway {
+  const _EarphonesIn();
+
+  @override
+  Future<bool> earphonesConnected() async => true;
 }
