@@ -140,10 +140,58 @@ with no recorded audio. The station announcements in
 
 ---
 
+## Platform chrome
+
+### 10. The Android window is LIGHT on a dark-only app
+
+Opened 11 Aug 2026 from a mobile-web checklist the owner shared. Most of that
+list is CSS-only, but the status-bar row translates and it found this.
+
+`android/app/src/main/res/values/styles.xml` still carries Flutter's untouched
+defaults:
+
+```xml
+<style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+<style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
+```
+
+and `drawable/launch_background.xml` is `@android:color/white`.
+
+There IS a correct `values-night` variant. It does not help, because **this app
+has no light theme**: `ThemeData(brightness: Brightness.dark)` always, ground
+`0xFF0F1722`. So a rider whose PHONE is in light mode gets a white launch window
+and a white window behind Flutter, then a near-black app snaps in. A white flash
+on every cold start, for every light-mode Android user.
+
+Worth taking seriously by precedent: a white screen on iOS on 10 Aug would have
+reached beta testers as "the app doesn't open".
+
+Also nothing anywhere sets `SystemUiOverlayStyle`. The app has no AppBar, so
+nothing tells the platform the status bar icons must be light. iOS looks right;
+Android with a light window theme is where it bites.
+
+FIX, about half an hour, no risk:
+- point BOTH day and night `styles.xml` at a dark parent
+- set `launch_background` to the ground colour, not white
+- set `SystemUiOverlayStyle.light` once at app start
+
+Device needed to judge, and a light-mode phone specifically.
+
+### 11. One `TextButton` still takes Material's ripple
+
+`onboarding_screen.dart:309`, the "Not now" skip. Every other control in the app
+goes through `Pressable`, which deliberately refuses the InkWell ripple. Cosmetic
+and small, but it is the only surface in the app that flashes on tap.
+
+---
+
 ## What is actually left, after 11 Aug
 
 - **7**, `TypeScale` tracking. Needs the 3T and an eye, deliberately not done at 01:00.
 - **9**, the Hindi and Marathi register. Owner supplies the wording.
+- **10**, the light Android window on a dark-only app. TOMORROW (12 Aug), mine.
+  Needs a LIGHT-MODE Android phone to judge, which is a setting on the 3T.
+- **11**, the one rippling `TextButton`. Small, mine.
 
 Everything else on this list was closed on 11 Aug in `d445fa9`, `3dc475d`,
 `63580d5` and the white-CTA commit.
