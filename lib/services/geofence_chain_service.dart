@@ -55,6 +55,7 @@ class GeofenceChainService {
     this.onAlightingAt,
     this.onAutoOff,
     this.onIosToneCommand,
+    this.onIosVibrate,
     this.sarvamGreeting = false,
     this.sarvamClips = false,
     Analytics? analytics,
@@ -148,6 +149,9 @@ class GeofenceChainService {
   /// service -> main -> media_ack hop the session seizure uses. See
   /// WakeAlertOutput.onIosToneCommand for why the tone left audioplayers.
   final void Function(String command, double volume)? onIosToneCommand;
+
+  /// iOS Pocket Pulse vibration bench. See PulseOutput.buzz.
+  final void Function()? onIosVibrate;
 
   Journey? _journey;
 
@@ -382,6 +386,7 @@ class GeofenceChainService {
     _pulseOutput = PulseOutput(
       log: _log,
       interruptionFilter: _selfInterruption,
+      onIosVibrate: onIosVibrate,
     );
 
     // The interval crosses the isolate boundary through the STORE, the same
@@ -397,7 +402,17 @@ class GeofenceChainService {
     // A log that claims an output it cannot produce sends the next diagnosis
     // looking for a broken vibrator instead of a dead control, which is the same
     // lesson as the 22 Jul farewell that read as an auto-off.
-    _pulseVibrate = pulseVibrate && Platform.isAndroid;
+    // STILL PLATFORM-GATED, and the 10 Aug rule is unchanged: this flag is what
+    // the ride log CLAIMS, so it may never be true where no vibration is even
+    // attempted. What changed on 11 Aug is that iOS now has a path to attempt
+    // one (the kSystemSoundID_Vibrate bench), so the condition is "Android, or
+    // iOS with the native hook wired" rather than "Android".
+    //
+    // It is still a claim about a REQUEST, never about a felt buzz. Whether iOS
+    // honours the request from the background is the entire question the bench
+    // exists to answer, and PulseOutput.buzz logs each attempt separately so
+    // the log can be read either way.
+    _pulseVibrate = pulseVibrate && (Platform.isAndroid || onIosVibrate != null);
     _pocketPulse = PocketPulse(
       intervalS: pulseIntervalS,
       startedAt: DateTime.now(),

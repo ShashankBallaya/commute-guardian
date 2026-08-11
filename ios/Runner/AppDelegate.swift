@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 import CallKit
 import Flutter
 import MediaPlayer
@@ -102,6 +103,23 @@ import flutter_foreground_task
         result(nil)
       case "getAlarmVolume":
         result(self?.alarmVolume())
+      case "vibrate":
+        // THE BENCH, 11 Aug 2026. CLAUDE.md locked "haptics are Android-only"
+        // on the correct premise that iOS forbids BACKGROUND haptics, and both
+        // haptics APIs confirm it: CHHapticEngine stops when the app leaves the
+        // foreground, and UIFeedbackGenerator is foreground-only by design.
+        // There is no entitlement to ask Apple for.
+        //
+        // kSystemSoundID_Vibrate is the one public call that has ever been
+        // REPORTED to fire from a backgrounded app, and the reports are
+        // version-dependent enough that reasoning about it is worthless. This
+        // exists so the owner's phone can answer instead. It is the oldest
+        // vibration API on the platform, predating the Taptic Engine, and it
+        // ignores the intensity controls the newer ones respect.
+        //
+        // If the bench says no, delete this and the locked decision stands.
+        AudioServicesPlaySystemSound(kSystemSoundID_Vibrate)
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }

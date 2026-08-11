@@ -348,6 +348,8 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
           windDownEndsAt: endsAt,
           windDownWindow: window,
         );
+      case VibrateCommanded():
+        unawaited(ref.read(rideServiceClientProvider).sendNativeVibrate());
       case ToneCommanded(:final command, :final volume):
         unawaited(
           ref.read(rideServiceClientProvider).sendNativeTone(command, volume),

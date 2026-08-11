@@ -344,6 +344,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       case WakeLadderChanged():
       case WindDownChanged():
       case ToneCommanded():
+      case VibrateCommanded():
       case RideProgressed():
       case DestinationReached():
       case AlightingAt():

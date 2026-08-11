@@ -308,6 +308,9 @@ class GeofenceTaskHandler extends TaskHandler {
         FlutterForegroundTask.saveData(key: wakeClimbingKey, value: climbing);
         _updateNotificationButtons();
       },
+      onIosVibrate: () => FlutterForegroundTask.sendDataToMain({
+        'vibrate': true,
+      }),
       onIosToneCommand: (command, volume) {
         FlutterForegroundTask.sendDataToMain({
           'toneCommand': command,

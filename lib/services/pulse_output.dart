@@ -39,7 +39,12 @@ class PulseOutput {
     required this.log,
     required SelfAudioInterruptionFilter interruptionFilter,
     this.now = DateTime.now,
+    this.onIosVibrate,
   }) : _interruption = interruptionFilter;
+
+  /// Asks the main isolate to fire one native vibration. iOS bench only; null
+  /// everywhere else, including every test and the whole of Android.
+  final void Function()? onIosVibrate;
 
   final void Function(String message) log;
   final SelfAudioInterruptionFilter _interruption;
@@ -109,11 +114,21 @@ class PulseOutput {
   /// two it just felt. One short tap says "still here"; the long insistent
   /// pattern says "get up".
   Future<void> buzz() async {
-    if (!Platform.isAndroid) return;
-    try {
-      await Vibration.vibrate(duration: 100);
-    } catch (error) {
-      log('PULSE vibration failed: $error');
+    if (Platform.isAndroid) {
+      try {
+        await Vibration.vibrate(duration: 100);
+      } catch (error) {
+        log('PULSE vibration failed: $error');
+      }
+      return;
     }
+    // iOS BENCH, 11 Aug 2026. Not a feature yet: this exists so the owner's
+    // phone can answer whether kSystemSoundID_Vibrate fires from a BACKGROUNDED
+    // app, which reports disagree about and which decides whether Pocket Pulse
+    // can ever have a silent channel on iPhone. See AppDelegate's "vibrate".
+    final vibrate = onIosVibrate;
+    if (vibrate == null) return;
+    vibrate();
+    log('PULSE vibrate requested (iOS bench).');
   }
 }

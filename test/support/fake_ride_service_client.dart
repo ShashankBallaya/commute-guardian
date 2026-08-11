@@ -79,6 +79,13 @@ class FakeRideServiceClient implements RideServiceClient {
   @override
   Future<double?> alarmVolume() async => alarmVolumeValue;
 
+  /// Native vibrations asked for. Recorded rather than sent, like every other
+  /// command here.
+  int vibrateCount = 0;
+
+  @override
+  Future<void> sendNativeVibrate() async => vibrateCount++;
+
   @override
   Future<PersistedRide> readPersistedRide() async => PersistedRide(
     originId: originId,

@@ -55,6 +55,13 @@ class WindDownChanged extends ServiceEvent {
   final Duration window;
 }
 
+/// The service asked for one short vibration. iOS ONLY, and a BENCH: Android
+/// buzzes inside the service isolate with the vibration package and needs no
+/// hop at all. See AppDelegate's "vibrate" case for what is being tested.
+class VibrateCommanded extends ServiceEvent {
+  const VibrateCommanded();
+}
+
 /// iOS only: play or stop the ladder tone natively. audioplayers' loop dies
 /// under the seized session, so AppDelegate owns the tone there.
 class ToneCommanded extends ServiceEvent {
@@ -252,6 +259,10 @@ List<ServiceEvent> parseServiceData(Object data) {
         (data['toneVolume'] as num?)?.toDouble() ?? 1.0,
       ),
     );
+  }
+
+  if (data['vibrate'] == true) {
+    events.add(const VibrateCommanded());
   }
 
   if (data['destinationReached'] == true) {
@@ -465,6 +476,19 @@ class RideServiceClient {
       return value.clamp(0.0, 1.0);
     } catch (_) {
       return null;
+    }
+  }
+
+  /// One short system vibration, iOS only, and it is a BENCH not a feature yet.
+  ///
+  /// Rides the same service-to-main-to-native hop the ladder tone uses, because
+  /// the service isolate cannot reach a channel registered on the main engine
+  /// (learned the hard way earlier today with the volume probe).
+  Future<void> sendNativeVibrate() async {
+    try {
+      await _mediaAckChannel.invokeMethod<void>('vibrate');
+    } catch (error) {
+      _emit(ServiceLogged('Native vibrate failed: $error'));
     }
   }
 
