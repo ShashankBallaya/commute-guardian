@@ -251,13 +251,19 @@ class RideHealth {
       return [
         RideHealthNote('reached ${pin.id}, one stop the wrong way'),
         // It does NOT ask a question. The handover drafted this with
-        // notification actions ("Keep Travel Mode running?"), and the app has
-        // no notification buttons to answer with (the 30 Jul swipe bench found
-        // that every acknowledgement dies with the UI). It also does not need
-        // them: nothing is going to be turned off either way, so the honest
-        // sentence is the one that says what happened, what to do, and that the
-        // ride is still being watched. A rider who rode one stop back the other
-        // way is picked up again by the chain when they come through the origin.
+        // notification actions ("Keep Travel Mode running?"), and there is
+        // nowhere to answer on the platform that matters least here: the
+        // notification buttons live in the Android foreground task
+        // (`geofence_task_handler.dart`, added after the 30 Jul swipe bench
+        // found every acknowledgement dying with the UI), so iOS has none at
+        // all and a question asked there could not be answered.
+        //
+        // It also does not NEED them, which is the stronger reason and the one
+        // that survives if iOS ever grows the buttons: nothing is going to be
+        // turned off either way, so the honest sentence is the one that says
+        // what happened, what to do, and that the ride is still being watched.
+        // A rider who rode one stop back the other way is picked up again by
+        // the chain when they come through the origin.
         RideHealthSpeak(_copy.wrongDirection(destination)),
       ];
     }
