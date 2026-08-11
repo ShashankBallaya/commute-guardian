@@ -305,6 +305,9 @@ class GeofenceChainService {
     // mid-ride calls start() again, and a fresh clock would hand a forgotten
     // ride another four hours, every time it was recreated.
     DateTime? rideStartedAt,
+    // Measured by the UI at Start and carried through the store. A LOG LINE,
+    // never a decision: nothing in the ride reads it.
+    double? alarmVolume,
   }) async {
     _logFile = await _createLogFile();
 
@@ -324,6 +327,20 @@ class GeofenceChainService {
       'Permission state at start: locationAlways=$locationAlways, '
       'notifications=$notifications, '
       'ignoringBatteryOptimizations=$ignoringBatteryOpt',
+    );
+    // THE INSTRUMENT THE 11 AUG SILENT ALARM DID NOT HAVE. That ride log showed
+    // the ladder go live, seize the session exclusively, and climb all three
+    // rungs, while the owner heard nothing. Every layer reported success and
+    // nothing recorded the one number that decides whether success is audible.
+    //
+    // Handed in rather than read here, because the channel that answers is
+    // registered on the main engine and this isolate has its own. Negative or
+    // absent means the platform would not say. Android reads STREAM_ALARM and
+    // iOS reads outputVolume: see RideServiceClient.alarmVolume for why those
+    // are different questions.
+    _log(
+      'Alarm volume at start: '
+      '${alarmVolume == null || alarmVolume < 0 ? 'unavailable' : '${(alarmVolume * 100).round()}%'}',
     );
 
     final repo = await StationRepository.load();

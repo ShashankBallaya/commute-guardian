@@ -440,6 +440,34 @@ class RideServiceClient {
     }
   }
 
+  /// How loud the wake alarm will actually be, 0.0 to 1.0, or null when the
+  /// platform will not say.
+  ///
+  /// FAILS OPEN, like every other pre-flight probe: null shows the rider
+  /// nothing rather than a warning we cannot stand behind. A false alarm before
+  /// every ride teaches them to tap past Screen 3 on the ride where it mattered.
+  ///
+  /// THE TWO PLATFORMS MEASURE DIFFERENT THINGS, deliberately. Android reads
+  /// STREAM_ALARM, because the tone is played with alarm usage and the rider's
+  /// media slider cannot touch it. iOS has no alarm stream, so it reads
+  /// outputVolume, which IS what the ladder gets there. Flattening them into
+  /// one abstract "volume" would mean reporting a number that is wrong on one
+  /// of the two platforms.
+  ///
+  /// Lives here rather than on [AudioOutputGateway] because it needs the native
+  /// channel, and this is the one file allowed to hold it.
+  Future<double?> alarmVolume() async {
+    try {
+      final value = await _mediaAckChannel
+          .invokeMethod<double>('getAlarmVolume')
+          .timeout(const Duration(seconds: 2));
+      if (value == null || value.isNaN || value < 0) return null;
+      return value.clamp(0.0, 1.0);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Drives the native ladder tone, and carries back what the audio session
   /// did about it.
   Future<void> sendNativeTone(String command, double volume) async {
@@ -655,6 +683,14 @@ class RideServiceClient {
       value: shareAnonymousUsage,
     );
     await FlutterForegroundTask.saveData(key: languageKey, value: language.tag);
+    // Measured HERE and not in the service, which cannot reach the channel that
+    // answers. -1 means the platform would not say, because the store holds
+    // primitives and a null would be indistinguishable from an absent key on a
+    // service the OS recreated mid-ride.
+    await FlutterForegroundTask.saveData(
+      key: alarmVolumeKey,
+      value: await alarmVolume() ?? -1.0,
+    );
 
     final result = await FlutterForegroundTask.startService(
       serviceId: 1,

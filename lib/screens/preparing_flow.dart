@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/audio_output_gateway.dart';
 import '../services/permissions_gateway.dart';
 import '../state/journey_providers.dart';
+import '../state/ride_providers.dart';
 import 'preparing_screen.dart';
 
 /// Screen 3, wired: everything that has to be true before a rider pockets the
@@ -44,11 +45,13 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow> {
   late _Stage _stage;
   String? _originName;
   bool _earphonesConnected = true;
+  bool _volumeLow = false;
 
   @override
   void initState() {
     super.initState();
     _earphonesConnected = widget.report.earphonesConnected;
+    _volumeLow = widget.report.volumeLow;
     if (widget.report.hasFix) {
       _originName = widget.report.originName;
       _stage = _afterFix();
@@ -100,15 +103,22 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow> {
 
   /// Leaves immediately when nothing is left to say.
   void _settleIfClear() {
-    if (_stage == _Stage.preflight && _earphonesConnected) {
+    if (_stage == _Stage.preflight && _earphonesConnected && !_volumeLow) {
       Navigator.of(context).pop(true);
     }
   }
 
-  Future<void> _recheckEarphones() async {
+  /// Both audio probes, because Recheck is one button and the rider may have
+  /// fixed either. Turning the volume up and being told only about earphones
+  /// would read as the button not working.
+  Future<void> _recheckAudio() async {
     final connected = await widget.audio.earphonesConnected();
+    final volume = await ref.read(rideServiceClientProvider).alarmVolume();
     if (!mounted) return;
-    setState(() => _earphonesConnected = connected);
+    setState(() {
+      _earphonesConnected = connected;
+      _volumeLow = volume != null && volume < AudioOutputGateway.lowVolume;
+    });
     _settleIfClear();
   }
 
@@ -169,10 +179,19 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow> {
               detail: 'The alarm will play out loud',
               status: PrepStatus.active,
             ),
+          if (_volumeLow)
+            const PrepStep(
+              label: 'Volume is low',
+              // Says what to do, and does not name a number. The rider cannot
+              // see a percentage on their own slider, so a threshold in the
+              // copy would be advice they cannot act on.
+              detail: 'Turn it up, or the alarm may not wake you',
+              status: PrepStatus.active,
+            ),
           PrepStep(label: 'Watching for $destination', status: PrepStatus.done),
         ],
         onStart: () => Navigator.of(context).pop(true),
-        onRecheck: () => unawaited(_recheckEarphones()),
+        onRecheck: () => unawaited(_recheckAudio()),
       ),
     };
   }
@@ -185,6 +204,7 @@ class PreparingReport {
     required this.originName,
     required this.backgroundLocationGranted,
     required this.earphonesConnected,
+    this.alarmVolume,
   });
 
   final bool hasFix;
@@ -192,9 +212,28 @@ class PreparingReport {
   final bool backgroundLocationGranted;
   final bool earphonesConnected;
 
+  /// How loud the wake alarm will be, 0.0 to 1.0, or null when the platform
+  /// would not say. Null is NOT a warning: see [AudioOutputGateway.alarmVolume].
+  final double? alarmVolume;
+
+  /// The rider's volume is low enough that the alarm may not wake them.
+  ///
+  /// ADDED 11 Aug 2026, and it was specified from the start and never built.
+  /// This file's own doc listed "(earphones or volume)" as the two audio
+  /// checks, and the debug screen has carried a "Volume is low" chip since
+  /// Screen 3 was drawn, wired to nothing, because nothing in the app had ever
+  /// read the system volume. So a rider with the volume down started a ride,
+  /// saw no warning, and slept through an alarm that played into silence while
+  /// every log line reported success.
+  bool get volumeLow {
+    final volume = alarmVolume;
+    return volume != null && volume < AudioOutputGateway.lowVolume;
+  }
+
   /// Nothing to show. The ride starts and Screen 3 never appears, which is the
   /// normal case.
-  bool get clear => hasFix && backgroundLocationGranted && earphonesConnected;
+  bool get clear =>
+      hasFix && backgroundLocationGranted && earphonesConnected && !volumeLow;
 }
 
 /// Runs the probes that decide whether Screen 3 is needed at all.
@@ -212,11 +251,13 @@ class PreparingGate {
     final hasFix = fix.state == GpsState.located;
     final granted = await permissions.hasAlways();
     final earphones = await audio.earphonesConnected();
+    final volume = await ref.read(rideServiceClientProvider).alarmVolume();
     return PreparingReport(
       hasFix: hasFix,
       originName: hasFix ? fix.stationName : null,
       backgroundLocationGranted: granted,
       earphonesConnected: earphones,
+      alarmVolume: volume,
     );
   }
 }

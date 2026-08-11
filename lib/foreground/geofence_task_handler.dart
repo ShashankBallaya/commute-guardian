@@ -90,6 +90,20 @@ const pulseVibrateKey = 'pulse_vibrate';
 /// before the swipe carries on in Marathi after it.
 const languageKey = 'announcement_language';
 
+/// How loud the wake alarm will be, 0.0 to 1.0, measured by the UI at Start.
+///
+/// CROSSES THROUGH THE STORE BECAUSE IT HAS TO. The number comes from a native
+/// method channel registered on the MAIN Flutter engine, and this isolate runs
+/// its own engine, so the service cannot ask for it: the call would return null
+/// on every real ride while passing every desk test.
+///
+/// It is a LOG LINE, not a decision. Nothing in the ride reads it. It exists
+/// because on 11 Aug 2026 a wake ladder went live, seized the audio session
+/// exclusively, climbed all three rungs, and the owner heard nothing, and no
+/// log anywhere recorded the one number that decides whether success is
+/// audible. Absent means the platform would not say.
+const alarmVolumeKey = 'alarm_volume_at_start';
+
 /// The rider's analytics opt-out, `AppSettings.shareAnonymousUsage`.
 ///
 /// Crosses the isolate boundary through the STORE for the same reason the
@@ -363,6 +377,9 @@ class GeofenceTaskHandler extends TaskHandler {
       // can only ever cost the rider their language choice, never the ride.
       language: AppLanguage.fromTag(
         await FlutterForegroundTask.getData<String>(key: languageKey),
+      ),
+      alarmVolume: await FlutterForegroundTask.getData<double>(
+        key: alarmVolumeKey,
       ),
     );
   }

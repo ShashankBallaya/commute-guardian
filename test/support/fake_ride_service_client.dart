@@ -71,6 +71,14 @@ class FakeRideServiceClient implements RideServiceClient {
   @override
   Future<bool> isRunning() async => running;
 
+  /// What the volume probe answers. NULL BY DEFAULT, matching a platform that
+  /// will not say, so no existing test starts seeing a volume warning it never
+  /// asked about. A test that wants the warning sets a number.
+  double? alarmVolumeValue;
+
+  @override
+  Future<double?> alarmVolume() async => alarmVolumeValue;
+
   @override
   Future<PersistedRide> readPersistedRide() async => PersistedRide(
     originId: originId,

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/screens/preparing_flow.dart';
+import 'package:commute_guardian/services/audio_output_gateway.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:fl_location/fl_location.dart' as fl;
 import 'package:flutter/material.dart';
@@ -111,6 +112,48 @@ void main() {
     expect(noEarphones.clear, isFalse);
   });
 
+  // THE VOLUME CHECK, built 11 Aug 2026 after a real silent alarm. The ladder
+  // went live, seized the session exclusively, climbed all three rungs, and the
+  // owner heard nothing. Nothing in the app had ever read the system volume,
+  // although this file's own doc listed it as one of the two audio checks and
+  // the debug screen has carried a "Volume is low" chip wired to nothing.
+  group('the volume warning', () {
+    PreparingReport withVolume(double? volume) => PreparingReport(
+      hasFix: true,
+      originName: 'Shahad',
+      backgroundLocationGranted: true,
+      earphonesConnected: true,
+      alarmVolume: volume,
+    );
+
+    test('a low volume stops the ride starting silently', () {
+      expect(withVolume(0.0).volumeLow, isTrue);
+      expect(withVolume(0.1).volumeLow, isTrue);
+      expect(withVolume(0.0).clear, isFalse);
+    });
+
+    test('an adequate volume says nothing at all', () {
+      expect(withVolume(0.5).volumeLow, isFalse);
+      expect(withVolume(1.0).volumeLow, isFalse);
+      expect(withVolume(0.5).clear, isTrue);
+    });
+
+    test('the boundary is a floor, not a ceiling', () {
+      // Exactly at the threshold is fine. Only BELOW it warns, so the constant
+      // reads the way its name does.
+      expect(withVolume(AudioOutputGateway.lowVolume).volumeLow, isFalse);
+      expect(withVolume(AudioOutputGateway.lowVolume - 0.01).volumeLow, isTrue);
+    });
+
+    test('AN UNREADABLE VOLUME IS NOT A WARNING', () {
+      // Fails open, like every other probe on this screen. A warning we cannot
+      // stand behind, shown before every ride, teaches the rider to tap past
+      // the screen on the ride where it mattered.
+      expect(withVolume(null).volumeLow, isFalse);
+      expect(withVolume(null).clear, isTrue);
+    });
+  });
+
   testWidgets('with no fix it waits, then leaves on its own once found', (
     tester,
   ) async {
@@ -129,6 +172,45 @@ void main() {
     );
     expect(outcome, isTrue);
   });
+
+  testWidgets(
+    'a low volume DRAWS the warning that had never been wired to anything',
+    (tester) async {
+      // The chip existed on the debug screen from the day Screen 3 was drawn
+      // and nothing could ever produce it, because nothing read the volume.
+      // This is the test that says the wire is real, not the constant.
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            stationRepositoryProvider.overrideWith(
+              (ref) async => StationRepository.parse(stationsJson),
+            ),
+            fixAcquirerProvider.overrideWithValue(
+              () async => fixAt(shahadLat, shahadLng),
+            ),
+          ],
+          child: const MaterialApp(
+            home: PreparingFlow(
+              destinationName: 'Kalyan',
+              report: PreparingReport(
+                hasFix: true,
+                originName: 'Shahad',
+                backgroundLocationGranted: true,
+                // Earphones IN, so the only thing wrong is the volume and the
+                // screen cannot be passing for the other reason.
+                earphonesConnected: true,
+                alarmVolume: 0.05,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Volume is low'), findsOneWidget);
+      expect(find.text("Your earphones aren't connected"), findsNothing);
+    },
+  );
 
   testWidgets('the promise never invents an origin it does not have', (
     tester,

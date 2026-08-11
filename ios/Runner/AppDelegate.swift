@@ -100,6 +100,8 @@ import flutter_foreground_task
       case "stopTone":
         self?.stopTone()
         result(nil)
+      case "getAlarmVolume":
+        result(self?.alarmVolume())
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -134,6 +136,29 @@ import flutter_foreground_task
   /// naming which session mode took, and nil when there was nothing to do. A
   /// volume change on a healthy player is silent in the log on purpose: this
   /// fires every ~5 s tick and would otherwise bury the ride.
+  /// How loud the wake alarm will actually be, 0.0 to 1.0, or nil when iOS
+  /// will not say.
+  ///
+  /// iOS HAS NO SEPARATE ALARM STREAM. Android's tone rides STREAM_ALARM and is
+  /// immune to the media slider; here the ladder plays on the playback
+  /// category, so `outputVolume` IS the volume the alarm gets. That asymmetry
+  /// is why this returns one number and the Dart side does not try to reconcile
+  /// the two platforms.
+  ///
+  /// The Ring/Silent switch is a different control again and is NOT readable
+  /// through any public API. Playback ignores it, which is why the ladder is
+  /// built on that category, so a low reading here is the failure worth
+  /// warning about and the switch is not.
+  ///
+  /// Read from the shared instance without activating it. Activating a session
+  /// to measure it would interrupt whatever the rider is listening to, before a
+  /// ride has even started, to answer a question that is only a warning.
+  private func alarmVolume() -> NSNumber? {
+    let volume = AVAudioSession.sharedInstance().outputVolume
+    guard volume.isFinite, volume >= 0 else { return nil }
+    return NSNumber(value: volume)
+  }
+
   private func startTone(volume: Float) -> String? {
     // Re-assert Now Playing ownership on every tick. flutter_tts activates the
     // shared session for each utterance (check-in, each rung), which can hand

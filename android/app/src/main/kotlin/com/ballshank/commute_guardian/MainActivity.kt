@@ -59,10 +59,37 @@ class MainActivity : FlutterActivity() {
                     stopSession()
                     result.success(null)
                 }
+                "getAlarmVolume" -> result.success(alarmVolume())
                 else -> result.notImplemented()
             }
         }
         channel = ch
+    }
+
+    /**
+     * How loud the wake alarm will actually be, 0.0 to 1.0, or null when the
+     * platform will not say.
+     *
+     * STREAM_ALARM, not STREAM_MUSIC, and the difference is the whole point.
+     * The ladder tone is played with AndroidUsageType.alarm (see
+     * wake_alert_output.dart), so it rides the alarm stream and the rider's
+     * media slider cannot touch it. Reading the media volume here would report
+     * a number that has nothing to do with whether the alarm can be heard, and
+     * would warn or reassure for the wrong reason.
+     *
+     * Null rather than a guess on failure: the Dart gateway fails open, so an
+     * unreadable volume shows the rider nothing rather than a warning we
+     * cannot stand behind.
+     */
+    private fun alarmVolume(): Double? {
+        return try {
+            val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+            if (max <= 0) return null
+            audio.getStreamVolume(AudioManager.STREAM_ALARM).toDouble() / max
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun startSession() {
