@@ -51,6 +51,20 @@ abstract final class Palette {
   /// wake toggle. Not the live-dot glow, which is locked at 40%.
   static const greenSoft = Color(0x333AB16C);
 
+  /// CRIMSON MEANS END A RIDE. Nothing else may use it.
+  ///
+  /// NARROWED 11 Aug 2026 by the owner, from "start or end a journey". The old
+  /// rule gave one colour two opposite meanings, which is not a rule at all: a
+  /// rider learning that crimson is where the ride stops had to unlearn it on
+  /// Screen 1, where crimson started one. The pairing is now unambiguous.
+  ///
+  ///   crimson = END        white ([accent]) = START, and every step toward one
+  ///
+  /// Every use in the app obeys it: Screen 5's "End now", Screen 4's
+  /// hold-to-end, and the debug screen's End button. Screen 1's
+  /// "Start your first journey" was the single exception and became white the
+  /// same day (punchlist item 5).
+  ///
   /// Figma gives the CTA as 83111A at 60% over [ground]. This is that composite,
   /// kept opaque so the fill cannot shift when content scrolls beneath it.
   static const crimson = Color(0xFF55131D);
@@ -67,9 +81,13 @@ abstract final class Palette {
   /// made it quieter than the cards without making it DIFFERENT from them, and
   /// loudness was never the axis that mattered.
   ///
-  /// IT DOES NOT COMPETE WITH THE CRIMSON RULE. Crimson means start or end a
-  /// JOURNEY and nothing else may use it. White means the primary action of the
-  /// screen you are looking at, which on Screen 1 is navigation to the picker.
+  /// IT DOES NOT COMPETE WITH THE CRIMSON RULE, and since 11 Aug 2026 the two
+  /// divide the whole space cleanly: [crimson] means END A RIDE, white means
+  /// START and every step toward one. On Screen 1 that is the picker, which is
+  /// how a ride begins there.
+  ///
+  /// 0xFFFEFEFE, not pure white, because it is [text]: one white in the system,
+  /// used as ink and as the accent fill, so the two can never drift apart.
   static const accent = text;
 
   /// Text on [accent]. The ground rather than a true black: pure black on white

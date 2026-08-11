@@ -58,7 +58,7 @@ DESTINATION" heading beside it. Not examined in code yet. Device needed.
 
 ## Screen 1, Home
 
-### 5. Two treatments for the same action
+### 5. ~~Two treatments for the same action.~~ DONE 11 Aug: both are white, and the crimson rule is narrower
 
 `Start your first journey` (empty state) is **crimson**; `New journey` (list
 state) is **white**. Both open the picker. A rider sees only one at a time, so it
@@ -142,9 +142,20 @@ with no recorded audio. The station announcements in
 
 ## What is actually left, after 11 Aug
 
-- **5**, the two treatments for opening the picker (crimson vs white). Owner's call.
 - **7**, `TypeScale` tracking. Needs the 3T and an eye, deliberately not done at 01:00.
 - **9**, the Hindi and Marathi register. Owner supplies the wording.
 
-Everything else on this list was closed on 11 Aug in `d445fa9`, `3dc475d` and
-`63580d5`.
+Everything else on this list was closed on 11 Aug in `d445fa9`, `3dc475d`,
+`63580d5` and the white-CTA commit.
+
+**The crimson rule was NARROWED by the owner on 11 Aug**, and it is the durable
+part of item 5. It was "crimson means start or end a journey", which gave one
+colour two opposite meanings. It is now:
+
+> **crimson = END A RIDE. white = START, and every step toward one.**
+
+Screen 1's first-run CTA was the app's only violation. Every other crimson use
+(Screen 5's "End now", Screen 4's hold-to-end, the debug End button) already
+obeyed it. Pinned by tests in `home_screen_test.dart`, because the previous
+version of this rule lived only in a doc comment and that did not stop the
+exception shipping.

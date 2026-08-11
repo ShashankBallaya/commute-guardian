@@ -22,7 +22,9 @@ import '../widgets/status_chip.dart';
 /// anything would be stuck on an empty screen forever):
 ///
 ///   1. FIRST RUN, no journey has ever completed. The promise line and one
-///      crimson CTA. Crimson is legitimate here: it starts a journey.
+///      white CTA. WHITE SINCE 11 Aug 2026: it was crimson, on the old rule
+///      that crimson meant start OR end. Crimson now means end a ride and
+///      nothing else, so every control that leads to a ride starting is white.
 ///   2. JOURNEYS BUT NOTHING SAVED. Recent destinations fill the card slots,
 ///      so a non-saver keeps the two-tap start forever.
 ///   3. SAVED ROUTES EXIST. Not built: SavedRoute has no model, no table and
@@ -172,7 +174,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   loading: () => const SizedBox.shrink(),
                   // History is a convenience, never the product. If the database
                   // will not answer, the rider can still start a journey.
-                  error: (_, _) => _NewJourneyButton(onTap: widget.onNew),
+                  error: (_, _) => _PrimaryCta(
+                    buttonKey: const Key('new_journey'),
+                    label: 'New journey',
+                    onTap: widget.onNew,
+                  ),
                   // STILL KEYED TO JOURNEYS COMPLETED, never to routes saved.
                   // A saved route cannot exist without a completed journey
                   // (Screen 5 is the only place one is created), so reading the
@@ -275,8 +281,8 @@ class _FirstRun extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 28),
-        _CrimsonCta(
-          key: const Key('start_first_journey'),
+        _PrimaryCta(
+          buttonKey: const Key('start_first_journey'),
           label: 'Start your first journey',
           onTap: onStart,
         ),
@@ -394,7 +400,11 @@ class _Cards extends StatelessWidget {
           ],
         ],
         const SizedBox(height: 6),
-        _NewJourneyButton(onTap: onNew),
+        _PrimaryCta(
+          buttonKey: const Key('new_journey'),
+          label: 'New journey',
+          onTap: onNew,
+        ),
       ],
     );
   }
@@ -486,15 +496,41 @@ class _DestinationCard extends StatelessWidget {
   }
 }
 
-class _NewJourneyButton extends StatelessWidget {
-  const _NewJourneyButton({required this.onTap});
+/// The primary action of Screen 1, in both of the screen's states.
+///
+/// ONE DEFINITION, closed 11 Aug 2026 (punchlist item 5). There were two:
+/// "New journey" in white and "Start your first journey" in CRIMSON, and a
+/// rider sees only one at a time, so it was never visible as an inconsistency.
+/// It was one anyway. Both open the same picker, and by [Palette]'s own rule
+/// crimson means start or end a JOURNEY, which opening a picker is not.
+///
+/// The white one won because it is the one that is right, not because it is the
+/// newer: white means the primary action of the screen you are looking at, and
+/// Screen 3's "Start the ride" has said so since it was built.
+///
+/// Typography follows the white button too, at [TypeScale.bodyLarge] and w600
+/// rather than the crimson one's heading and w700. On the empty state there is
+/// nothing to compete with, so the louder setting was free; making it the same
+/// button in both states is worth more than the half-step of emphasis.
+class _PrimaryCta extends StatelessWidget {
+  const _PrimaryCta({
+    required this.buttonKey,
+    required this.label,
+    required this.onTap,
+  });
 
+  /// On the [Pressable], not on this widget, and that is load bearing: the
+  /// press-feedback test looks for a Pressable ANCESTOR of the key, which is
+  /// how it proves the whole surface responds rather than some inner box.
+  /// Same convention as [_HeaderIcon].
+  final Key buttonKey;
+  final String label;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Pressable(
-      key: const Key('new_journey'),
+      key: buttonKey,
       onTap: onTap,
       // WHITE, matching Screen 3's "Start the ride", because this is the
       // primary action of this screen and it was drawn as a route card.
@@ -523,42 +559,11 @@ class _NewJourneyButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: _tapPadding),
         child: Center(
           child: Text(
-            'New journey',
+            label,
             style: const TextStyle(
               fontSize: TypeScale.bodyLarge,
               fontWeight: FontWeight.w600,
               color: Palette.onAccent,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CrimsonCta extends StatelessWidget {
-  const _CrimsonCta({super.key, required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Pressable(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Palette.crimson,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: _tapPadding),
-        child: Center(
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontSize: TypeScale.heading,
-              fontWeight: FontWeight.w700,
-              color: Palette.text,
             ),
           ),
         ),

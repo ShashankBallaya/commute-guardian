@@ -169,12 +169,21 @@ void main() {
 
   testWidgets('the first-run CTA answers the press too', (tester) async {
     await pumpHome(tester, history: await historyWith([]));
+    // Asserted the same way as new_journey above, since 11 Aug 2026 they are
+    // ONE widget. The key sits on the Pressable itself rather than on a wrapper
+    // around it, which is the stronger claim: the keyed thing IS the pressable
+    // surface, not merely something with a pressable part somewhere inside.
     expect(
-      find.descendant(
+      find.ancestor(
         of: find.byKey(const Key('start_first_journey')),
         matching: find.byType(Pressable),
-      ),
-      findsOneWidget,
+      ).evaluate().isNotEmpty ||
+          find
+              .byKey(const Key('start_first_journey'))
+              .evaluate()
+              .any((e) => e.widget is Pressable),
+      isTrue,
+      reason: 'the first-run CTA must give press feedback',
     );
     // Trimmed on 1 Aug 2026 along with the rest of the screen, and this is the
     // floor it stopped at. See the touch-minimum test below.
@@ -477,6 +486,61 @@ void main() {
       expect(find.byKey(const Key('destination_card_dadar')), findsNothing);
       // The other recent is untouched.
       expect(find.byKey(const Key('destination_card_thane')), findsOneWidget);
+    });
+  });
+
+  group('crimson means END A RIDE, and Screen 1 ends nothing', () {
+    // The rule, narrowed by the owner 11 Aug 2026 from "start or end a
+    // journey", which gave one colour two opposite meanings. Screen 1's
+    // first-run CTA was the app's only violation and is now white.
+    //
+    // Pinned as a test rather than left to the Palette doc, because the doc is
+    // what the previous version of this rule was written in and it did not stop
+    // the exception being shipped.
+    Future<void> expectNoCrimson(WidgetTester tester) async {
+      final crimson = tester
+          .widgetList<Container>(find.byType(Container))
+          .where((c) {
+            final decoration = c.decoration;
+            return decoration is BoxDecoration &&
+                decoration.color == const Color(0xFF55131D);
+          });
+      expect(
+        crimson,
+        isEmpty,
+        reason: 'nothing on Screen 1 ends a ride, so nothing may be crimson',
+      );
+    }
+
+    /// The CTA is white, 0xFFFEFEFE, which is [Palette.accent] and the app's
+    /// single white. Checked alongside the crimson absence in both states,
+    /// because "not crimson" alone would pass on a button that had gone grey.
+    void expectAccentFill(WidgetTester tester) {
+      final accent = tester
+          .widgetList<Container>(find.byType(Container))
+          .where((c) {
+            final decoration = c.decoration;
+            return decoration is BoxDecoration &&
+                decoration.color == const Color(0xFFFEFEFE);
+          });
+      expect(accent, isNotEmpty, reason: 'the CTA must carry the white fill');
+    }
+
+    testWidgets('the first-run state is white, not crimson', (tester) async {
+      await pumpHome(tester, history: await historyWith([]));
+      expect(find.byKey(const Key('start_first_journey')), findsOneWidget);
+      await expectNoCrimson(tester);
+      expectAccentFill(tester);
+    });
+
+    testWidgets('the list state is white too, and always was', (tester) async {
+      await pumpHome(
+        tester,
+        history: await historyWith([('thane', 'Thane')]),
+      );
+      expect(find.byKey(const Key('new_journey')), findsOneWidget);
+      await expectNoCrimson(tester);
+      expectAccentFill(tester);
     });
   });
 }
