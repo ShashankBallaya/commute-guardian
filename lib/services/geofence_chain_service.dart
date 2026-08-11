@@ -311,8 +311,18 @@ class GeofenceChainService {
     final locationAlways = await Permission.locationAlways.status;
     final ignoringBatteryOpt =
         await FlutterForegroundTask.isIgnoringBatteryOptimizations;
+    // Notifications carry the ride's only UI-independent controls, and on iOS
+    // they are the only acknowledgement route that survives the app being
+    // swiped away or the earphone tap going to the music app. A rider who
+    // answered "Not now" in onboarding therefore rides without an ack the
+    // moment their screen is off, and nothing anywhere recorded that until
+    // now. Recorded rather than acted on: a ride is the wrong moment to argue
+    // with someone about a permission, and a log line is what tells us how
+    // often it actually happens across the beta.
+    final notifications = await Permission.notification.status;
     _log(
       'Permission state at start: locationAlways=$locationAlways, '
+      'notifications=$notifications, '
       'ignoringBatteryOptimizations=$ignoringBatteryOpt',
     );
 

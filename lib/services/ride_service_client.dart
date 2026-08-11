@@ -332,7 +332,32 @@ class RideServiceClient {
         onlyAlertOnce: true,
       ),
       iosNotificationOptions: const IOSNotificationOptions(
-        showNotification: false,
+        // ON since 11 Aug 2026, and it had been off since the day the onboarding
+        // panel started promising "while a journey runs we keep one notification
+        // up. It is how you end a ride or keep tracking a little longer without
+        // unlocking the phone." On iOS that was untrue.
+        //
+        // IT IS NOT MAINLY ABOUT VISIBILITY. The plugin builds real
+        // UNNotificationActions from the same buttons this app already sets
+        // (BackgroundService.swift setNotificationActions, reading
+        // notificationContent.buttons), so turning this on gives iOS the
+        // "I'm awake", "End now" and "Extend 10 min" controls it has never had.
+        // That is an acknowledgement route which does not need the audio session
+        // held exclusively (the 24 Jul finding) and does not die with the UI (the
+        // 30 Jul swipe bench). It is the only ack an iPhone has if the rider's
+        // music is playing and their earphone tap goes to the music app.
+        //
+        // HONEST LIMIT: this is not Android's ongoing notification. iOS has no
+        // such thing. The rider can swipe it away, and it cannot stop a swipe
+        // from the app switcher killing the ride, because iOS terminates the
+        // process (confirmed on device 11 Aug, and in the plugin's
+        // applicationWillTerminate, which is a shutdown hook with a five second
+        // grace). A Live Activity is the real answer and needs a widget
+        // extension target; it is Phase 3 work.
+        showNotification: true,
+        // Stays false. This app already speaks, and the wake ladder owns
+        // escalation. A notification chime on top of the ladder would be a
+        // second, quieter alarm competing with the one designed to wake people.
         playSound: false,
       ),
       foregroundTaskOptions: ForegroundTaskOptions(
