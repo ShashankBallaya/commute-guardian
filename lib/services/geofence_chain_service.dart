@@ -306,6 +306,9 @@ class GeofenceChainService {
     // began in, because every engine renders its sentences from the language
     // it was built with and the clip pack is opened from one directory.
     AppLanguage language = AppLanguage.english,
+    // From the store, read once at Start like the language. See
+    // [_mustAlwaysSpeak] for what "only your stop" is allowed to mean.
+    bool announceEveryStation = true,
     // FROM THE STORE, never DateTime.now() here. A service the OS recreated
     // mid-ride calls start() again, and a fresh clock would hand a forgotten
     // ride another four hours, every time it was recreated.
@@ -387,6 +390,7 @@ class GeofenceChainService {
     _wakeEnabled = true;
     _inRealCall = false;
     _wakeSuspended = false;
+    _announceEveryStation = announceEveryStation;
     _wakeOutput = WakeAlertOutput(
       log: _log,
       onIosToneCommand: onIosToneCommand,
@@ -1207,6 +1211,38 @@ class GeofenceChainService {
     );
   }
 
+  /// Whether every station is spoken, or only the ones the rider must act on.
+  ///
+  /// Read once at Start from the store, like the language, because a ride
+  /// should not change its voice halfway through.
+  bool _announceEveryStation = true;
+
+  /// What "only your stop" is still allowed to say, and every one of these is
+  /// a station the rider has to DO something at.
+  ///
+  /// The row's own copy is the specification: "Off announces only your stop,
+  /// and still wakes you." So:
+  ///
+  ///   - THE DESTINATION, which is the stop.
+  ///   - AN INTERCHANGE, because a rider who misses one is as stranded as a
+  ///     rider who misses their stop, and this switch is about commentary
+  ///     rather than about instructions.
+  ///   - AN OVERSHOOT, which is the safety net for the failure this whole
+  ///     product exists to prevent. It is never optional.
+  ///
+  /// What goes quiet is the running commentary on stations the rider passes
+  /// through, which is the only thing the switch was ever meant to turn off.
+  /// The wake ladder is untouched: it is a separate engine with its own toggle.
+  bool _mustAlwaysSpeak(Announcement announcement) {
+    if (announcement.kind == AnnouncementKind.overshoot) return true;
+    final journey = _journey;
+    if (journey == null) return true;
+    if (announcement.stationId == journey.destinationStationId) return true;
+    return journey.interchanges.any(
+      (interchange) => interchange.stationId == announcement.stationId,
+    );
+  }
+
   /// Whether the rider wants to be woken ON THIS RIDE.
   ///
   /// True unless they say otherwise, and deliberately NOT a setting: it resets
@@ -1656,11 +1692,26 @@ class GeofenceChainService {
         'SPEAK ${announcement.kind.name} ${announcement.stationId}: '
         '${announcement.text}',
       );
-      final clip = _clipForAnnouncement(announcement);
-      if (clip != null) {
-        _enqueueClip(clip, floorText: announcement.text);
+      // THE VOICE IS WITHHELD, NEVER THE EVENT, and that distinction is the
+      // whole of this feature. WakeEscalation reads these same announcements to
+      // know where the train is, WindDown reads them to know the ride arrived,
+      // and RideProgress ratchets on them. Suppressing the ANNOUNCEMENT rather
+      // than the speech would silence the alarm along with the commentary,
+      // which is the exact opposite of what the row promises.
+      //
+      // The SPEAK line stays and a second line records the withholding, the
+      // same shape the audio-interruption path already uses: replay_ride.dart
+      // parses SPEAK lines to reconstruct a ride, and a dropped one would
+      // change how old logs replay.
+      if (!_announceEveryStation && !_mustAlwaysSpeak(announcement)) {
+        _log('SPEAK withheld: announce-every-station is off.');
       } else {
-        unawaited(_speak(announcement.text));
+        final clip = _clipForAnnouncement(announcement);
+        if (clip != null) {
+          _enqueueClip(clip, floorText: announcement.text);
+        } else {
+          unawaited(_speak(announcement.text));
+        }
       }
 
       if (announcement.kind == AnnouncementKind.arrival &&

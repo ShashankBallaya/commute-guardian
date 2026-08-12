@@ -272,7 +272,13 @@ class SettingsScreen extends StatelessWidget {
     children: [
       _SwitchRow(
         label: 'Name every station',
-        detail: 'Off announces only your stop, and still wakes you.',
+        // WIRED 12 Aug 2026, and the copy caught up with it the same day. It
+        // said "only your stop"; the code also keeps INTERCHANGES and the
+        // overshoot, because both are stations the rider has to act at. Saying
+        // only the stop would make the switch sound more drastic than it is.
+        detail:
+            'Off announces only your stop and any train change, '
+            'and still wakes you.',
         value: settings.announceEveryStation,
         onChanged: onAnnounceEveryStation,
         switchKey: const Key('settings_announce_every'),

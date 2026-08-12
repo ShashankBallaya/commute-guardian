@@ -663,6 +663,7 @@ class RideServiceClient {
     // began with it already set. Defaults to OFF so a caller that forgets it
     // sends nothing rather than sending without consent.
     bool shareAnonymousUsage = false,
+    bool announceEveryStation = true,
     // Same rule again: read at START, not only on change. Unlike the pulse
     // interval this one has no mid-ride push at all, on purpose. Every engine
     // renders its sentences from the language it was constructed with and the
@@ -716,6 +717,10 @@ class RideServiceClient {
       value: shareAnonymousUsage,
     );
     await FlutterForegroundTask.saveData(key: languageKey, value: language.tag);
+    await FlutterForegroundTask.saveData(
+      key: announceEveryStationServiceKey,
+      value: announceEveryStation,
+    );
     // Measured HERE and not in the service, which cannot reach the channel that
     // answers. -1 means the platform would not say, because the store holds
     // primitives and a null would be indistinguishable from an absent key on a

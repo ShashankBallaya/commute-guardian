@@ -124,6 +124,7 @@ class FakeRideServiceClient implements RideServiceClient {
     int? pulseIntervalSeconds,
     bool pulseVibrate = true,
     bool shareAnonymousUsage = false,
+    bool announceEveryStation = true,
     AppLanguage language = AppLanguage.english,
   }) async {
     commands.add('startRide:$originStationId->$destinationStationId');

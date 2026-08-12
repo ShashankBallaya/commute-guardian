@@ -90,6 +90,16 @@ const pulseVibrateKey = 'pulse_vibrate';
 /// before the swipe carries on in Marathi after it.
 const languageKey = 'announcement_language';
 
+/// `AppSettings.announceEveryStation`, read once at Start like the language.
+///
+/// WIRED 12 AUG 2026, AND IT NEVER HAD BEEN. The switch was written to settings
+/// and read back into AppSettings and consumed by nothing: the raw key appeared
+/// in exactly one file. Its row promised "Off announces only your stop, and
+/// still wakes you" while every station was announced anyway, which is worse
+/// than the wake toggle deleted on 11 Aug, because that one changed nothing
+/// SILENTLY and this one said a sentence.
+const announceEveryStationServiceKey = 'announce_every_station_ride';
+
 /// How loud the wake alarm will be, 0.0 to 1.0, measured by the UI at Start.
 ///
 /// CROSSES THROUGH THE STORE BECAUSE IT HAS TO. The number comes from a native
@@ -389,6 +399,14 @@ class GeofenceTaskHandler extends TaskHandler {
       language: AppLanguage.fromTag(
         await FlutterForegroundTask.getData<String>(key: languageKey),
       ),
+      // Defaults TRUE for a missing key, which is the safe side: an older store,
+      // or a service the OS recreated mid-ride, costs the rider extra
+      // announcements and never their stop.
+      announceEveryStation:
+          await FlutterForegroundTask.getData<bool>(
+            key: announceEveryStationServiceKey,
+          ) ??
+          true,
       alarmVolume: await FlutterForegroundTask.getData<double>(
         key: alarmVolumeKey,
       ),
