@@ -91,12 +91,19 @@ fixing.)
 
 ## Settings
 
-### 8. ~~The vibration toggle is a dead control on iOS.~~ DONE 11 Aug: hidden, as `!Platform.isIOS`
+### 8. ~~The vibration toggle is a dead control on iOS.~~ DONE 11 Aug, then REVERSED 12 Aug
 
 iOS forbids background haptics, so `PulseOutput.buzz` returns at its first line
 there. The switch should be hidden on iOS rather than offered. Confirmed by a
 10 Aug iPhone ride log that claimed "with vibration" for a buzz that could not
 happen; the log line is fixed, the control is not.
+
+**REVERSED 12 AUG 2026 by `docs/adr/0003`.** The premise was measured and it was
+wrong: an iPhone vibrates 7 times out of 7 from a locked pocket. The switch is
+offered on both platforms again. Hiding it now would leave an iPhone buzzing
+every 45 seconds with nothing in the app that can stop it, which is the same
+fault with the sign reversed: on 11 Aug the switch could not act, and on 12 Aug
+the rider could not. The test flipped with it and says so in its own comment.
 
 ---
 
@@ -142,7 +149,7 @@ with no recorded audio. The station announcements in
 
 ## Platform chrome
 
-### 10. The Android window is LIGHT on a dark-only app
+### 10. ~~The Android window is LIGHT on a dark-only app.~~ DONE 12 Aug
 
 Opened 11 Aug 2026 from a mobile-web checklist the owner shared. Most of that
 list is CSS-only, but the status-bar row translates and it found this.
@@ -177,21 +184,54 @@ FIX, about half an hour, no risk:
 
 Device needed to judge, and a light-mode phone specifically.
 
-### 11. One `TextButton` still takes Material's ripple
+**DONE 12 Aug 2026**, all three parts, exactly as scoped above. New
+`values/colors.xml` holds `cg_ground` (`#FF0F1722`), stated as a literal rather
+than left to `?android:colorBackground`, because that attribute follows the
+PHONE's mode and this app is dark in both. Both `styles.xml` variants now carry
+`Theme.Black.NoTitleBar`, both `launch_background.xml` variants point at the
+ground colour, and `main()` sets `SystemUiOverlayStyle` once (light icons, both
+bars named explicitly, navigation bar on the ground colour).
+
+**STILL NEEDS A LIGHT-MODE ANDROID PHONE TO JUDGE.** Nothing above is testable
+at the desk: no widget test renders an Android launch window. The check is a
+cold start on the 3T with the phone in light mode, watching for a white frame.
+
+### 11. ~~One `TextButton` still takes Material's ripple.~~ DONE 12 Aug, and there were TWO
 
 `onboarding_screen.dart:309`, the "Not now" skip. Every other control in the app
 goes through `Pressable`, which deliberately refuses the InkWell ripple. Cosmetic
 and small, but it is the only surface in the app that flashes on tap.
 
+**IT WAS NOT the only one.** `main.dart:954`, the "Got it" button on Screen 1's
+chip tip banner, was a second, and that banner appears only when a rider has
+already failed to get a location fix. Both are `Pressable` now, both with an
+explicit 48 dp floor (`Pressable` brings no minimum size and `TextButton` did,
+so dropping the widget without stating the constraint would have shrunk a real
+tap target to the height of one line of text).
+
+Two instances of something an eye had already been over is the argument for a
+guard, so `pressable_test.dart` now reads every file under `lib/` and fails on
+any Material button. `RideDebugScreen` is exempt for `ElevatedButton` and
+`OutlinedButton` only: no rider reaches it, and looking like stock Android is
+correct for a bench instrument. The guard strips comments before matching (three
+comments written today contain the word `TextButton`) and was proven able to
+fail by reintroducing one.
+
 ---
 
-## What is actually left, after 11 Aug
+## What is actually left, after 12 Aug
 
 - **7**, `TypeScale` tracking. Needs the 3T and an eye, deliberately not done at 01:00.
 - **9**, the Hindi and Marathi register. Owner supplies the wording.
-- **10**, the light Android window on a dark-only app. TOMORROW (12 Aug), mine.
-  Needs a LIGHT-MODE Android phone to judge, which is a setting on the 3T.
-- **11**, the one rippling `TextButton`. Small, mine.
+
+Item 8 was REVERSED on 12 Aug rather than closed again, and it is the one entry
+on this list whose resolution went backwards. See `docs/adr/0003`: the Settings
+vibration switch is offered on both platforms once more, because an iPhone that
+buzzes every 45 seconds with no way to stop it is the same fault as a dead
+control with the sign reversed.
+
+**10 and 11 closed 12 Aug**, with the caveat above that item 10 has never been
+seen on a light-mode phone.
 
 Everything else on this list was closed on 11 Aug in `d445fa9`, `3dc475d`,
 `63580d5` and the white-CTA commit.

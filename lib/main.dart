@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'models/journey.dart';
@@ -20,11 +21,32 @@ import 'state/ride_providers.dart';
 import 'state/settings_providers.dart';
 import 'theme/app_theme.dart';
 import 'theme/palette.dart';
+import 'widgets/pressable.dart';
 import 'widgets/primary_button.dart';
 import 'widgets/status_chip.dart';
 
 void main() {
   RideServiceClient.initCommunicationPort();
+
+  // LIGHT STATUS BAR ICONS, stated once, because nothing else in this app ever
+  // says it: there is no AppBar anywhere, and an AppBar is what normally tells
+  // the platform what the bars should look like. Without this the icons follow
+  // the PHONE's mode, so a light-mode Android rider got dark icons on a
+  // near-black ground and lost the clock and the battery. Punchlist item 10,
+  // 12 Aug 2026, the other half of the white launch window.
+  //
+  // `.light` means light CONTENT (Brightness.light icons), which is the
+  // opposite of what the name suggests on first reading, so both bars are also
+  // set explicitly rather than left to the preset.
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      statusBarBrightness: Brightness.dark,
+      systemNavigationBarColor: Palette.ground,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
   // ProviderScope holds the UI isolate's providers. It is deliberately absent
   // from the service isolate (lib/foreground/geofence_task_handler.dart):
   // providers do not cross isolates, and the ride's truth lives over there.
@@ -951,10 +973,25 @@ class _ChipTipBanner extends StatelessWidget {
               style: TextStyle(fontSize: 13, color: Palette.textDim(0.8)),
             ),
           ),
-          TextButton(
-            onPressed: onDismiss,
-            style: TextButton.styleFrom(foregroundColor: Palette.text),
-            child: const Text('Got it'),
+          // The SECOND rippling TextButton, and the punchlist only knew about
+          // the first. Same reason as the onboarding skip: Material's InkWell
+          // reads as stock Android in a custom dark glass design, and this one
+          // sits on Screen 1 under a banner that only appears when the rider
+          // is already having trouble.
+          //
+          // 48 dp floor stated, because Pressable brings no minimum of its own
+          // and TextButton did.
+          Pressable(
+            onTap: onDismiss,
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 48, minWidth: 64),
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                'Got it',
+                style: TextStyle(fontSize: 14, color: Palette.text),
+              ),
+            ),
           ),
         ],
       ),

@@ -6,6 +6,7 @@ import '../state/ride_providers.dart';
 import '../theme/palette.dart';
 import '../theme/type_scale.dart';
 import '../widgets/mini_rail.dart';
+import '../widgets/pressable.dart';
 
 final permissionsGatewayProvider = Provider<PermissionsGateway>(
   (ref) => const PermissionsGateway(),
@@ -306,14 +307,28 @@ class _Panel extends StatelessWidget {
           ],
           if (quiet != null) ...[
             const SizedBox(height: 6),
-            TextButton(
+            // PRESSABLE, NOT TextButton (punchlist item 11). This was the only
+            // surface left in the app that flashed Material's InkWell ripple,
+            // which reads as stock Android in a custom dark glass design, and
+            // it flashed it on the first screen a new rider ever sees.
+            //
+            // The 48 dp floor is stated rather than inherited: TextButton
+            // brought its own minimum size and Pressable brings none, so
+            // dropping the widget without the constraint would have quietly
+            // shrunk a real tap target to the height of one line of text.
+            // Measure, never infer.
+            Pressable(
               key: const Key('onboarding_skip'),
-              onPressed: onQuiet,
-              child: Text(
-                quiet!,
-                style: TextStyle(
-                  fontSize: TypeScale.body,
-                  color: Palette.textDim(0.55),
+              onTap: onQuiet ?? () {},
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 48),
+                alignment: Alignment.center,
+                child: Text(
+                  quiet!,
+                  style: TextStyle(
+                    fontSize: TypeScale.body,
+                    color: Palette.textDim(0.55),
+                  ),
                 ),
               ),
             ),

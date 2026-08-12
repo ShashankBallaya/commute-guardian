@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  IDENTICAL TO THE DAY FILE ON PURPOSE. See values/styles.xml: this app has no
+  light theme, so the two variants must not differ. Kept as a file rather than
+  deleted so that a future edit to the day file has an obvious partner, and so
+  nobody re-adds a light night variant from a template.
+-->
 <resources>
-    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is on -->
+    <!-- Theme applied to the Android Window while the process is starting -->
     <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <!-- Show a splash screen on the activity. Automatically removed when
              the Flutter engine draws its first frame -->
@@ -13,6 +19,6 @@
 
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
-        <item name="android:windowBackground">?android:colorBackground</item>
+        <item name="android:windowBackground">@color/cg_ground</item>
     </style>
 </resources>

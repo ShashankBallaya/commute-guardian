@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:commute_guardian/widgets/pressable.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -131,5 +133,62 @@ void main() {
     await tester.pumpAndSettle();
     expect(tintAlpha(), 0.0, reason: 'after release');
     expect(taps, 1);
+  });
+
+  test('NO MATERIAL BUTTON ANYWHERE IN THE APP', () {
+    // Punchlist item 11, closed 12 Aug 2026, and it found MORE than the
+    // punchlist knew about: the item said "one TextButton still takes
+    // Material's ripple" (the onboarding skip) and there were two. The second
+    // was the "Got it" button on Screen 1's chip tip banner, which appears
+    // only when a rider is already having trouble finding their location.
+    //
+    // Two instances of a thing an eye had already been over is the argument
+    // for a guard rather than a fix. A ripple reads as stock Android in a
+    // custom dark glass design, and it is exactly the sort of detail that
+    // comes back in one hurried evening.
+    // THE DEBUG SCREEN IS EXEMPT, and only it. `RideDebugScreen` lives in
+    // main.dart and is a bench instrument behind a long press on Settings'
+    // version line: no rider reaches it, every bench in this project runs
+    // through it, and its ElevatedButtons and OutlinedButtons are correct
+    // there because looking like stock Android is what a debug control should
+    // look like. So main.dart is allowed those two and no others: the ripple
+    // item was about flat and text-shaped surfaces, and the "Got it" banner in
+    // that same file was a rider-facing one.
+    const debugOnly = {'ElevatedButton', 'OutlinedButton'};
+
+    final offenders = <String>[];
+    for (final file in Directory('lib').listSync(recursive: true)) {
+      if (file is! File || !file.path.endsWith('.dart')) continue;
+      final isMain = file.path.endsWith('main.dart');
+      // Comments stripped FIRST. This test's own kind of guard has been
+      // repaired five times in this project for matching text that merely
+      // looked like the thing, and the fixes committed today put the word
+      // "TextButton" into three comments explaining why it is gone.
+      final code = file
+          .readAsStringSync()
+          .split('\n')
+          .where((line) => !line.trimLeft().startsWith('//'))
+          .join('\n');
+      for (final widget in const [
+        'TextButton',
+        'ElevatedButton',
+        'OutlinedButton',
+        'InkWell',
+        'FilledButton',
+      ]) {
+        // A word boundary, so `TextButtonTheme` in a ThemeData (which sets
+        // defaults and creates no ripple) is not read as a button.
+        if (isMain && debugOnly.contains(widget)) continue;
+        if (RegExp('\\b$widget\\s*\\(').hasMatch(code)) {
+          offenders.add('${file.path}: $widget');
+        }
+      }
+    }
+
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'every tap in this app goes through Pressable or PressableRow',
+    );
   });
 }

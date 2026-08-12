@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The one colour Android needs to know about, and it must stay equal to
+  Palette.ground (0xFF0F1722) in lib/theme/palette.dart.
+
+  It is stated as a literal rather than left to ?android:colorBackground
+  because this app has no light theme at all: ThemeData(brightness: dark),
+  always, on both platforms. A theme attribute follows the PHONE's mode, so a
+  rider in light mode got a white launch window and a white window behind
+  Flutter before a near-black app snapped in.
+-->
+<resources>
+    <color name="cg_ground">#FF0F1722</color>
+</resources>

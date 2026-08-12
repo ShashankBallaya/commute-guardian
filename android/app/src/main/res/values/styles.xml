@@ -1,7 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  DARK IN BOTH MODES, deliberately. This is the day file and it carries the
+  same dark parent as values-night, which looks wrong until you remember that
+  the app has no light theme: ThemeData(brightness: Brightness.dark) always,
+  ground 0xFF0F1722.
+
+  Flutter's untouched default was Theme.Light.NoTitleBar here plus a white
+  launch_background, so every cold start on a light-mode Android phone showed a
+  white launch window and a white window behind Flutter, and then a near-black
+  app snapped in. Fixed 12 Aug 2026 (punchlist item 10). The precedent for
+  taking a white frame seriously is the 10 Aug iOS white screen, which would
+  have reached beta testers as "the app doesn't open".
+
+  The values-night variant is kept rather than deleted, because a variant that
+  disappears is a variant somebody re-adds from a template later.
+-->
 <resources>
-    <!-- Theme applied to the Android Window while the process is starting when the OS's Dark Mode setting is off -->
-    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+    <!-- Theme applied to the Android Window while the process is starting -->
+    <style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <!-- Show a splash screen on the activity. Automatically removed when
              the Flutter engine draws its first frame -->
         <item name="android:windowBackground">@drawable/launch_background</item>
@@ -12,7 +28,7 @@
          running.
 
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
-    <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
-        <item name="android:windowBackground">?android:colorBackground</item>
+    <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
+        <item name="android:windowBackground">@color/cg_ground</item>
     </style>
 </resources>
