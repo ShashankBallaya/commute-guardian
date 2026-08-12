@@ -126,9 +126,29 @@ kill it mid-ride and the ride recovers (mandatory, see below).
 
 ## The bridge: RideServiceClient
 
-The single UI-isolate object allowed to import flutter_foreground_task. It
-mirrors the discipline the service side already has in
+The single UI-isolate object allowed to import flutter_foreground_task for
+BRIDGE traffic. It mirrors the discipline the service side already has in
 geofence_task_handler.dart.
+
+**One narrow exception, added 12 Aug 2026:** `permissions_gateway.dart` imports
+the same plugin for `isIgnoringBatteryOptimizations`,
+`requestIgnoreBatteryOptimization` and
+`openIgnoreBatteryOptimizationSettings`, none of which is bridge traffic. They
+are permission questions that this plugin happens to answer: no isolate starts,
+nothing is sent or received, and the service is not involved. It is the same
+grounds on which `geofence_chain_service.dart` was already allowed to read the
+battery state for its ride-start log line.
+
+The reason it is an exception rather than a routing change: these values feed
+Settings' readiness card, and routing them through `RideServiceClient` would
+mean the card could only be drawn while a ride was RUNNING, which inverts the
+point of a readiness check. `PermissionsGateway` is already this app's one door
+to permission plugins, so the call stays behind a door either way.
+
+The line the exception does not cross is written into
+`test/isolate_boundary_test.dart` beside the allow-list: no `sendDataToMain`, no
+`saveData`, no starting or stopping a service from that file. Any of those move
+to `RideServiceClient`.
 
 It owns, exactly:
 

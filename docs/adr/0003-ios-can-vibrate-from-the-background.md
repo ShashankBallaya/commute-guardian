@@ -48,6 +48,36 @@ Two things become permissible that were refused before:
    until now iOS had exactly one channel to reach them with.
 2. **Pocket Pulse's iOS buzz stops being a bench and becomes a feature.**
 
+## What the field added the same day (12 Aug 2026, four benches)
+
+The decision above was made from a desk bench. Four wake-ladder benches on the
+owner's iPhone that evening, all archived in
+`commute-guardian-logs/bench-2026-08-12/`, moved three things from reasoned to
+measured:
+
+- **The ladder vibration is felt in a pocket during a live ride**, not only in a
+  standing bench. Log `152247`: three bursts at rungs 2, 3 and 4, all three felt.
+- **THE FIRST GAP WAS WRONG AND THE OWNER'S LEG FOUND IT.** At 400 ms he felt TWO
+  buzzes where three were requested. `kSystemSoundID_Vibrate` runs roughly 400 ms,
+  so the second request arrived while the motor was still going and iOS either
+  dropped it or ran the two together. At 800 ms he felt three. This is the
+  practical shape of "no duration control": the app cannot ask how long a buzz
+  lasts, so it must leave room for one it cannot measure.
+- **Cancel on ack works on hardware.** Log `164731`: burst starts 16:48:31.62,
+  ack from the earphone media button at 16:48:32.87 (between buzz 2 and buzz 3),
+  and `WAKE buzz burst cancelled after 2 of 3.` logged at 16:48:33.23, which is
+  the moment buzz 3 was due. The rider reported pressing at the second buzz. The
+  first test written for this feature is now answered by a leg and not only by a
+  unit test.
+
+**And the ride log could not be read at first, which is the lesson to keep.**
+`vibrate()` logged nothing on the iOS path, so the first bench fired three bursts
+and left no trace of any of them: "he felt two" could not be checked against what
+was asked for. That is the 10 Aug rule in mirror image, where a log claimed an
+output that never happened. Every burst now logs its count and its spacing, and a
+cancelled burst logs the partial count, which is what made the cancel provable at
+all.
+
 ## What it does NOT licence
 
 Recorded deliberately, because a single measurement is being used to overturn a

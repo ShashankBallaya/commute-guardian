@@ -7,13 +7,16 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/app_settings.dart';
 import '../models/journey.dart';
+import '../services/permissions_gateway.dart';
 import '../services/ride_service_client.dart';
 import '../state/journey_providers.dart';
+import '../state/readiness_providers.dart';
 import '../state/ride_providers.dart';
 import '../state/settings_providers.dart';
 import 'arrival_screen.dart';
 import 'destination_picker_screen.dart';
 import 'history_screen.dart';
+import 'onboarding_screen.dart' show permissionsGatewayProvider;
 import 'preparing_flow.dart';
 import 'settings_screen.dart';
 import 'travel_mode_screen.dart';
@@ -133,6 +136,12 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // out of by themselves, and the whole ride is behind it.
     unawaited(ref.read(rideAlertsProvider.notifier).resync());
     unawaited(ref.read(liveRideProvider.notifier).refresh());
+    // AND THE READINESS CARD, because a resume is the ONLY honest moment to
+    // re-read it. Settings' Fix buttons send the rider to a system page, and
+    // `openAppSettings` returns the instant that page launches rather than when
+    // the rider comes back, so invalidating there re-reads the value they have
+    // not changed yet. Coming back is the event, and this is where it lands.
+    ref.invalidate(travelReadinessProvider);
   }
 
   /// Opens Screen 5 the moment the ride reaches its destination.
@@ -892,11 +901,86 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     );
   }
 
+  /// The readiness card's three rows, from what the platform actually says.
+  ///
+  /// [readiness] is null while the reads are still in flight, and every row is
+  /// then [ReadinessState.checking]: this card may not guess. Guessing ok would
+  /// tell a rider with revoked location that they are ready, and guessing
+  /// unmet would send a rider who is fine hunting for a setting.
+  ///
+  /// PURE, and public for that reason: it is the one place that decides what
+  /// green and amber MEAN, and that decision is worth a test which runs without
+  /// a device. Every state below is reachable in a unit test; none of them is
+  /// reachable in a widget test, because the platform reads behind them do not
+  /// exist under the test binding.
+  static List<ReadinessItem> readinessRows(
+    TravelReadiness? readiness, {
+    required VoidCallback onFixed,
+    required PermissionsGateway gateway,
+  }) {
+    ReadinessState stateOf(bool? granted) => switch (granted) {
+      null => ReadinessState.checking,
+      true => ReadinessState.ok,
+      false => ReadinessState.needsAttention,
+    };
+
+    // Re-read after the action, and understand what that does and does not
+    // cover. `openAppSettings` returns when the system page LAUNCHES, so this
+    // re-read sees the old value and is nearly pointless on that path; the
+    // resume hook in `_onResumed` is what actually catches the rider coming
+    // back. It earns its place on the battery path, where
+    // `requestIgnoreBatteryOptimizations` shows an in-app system dialog and
+    // returns the rider's actual answer. Kept on both so no Fix can ever be
+    // the one that leaves the card stale.
+    Future<void> fix(Future<void> Function() action) async {
+      await action();
+      onFixed();
+    }
+
+    return [
+      ReadinessItem(
+        label: 'Location, always',
+        state: stateOf(readiness?.locationAlways),
+        detail:
+            'Travel Mode cannot follow your train without it. '
+            'Choose "Allow all the time".',
+        // The app's own settings page, NOT a permission request. On Android 11+
+        // asking for background location shows no dialog with an "Allow all the
+        // time" option at all, which is the trap onboarding already works
+        // around; a request here would appear to do nothing.
+        onFix: () => fix(gateway.openSettings),
+      ),
+      ReadinessItem(
+        label: 'Notifications',
+        state: stateOf(readiness?.notifications),
+        detail:
+            'The ride notification carries "I\'m awake" and "End now". '
+            'Without it those live only on screen.',
+        onFix: () => fix(gateway.openSettings),
+      ),
+      // ANDROID ONLY, and absent rather than grey on iOS: a row that can never
+      // go green is worse than no row. Null here means the question does not
+      // apply, which is not the same as an answer that has not arrived yet.
+      if (readiness == null || readiness.batteryExempt != null)
+        ReadinessItem(
+          label: 'Battery use',
+          state: stateOf(readiness?.batteryExempt),
+          detail: 'Restricted. Android may stop the app mid journey.',
+          // The system dialog first, because it is one tap where it appears.
+          // MIUI and ColorOS, this project's named OEM risk, are exactly the
+          // ROMs that refuse it, and the re-read after it returns is what
+          // tells the rider whether it worked.
+          onFix: () => fix(gateway.requestIgnoreBatteryOptimizations),
+        ),
+    ];
+  }
+
   /// Screen 6, Settings.
   ///
   /// The settings themselves are REAL: every switch writes through to AppFlags
-  /// and survives a restart. Only the readiness rows are dressed, because the
-  /// live permission reads belong with the wiring, not with the screen.
+  /// and survives a restart. SO ARE THE READINESS ROWS since 12 Aug 2026; they
+  /// were three hardcoded literals before that, on the card this app puts first
+  /// because OEM battery kills are its own named top product risk.
   Future<void> openSettings() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -914,18 +998,16 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
               settings: settings,
               availableLanguages: languages,
               versionLine: 'Commute Guardian 1.0.0 (1)',
-              readiness: const [
-                ReadinessItem(
-                  label: 'Location, always',
-                  state: ReadinessState.ok,
-                ),
-                ReadinessItem(label: 'Notifications', state: ReadinessState.ok),
-                ReadinessItem(
-                  label: 'Battery use',
-                  state: ReadinessState.needsAttention,
-                  detail: 'Restricted. Android may stop the app mid journey.',
-                ),
-              ],
+              readiness: readinessRows(
+                ref.watch(travelReadinessProvider).valueOrNull,
+                // Re-read after the rider comes back from wherever the Fix
+                // sent them. There is no lifecycle observer in this app, so
+                // nothing else would ever notice that they fixed it, and a
+                // card still showing amber after the rider did what it asked
+                // is worse than the hardcoded row this replaced.
+                onFixed: () => ref.invalidate(travelReadinessProvider),
+                gateway: ref.read(permissionsGatewayProvider),
+              ),
               onBack: () => Navigator.of(context).maybePop(),
               // Written to settings AND pushed to a running ride. Without the
               // push a rider who changes the interval mid-journey would keep

@@ -8,7 +8,13 @@ import '../widgets/pressable.dart';
 /// Whether a readiness item is satisfied. Not an error state: an unmet item is
 /// something to fix, not something that has gone wrong, and the palette has no
 /// status red for exactly that reason.
-enum ReadinessState { ok, needsAttention }
+///
+/// [checking] exists because these values come from the platform now and arrive
+/// a frame or two late. THE CARD MAY NOT GUESS IN THE MEANTIME. Defaulting to
+/// ok would tell a rider whose location is revoked that they are ready, and
+/// defaulting to needsAttention would send a rider who is fine hunting for a
+/// setting. A dim dot and no detail says the honest thing, which is nothing yet.
+enum ReadinessState { ok, needsAttention, checking }
 
 /// One row of the readiness card.
 class ReadinessItem {
@@ -389,9 +395,12 @@ class _ReadinessRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ok = item.state == ReadinessState.ok;
-    final detail = ok ? null : item.detail;
-    final onFix = ok ? null : item.onFix;
+    // Only an item KNOWN to be unmet shows a detail and a Fix. A row still
+    // being read shows neither: there is nothing to explain and nothing to
+    // send the rider to yet.
+    final unmet = item.state == ReadinessState.needsAttention;
+    final detail = unmet ? item.detail : null;
+    final onFix = unmet ? item.onFix : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -412,7 +421,12 @@ class _ReadinessRow extends StatelessWidget {
                 // FLAT, no glow. The glow is the locked "live, tracking now"
                 // signal and belongs to the position dot alone; a permission
                 // is a state, not a live reading.
-                color: ok ? Palette.dotGreen : Palette.dotAmber,
+                color: switch (item.state) {
+                  ReadinessState.ok => Palette.dotGreen,
+                  ReadinessState.needsAttention => Palette.dotAmber,
+                  // Neither colour, because neither answer is known.
+                  ReadinessState.checking => Palette.textDim(0.22),
+                },
               ),
             ),
           ),

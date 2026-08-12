@@ -8,11 +8,11 @@ import 'package:commute_guardian/screens/onboarding_screen.dart';
 import 'package:commute_guardian/screens/travel_mode_screen.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
-import 'package:commute_guardian/services/permissions_gateway.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/fake_permissions.dart';
 import 'support/fake_ride_service_client.dart';
 
 /// Onboarding, six screens.
@@ -22,56 +22,14 @@ import 'support/fake_ride_service_client.dart';
 /// requirement, not a preference), refusing never traps anyone, and the
 /// background-location screen exists because Android will not grant it from a
 /// dialog.
-class _FakePermissions implements PermissionsGateway {
-  _FakePermissions({this.android = true});
-
-  final bool android;
-  final List<String> asked = [];
-  bool whileInUseGranted = true;
-
-  @override
-  bool get isAndroid => android;
-
-  @override
-  Future<bool> requestWhileInUse() async {
-    asked.add('whileInUse');
-    return whileInUseGranted;
-  }
-
-  @override
-  Future<bool> requestAlways() async {
-    asked.add('always');
-    return false;
-  }
-
-  @override
-  Future<bool> requestNotifications() async {
-    asked.add('notifications');
-    return true;
-  }
-
-  @override
-  Future<bool> openSettings() async {
-    asked.add('openSettings');
-    return true;
-  }
-
-  @override
-  Future<bool> hasWhileInUse() async => whileInUseGranted;
-  @override
-  Future<bool> hasAlways() async => false;
-  @override
-  Future<bool> hasNotifications() async => true;
-}
-
 void main() {
   _entryGateTests();
 
-  Future<(_FakePermissions, List<String>)> pump(
+  Future<(FakePermissions, List<String>)> pump(
     WidgetTester tester, {
     bool android = true,
   }) async {
-    final permissions = _FakePermissions(android: android);
+    final permissions = FakePermissions(android: android);
     final done = <String>[];
     await tester.pumpWidget(
       ProviderScope(
@@ -221,7 +179,7 @@ void _entryGateTests() {
       ProviderScope(
         overrides: [
           appDatabaseProvider.overrideWith((ref) => db),
-          permissionsGatewayProvider.overrideWithValue(_FakePermissions()),
+          permissionsGatewayProvider.overrideWithValue(FakePermissions()),
           stationRepositoryProvider.overrideWith(
             (ref) async => StationRepository.parse(
               File(StationRepository.assetPath).readAsStringSync(),

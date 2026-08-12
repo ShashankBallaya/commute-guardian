@@ -29,10 +29,24 @@ void main() {
     // (sendDataToMain, saveData); geofence_chain_service.dart additionally
     // queries battery-optimization state to log the permission picture at
     // ride start, which is not bridge traffic at all.
+    //
+    // permissions_gateway.dart is allowed for THAT SAME REASON and no other,
+    // added 12 Aug 2026 when Settings' readiness card was wired to real values.
+    // Battery optimisation is a permission question that this plugin happens to
+    // answer: no isolate is started, nothing is sent or received, and the
+    // service is not involved. Routing it through RideServiceClient would mean
+    // a card in Settings could only be drawn while a RIDE was running, which
+    // inverts the point of a readiness check. The gateway is already this app's
+    // one door to permission plugins, so the call is behind a door either way.
+    //
+    // THE LINE THIS DOES NOT CROSS: no sendDataToMain, no saveData, no starting
+    // or stopping a service. If a future edit adds one of those here, move it
+    // to RideServiceClient instead of widening this comment.
     const allowed = {
       'lib/services/ride_service_client.dart',
       'lib/foreground/geofence_task_handler.dart',
       'lib/services/geofence_chain_service.dart',
+      'lib/services/permissions_gateway.dart',
     };
 
     final offenders = <String>[];
