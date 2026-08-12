@@ -57,6 +57,12 @@ void main() {
       // buzz but left the loop running would show up here.
       await Future<void>.delayed(WakeAlertOutput.iosBurstGap * 3);
       expect(t.buzzes(), 1);
+
+      // THE RIDE LOG MUST SAY SO. The 12 Aug bench fired three bursts and the
+      // log recorded none of them, so "he felt two" could not be checked
+      // against what was requested. A cancelled burst is also how the ack is
+      // judged from a log afterwards.
+      expect(t.log, ['WAKE buzz burst cancelled after 1 of 3.']);
     });
 
     test('stopTone cancels the burst, which is how the ack actually gets here',
@@ -101,6 +107,11 @@ void main() {
       await t.output.vibrate();
 
       expect(t.buzzes(), WakeAlertOutput.iosBurstCount);
+      // The log states the gap as well as the count, because the gap is the
+      // setting that changed when the owner felt two buzzes instead of three,
+      // and a log that only said "3" would not have told anyone which build
+      // they were feeling.
+      expect(t.log, ['WAKE buzz burst requested: 3 at 800ms.']);
     });
 
     test('is spaced, not fired all at once', () async {

@@ -162,12 +162,23 @@ class WakeAlertOutput {
   /// THE PLATFORMS CANNOT MATCH AND MUST NOT TRY. Android sends one insistent
   /// pattern and controls every millisecond of it. iOS has exactly one fixed
   /// buzz, no duration and no intensity (`docs/adr/0003`), so the only axes
-  /// left there are COUNT and CADENCE. Three buzzes 400 ms apart is the
-  /// nearest honest translation of the Android triple, and it is deliberately
-  /// nothing like Pocket Pulse's single tap followed by 45 s of silence: a
-  /// pocket must never have to work out which of the two it just felt.
+  /// left there are COUNT and CADENCE. The burst is deliberately nothing like
+  /// Pocket Pulse's single tap followed by 45 s of silence: a pocket must never
+  /// have to work out which of the two it just felt.
+  ///
+  /// THE GAP WAS 400 ms AND THE OWNER FELT TWO BUZZES, NOT THREE (12 Aug 2026,
+  /// log `20260812T152247`, three bursts at rungs 2, 3 and 4, two sensations
+  /// each). `kSystemSoundID_Vibrate` is a fixed buzz of roughly 400 ms, so the
+  /// second request was arriving while the motor still ran and iOS either
+  /// dropped it or ran the two together. 800 ms leaves the motor time to stop
+  /// between buzzes, which is what makes three of them countable.
+  ///
+  /// This is the axis that carries the whole alarm on an iPhone, so it is
+  /// tuned against a leg rather than against a number. Re-bench after any
+  /// change: the log records what was REQUESTED and only the owner can say
+  /// what was FELT.
   static const iosBurstCount = 3;
-  static const iosBurstGap = Duration(milliseconds: 400);
+  static const iosBurstGap = Duration(milliseconds: 800);
 
   /// One insistent vibration, on both platforms now.
   ///
@@ -186,16 +197,31 @@ class WakeAlertOutput {
     final buzz = onIosVibrate;
     if (buzz == null) return;
     final mine = ++_burst;
+    // LOGGED, because the 12 Aug bench could not be read from its own ride log.
+    // Three bursts fired that evening and the log said nothing about any of
+    // them, so "he felt two" could not be checked against what was asked for.
+    // PulseOutput.buzz has always logged its attempts and this never did.
+    //
+    // It records the REQUEST and never a felt buzz, which is the same rule the
+    // pulse flag follows: the phone cannot tell us what reached a pocket. A
+    // count that ends early is a cancel, and that is the line to look for when
+    // the ack is being judged.
+    var sent = 0;
     for (var i = 0; i < iosBurstCount; i++) {
       // A cancel that lands during a gap stops every buzz still to come. A
       // cancel that lands BEFORE this call does not suppress it, because the
       // burst takes its own number on the way in, and that is correct: a
       // cancel answers the burst that is sounding, and a rider who acks one
       // ladder must still get the whole alarm at the next critical station.
-      if (_burst != mine) return;
+      if (_burst != mine) {
+        log('WAKE buzz burst cancelled after $sent of $iosBurstCount.');
+        return;
+      }
       buzz();
+      sent++;
       if (i < iosBurstCount - 1) await Future<void>.delayed(iosBurstGap);
     }
+    log('WAKE buzz burst requested: $sent at ${iosBurstGap.inMilliseconds}ms.');
   }
 
   /// Stops an iOS burst that is still mid-flight. A no-op on Android, where
