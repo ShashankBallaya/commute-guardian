@@ -184,6 +184,7 @@ class _Header extends StatelessWidget {
                       key: ValueKey(stationsRemaining),
                       style: const TextStyle(
                         fontSize: TypeScale.hero,
+                        letterSpacing: TypeScale.heroTracking,
                         height: 1,
                         fontWeight: FontWeight.w700,
                         color: Palette.dotGreen,

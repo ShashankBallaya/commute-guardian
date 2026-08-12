@@ -265,6 +265,7 @@ class _FirstRun extends StatelessWidget {
           "Doze off. We'll wake you before your stop.",
           style: TextStyle(
             fontSize: TypeScale.display,
+            letterSpacing: TypeScale.displayTracking,
             height: 1.25,
             fontWeight: FontWeight.w700,
             color: Palette.text,

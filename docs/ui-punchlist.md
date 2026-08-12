@@ -78,10 +78,30 @@ No device needed. Owner's call on which way it resolves.
 does nothing at all. A half-asleep rider pressing twice deserves the same answer
 twice.
 
-### 7. `TypeScale` has no tracking axis
+### 7. ~~`TypeScale` has no tracking axis.~~ DONE 12 Aug, and the hero half is a near no-op
 
 Hero at 46 and display at 22 read loose. Roughly -0.9 and -0.4 wanted. Judge on
 the 3T.
+
+**DONE 12 Aug 2026 at the requested values**, `heroTracking = -0.9` and
+`displayTracking = -0.4`, applied at all three usage sites. Judged on the 3T in
+daylight, and MEASURED from the screenshots rather than eyeballed.
+
+**The display half works and is the whole value of this item.** Screen 5's
+"You've arrived at Kalyan" went from 825 px to 779 px of ink, 46 px narrower,
+which is 15.3 dp at this phone's 3.0 ratio. Two control lines on the same screen
+(the subtitle and the stats row) measured byte-identical at 939 px and 775 px
+before and after, so the change is the tracking and nothing else. **Note the
+effect is LARGER than the arithmetic predicts:** 23 gaps at 0.4 dp should be
+about 28 px, not 46. Unexplained, and recorded rather than smoothed over.
+
+**The hero half is very nearly a no-op, and this is the finding.** The hero is a
+station COUNT, so it is a single digit on all but the longest rides, and Flutter
+applies letterSpacing after every glyph including the last. Measured on Screen 4:
+the digit's own ink is 75 px wide BEFORE and AFTER, it shifted 2 px, and the gap
+to "stations to" closed from 41 px to 39 px. That is the entire effect. It earns
+its place at 10 stations and above and nowhere else. The item was written against
+the type scale in the abstract; on the screen the hero renders one glyph.
 
 (`SlideToStart`'s velocity and rubber-banding items are CLOSED: the widget was
 retired on 11 Aug and a ride now starts with a tap on every screen. Deleting beat
@@ -221,8 +241,10 @@ fail by reintroducing one.
 
 ## What is actually left, after 12 Aug
 
-- **7**, `TypeScale` tracking. Needs the 3T and an eye, deliberately not done at 01:00.
-- **9**, the Hindi and Marathi register. Owner supplies the wording.
+- **9**, the Hindi and Marathi register. Owner supplies the wording. **This is
+  the only item left on this list**, and it is his.
+
+Item 7 closed 12 Aug, measured on the 3T.
 
 Item 8 was REVERSED on 12 Aug rather than closed again, and it is the one entry
 on this list whose resolution went backwards. See `docs/adr/0003`: the Settings

@@ -8,18 +8,38 @@
 /// toggle). The owner approved the reduced scale on the device and asked for it
 /// across every screen, which is what this file is.
 ///
-/// Sizes only. Weight and colour stay with the widget, because those carry
-/// meaning here (crimson once per screen, the dim ladder in Palette.textDim)
-/// and a scale that tried to own them would flatten decisions that were made
-/// screen by screen for good reasons.
+/// Sizes AND, since 12 Aug 2026, the tracking that belongs to a size. Weight
+/// and colour still stay with the widget, because those carry meaning here
+/// (crimson once per screen, the dim ladder in Palette.textDim) and a scale
+/// that tried to own them would flatten decisions that were made screen by
+/// screen for good reasons. Tracking is different in kind: it is a function of
+/// SIZE, not of meaning. Type set large needs to be pulled together and type
+/// set small needs to be opened up, whatever the sentence says.
+///
+/// ONLY THE TWO LARGE SIZES CARRY IT. Everything from [title] down was judged
+/// on the 3T at its default tracking and approved there, and opening up the
+/// small sizes is a separate change that needs its own look on a device.
 abstract final class TypeScale {
   /// The remaining-station count on Screen 4, and nothing else. The only number
   /// in the app big enough to be read from a pocket at arm's length.
   static const hero = 46.0;
 
+  /// NEARLY A NO-OP, AND THAT IS WORTH KNOWING BEFORE ANYONE TUNES IT. The hero
+  /// is a station COUNT, so it is one digit on all but the longest rides, and
+  /// Flutter applies letterSpacing after every glyph including the last. On "5"
+  /// this tightens nothing and only pulls the "stations to" label 0.9 px
+  /// closer. It earns its place at 10 stations and above. Measured on the 3T,
+  /// 12 Aug 2026, rather than assumed from the number.
+  static const heroTracking = -0.9;
+
   /// A screen's opening promise, used once. Screen 1's "Doze off. We'll wake
   /// you before your stop."
   static const display = 22.0;
+
+  /// This is the one that does real work: [display] is always a full sentence
+  /// ("You've arrived at Kalyan"), set bold, where the default tracking reads
+  /// airy at 22.
+  static const displayTracking = -0.4;
 
   /// A route, a destination, the subject of the screen.
   static const title = 20.0;

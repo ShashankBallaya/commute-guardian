@@ -183,6 +183,7 @@ class _ArrivalScreenState extends State<ArrivalScreen> {
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontSize: TypeScale.display,
+                          letterSpacing: TypeScale.displayTracking,
                           height: 1.25,
                           fontWeight: FontWeight.w700,
                           color: Palette.text,
