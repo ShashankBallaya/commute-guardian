@@ -52,15 +52,25 @@ import '../widgets/status_chip.dart';
 /// it. These are still one-handed taps on a platform, so there is no room below
 /// it however tidy a smaller number would look.
 ///
-/// TRIMMED AGAIN ON 12 AUG 2026, from 16 to 12.5, so the cards land at 51.3 dp
-/// and match the CTA. Owner's call, and it is the second of the two ways to
-/// make them agree: the first put the button UP to 58.3, and he preferred the
-/// whole stack tighter.
+/// TRIMMED TO 12.5 ON 12 AUG 2026 AND PUT BACK THE SAME EVENING, and the reason
+/// is worth more than the number.
 ///
-/// **This leaves 3.3 dp above the floor.** That is the smallest headroom this
-/// screen has ever had, and it is the number to look at before any future trim:
-/// there is not another one available here.
-const _cardPadding = 12.5;
+/// The trim was made to land the cards at 51.3 dp to match the CTA, judged by
+/// eye on the 3T. THE 3T'S DISPLAY SIZE WAS OVERRIDDEN TO 480 AT THE TIME, and
+/// its real setting is 420. That is 360 dp of width instead of 411: the screen
+/// we were both looking at was effectively zoomed in, so everything read larger
+/// than it is, and 51.3 dp looked right when it was not. Restored to a real
+/// setting the cards read thin.
+///
+/// EVERY dp MEASUREMENT TAKEN THAT DAY IS STILL CORRECT. dp is dp. What was
+/// wrong is only the taste call layered on top of it, which is exactly the
+/// class of judgment a wrong zoom corrupts and a measurement does not.
+///
+/// **Check `adb shell wm density` before judging size on this device.** The 1
+/// Aug trim, from 20 to 16 after a first-time viewer called the screen
+/// "designed for senior citizens", may have been judged at the same override
+/// and has never been re-checked at 420.
+const _cardPadding = 16.0;
 
 /// The primary CTA's vertical padding, and it differs from [_cardPadding] on
 /// purpose: the two numbers exist so the two HEIGHTS can be equal.
@@ -82,7 +92,7 @@ const _cardPadding = 12.5;
 /// white fill says "the path that always works"; the cards say "the ride you
 /// probably want". They are the same size because they are the same kind of
 /// thing to a thumb.
-const _ctaPadding = 16.0;
+const _ctaPadding = 19.5;
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({
