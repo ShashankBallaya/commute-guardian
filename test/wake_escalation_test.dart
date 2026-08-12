@@ -54,6 +54,7 @@ Announcement _arrival(String stationId) => Announcement(
 );
 
 void main() {
+  _wakeToggleTests();
   group('rung escalation while unacknowledged', () {
     test('25 seconds of silence after the check-in escalates to rung 1', () {
       final wake = WakeEscalation(
@@ -775,5 +776,105 @@ void main() {
         expect(wake.isLadderLive, isTrue);
       },
     );
+  });
+}
+/// The rider's own wake toggle, 12 Aug 2026. It suspends through the SAME door
+/// as a call because it wants the same behaviour, and differs in exactly one
+/// way: no catch-up on the way back.
+void _wakeToggleTests() {
+  group("THE RIDER'S WAKE TOGGLE", () {
+    WakeEscalation build() => WakeEscalation(
+      chain: _chain,
+      interchangeStationIds: const [],
+      destinationStationId: 'digha',
+    );
+
+    test('re-arming says NOTHING about what went by', () {
+      final wake = build();
+
+      // Alarm off, and the train passes the trigger station while it is off.
+      wake.onCallStateChanged(inCall: true, now: _t0);
+      expect(wake.onStationEvent(_arrival('kalwa'), _t0), isEmpty);
+      expect(
+        wake.onStationEvent(
+          _arrival('thane'),
+          _t0.add(const Duration(minutes: 2)),
+        ),
+        isEmpty,
+      );
+
+      final back = _t0.add(const Duration(minutes: 3));
+      final resumed = wake.onCallStateChanged(
+        inCall: false,
+        now: back,
+        catchUp: false,
+      );
+
+      // The same sequence with catchUp true speaks "While you were on your
+      // call, the train passed Kalwa and Thane." The rider was not on a call,
+      // and the app does not owe a report for a decision they made.
+      expect(
+        resumed.whereType<Speak>().map((s) => s.text),
+        isEmpty,
+        reason: 'a rider who switched their own alarm off gets no catch-up',
+      );
+    });
+
+    test('AND IT ARMS FOR WHAT IS AHEAD, from the next fix', () {
+      // Re-arming invents nothing at the moment it happens, which is the whole
+      // point of no catch-up: the ladder is not live the instant the rider
+      // presses it, even though the trigger station went by while it was off.
+      // What covers them is the ETA zone, on the very next fix, exactly as it
+      // covers a rider whose fences were jumped.
+      final wake = build();
+      wake.onCallStateChanged(inCall: true, now: _t0);
+      wake.onStationEvent(
+        _arrival('thane'),
+        _t0.add(const Duration(minutes: 2)),
+      );
+
+      final back = _t0.add(const Duration(minutes: 3));
+      wake.onCallStateChanged(inCall: false, now: back, catchUp: false);
+      expect(
+        wake.isLadderLive,
+        isFalse,
+        reason: 're-arming must not invent a ladder out of nothing',
+      );
+
+      // Between Thane and Digha at 15 m/s: about 1.0 km, 69 s out, inside the
+      // 90 s lead window.
+      final near = wake.onFix(
+        lat: 19.1836,
+        lng: 72.9851,
+        accuracyM: 20,
+        speedMps: 15,
+        now: back.add(const Duration(seconds: 5)),
+      );
+
+      expect(near, isNotEmpty, reason: 'the rest of the journey is covered');
+      expect(wake.isLadderLive, isTrue);
+    });
+
+    test('a call still gets its catch-up, unchanged', () {
+      // The default is what it always was, so this change cannot have moved
+      // the call behaviour the 13 Jul return leg is the reason for.
+      final wake = build();
+      wake.onCallStateChanged(inCall: true, now: _t0);
+      wake.onStationEvent(_arrival('kalwa'), _t0);
+      wake.onStationEvent(
+        _arrival('thane'),
+        _t0.add(const Duration(minutes: 2)),
+      );
+
+      final spoken = wake
+          .onCallStateChanged(
+            inCall: false,
+            now: _t0.add(const Duration(minutes: 3)),
+          )
+          .whereType<Speak>();
+
+      expect(spoken, hasLength(1));
+      expect(spoken.single.text, startsWith('While you were on your call'));
+    });
   });
 }

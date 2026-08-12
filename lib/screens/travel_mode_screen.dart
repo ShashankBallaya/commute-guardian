@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/journey.dart';
 import '../models/station.dart';
@@ -41,6 +42,8 @@ class TravelModeScreen extends StatelessWidget {
     required this.reachedIndex,
     this.atStation = false,
     required this.wakeChoice,
+    required this.wakeEnabled,
+    required this.onWakeEnabled,
     required this.crowdMode,
     required this.pulseIntervalSeconds,
     required this.onCrowdMode,
@@ -60,6 +63,20 @@ class TravelModeScreen extends StatelessWidget {
   final bool atStation;
 
   final WakeChoice wakeChoice;
+
+  /// Whether the alarm will fire on THIS ride. The pill is the control.
+  ///
+  /// It is per journey and resets to armed at every Start, which is enforced in
+  /// the service rather than promised here: a remembered "off" is how somebody
+  /// misses their stop in October having switched it off in August.
+  ///
+  /// THE PILL WAS ALREADY SHAPED LIKE A TOGGLE and was not one, which is the
+  /// same lie as the wake control deleted on 11 Aug, in the other direction: it
+  /// said "Wake-up on" as a statement while looking like something you could
+  /// press. Now it is one.
+  final bool wakeEnabled;
+
+  final ValueChanged<bool> onWakeEnabled;
 
   /// CROWD MODE LIVES HERE NOW, and not only in Settings, since 12 Aug 2026.
   ///
@@ -118,6 +135,8 @@ class TravelModeScreen extends StatelessWidget {
                 stationsRemaining: _stationsRemaining,
                 destinationName: _destinationName,
                 etaLine: etaLine,
+                wakeEnabled: wakeEnabled,
+                onWakeEnabled: onWakeEnabled,
               ),
               const SizedBox(height: 20),
               // The card owns the flexible space and scrolls INSIDE its own
@@ -135,6 +154,7 @@ class TravelModeScreen extends StatelessWidget {
               const SizedBox(height: 16),
               _WakeCard(
                 choice: wakeChoice,
+                wakeEnabled: wakeEnabled,
                 destinationName: _destinationName,
                 crowdMode: crowdMode,
                 pulseIntervalSeconds: pulseIntervalSeconds,
@@ -174,11 +194,15 @@ class _Header extends StatelessWidget {
     required this.stationsRemaining,
     required this.destinationName,
     required this.etaLine,
+    required this.wakeEnabled,
+    required this.onWakeEnabled,
   });
 
   final int stationsRemaining;
   final String destinationName;
   final String? etaLine;
+  final bool wakeEnabled;
+  final ValueChanged<bool> onWakeEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -269,7 +293,9 @@ class _Header extends StatelessWidget {
         // reassurance, not the news, and its two-line label grows with the
         // font size until it squeezes the station count into the gutter
         // (4.6 px past the row on a 320 dp phone, measured 5 Aug 2026).
-        const Flexible(child: _ShieldBadge()),
+        Flexible(
+          child: _ShieldBadge(enabled: wakeEnabled, onChanged: onWakeEnabled),
+        ),
       ],
     );
   }
@@ -299,30 +325,53 @@ class _Header extends StatelessWidget {
 /// gives way before the headline does, because it is the reassurance and not the
 /// news.
 class _ShieldBadge extends StatelessWidget {
-  const _ShieldBadge();
+  const _ShieldBadge({required this.enabled, required this.onChanged});
+
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: Palette.glassCard(radius: 24),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.shield, color: Palette.text, size: 18),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              'Wake-up on',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: TypeScale.caption,
-                color: Palette.textDim(0.85),
+    return Pressable(
+      key: const Key('wake_toggle'),
+      onTap: () {
+        // The tick lands with the commit, as it does on Screen 1's cards and
+        // on PulseSwitch. Switching your own alarm off is worth feeling.
+        unawaited(HapticFeedback.selectionClick());
+        onChanged(!enabled);
+      },
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 48),
+        alignment: Alignment.center,
+        decoration: Palette.glassCard(radius: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              // The glyph carries the state as well as the words, because the
+              // words are short and a rider checks this at a glance before
+              // pocketing the phone.
+              enabled ? Icons.shield : Icons.shield_outlined,
+              color: enabled ? Palette.text : Palette.textDim(0.5),
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                enabled ? 'Wake-up on' : 'Wake-up off',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: TypeScale.caption,
+                  // Dim when off, and NOT crimson. Crimson ends a ride and
+                  // nothing else; this ends no ride, it declines an alarm.
+                  color: Palette.textDim(enabled ? 0.85 : 0.5),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -635,6 +684,7 @@ class _ChainRow extends StatelessWidget {
 class _WakeCard extends StatelessWidget {
   const _WakeCard({
     required this.choice,
+    required this.wakeEnabled,
     required this.destinationName,
     required this.crowdMode,
     required this.pulseIntervalSeconds,
@@ -642,14 +692,22 @@ class _WakeCard extends StatelessWidget {
   });
 
   final WakeChoice choice;
+  final bool wakeEnabled;
   final String destinationName;
   final bool crowdMode;
   final int? pulseIntervalSeconds;
   final ValueChanged<bool> onCrowdMode;
 
-  String get _line => switch (choice) {
-    WakeChoice.lastTwoStations => '2 stations before $destinationName',
-    WakeChoice.onlyDestination => 'at $destinationName',
+  /// THE ROW MUST AGREE WITH THE PILL. On the device the first build of the
+  /// toggle showed "Wake-up off" directly above "Wake me up, 2 stations before
+  /// Kalyan", which is the screen contradicting itself in the two places a
+  /// rider looks before pocketing the phone.
+  String get _line => switch (wakeEnabled) {
+    false => 'Off for this journey. Stations are still announced.',
+    true => switch (choice) {
+      WakeChoice.lastTwoStations => '2 stations before $destinationName',
+      WakeChoice.onlyDestination => 'at $destinationName',
+    },
   };
 
   /// The cadence in the rider's words. Seconds below a minute are said in
@@ -683,7 +741,9 @@ class _WakeCard extends StatelessWidget {
           // pocket the phone. The pulse row is the one decision that belongs to
           // the train they are standing in rather than to their setup.
           _CardRow(
-            icon: Icons.notifications,
+            icon: wakeEnabled
+                ? Icons.notifications
+                : Icons.notifications_off_outlined,
             title: 'Wake me up',
             detail: _line,
           ),

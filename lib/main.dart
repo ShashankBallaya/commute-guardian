@@ -109,6 +109,11 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
   /// to move; a real ride reads the setting through the provider.
   bool _previewCrowdMode = false;
 
+  /// Screen 4's wake toggle, PREVIEW ONLY. The preview draws the screen with no
+  /// ride behind it, so there is no service to disarm; this is the local state
+  /// a press moves.
+  bool _previewWakeEnabled = true;
+
   /// Debug bench flag: Sarvam clip greets at Start (Android only). Handed to
   /// the service through the store at Start; default off keeps Start stock.
   bool _sarvamGreeting = false;
@@ -222,6 +227,8 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
             journey: journey,
             reachedIndex: 2,
             wakeChoice: choice,
+            wakeEnabled: _previewWakeEnabled,
+            onWakeEnabled: (on) => setLocal(() => _previewWakeEnabled = on),
             // The PREVIEW's own state, deliberately local. This bench draws the
             // screen without a ride, so there is no live pulse for a real
             // toggle to reach; the control is here to be looked at and pressed.

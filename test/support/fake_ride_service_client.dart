@@ -188,4 +188,11 @@ class FakeRideServiceClient implements RideServiceClient {
 
   @override
   void testWindDown() => commands.add('testWindDown');
+
+  /// Screen 4's wake toggle, recorded so a test can assert the RIDE was told
+  /// and not merely the screen.
+  final List<bool> wakeEnabled = [];
+
+  @override
+  void setWakeEnabled(bool enabled) => wakeEnabled.add(enabled);
 }

@@ -549,6 +549,15 @@ class RideServiceClient {
     );
   }
 
+  /// The rider's wake toggle on Screen 4, for THIS ride only.
+  ///
+  /// Sent, never saved. Every other setting on that screen writes to the store
+  /// as well as sending, so a restarted service picks it up mid-ride; this one
+  /// must not, because it resets to armed at every Start and a stored "off"
+  /// would outlive the journey it was meant for.
+  void setWakeEnabled(bool enabled) =>
+      FlutterForegroundTask.sendDataToTask('$wakeEnabledPrefix$enabled');
+
   /// Pocket Pulse bench, section 7 of docs/design/pocket-pulse.md.
   void testPulse() => FlutterForegroundTask.sendDataToTask('test_pulse');
   void testPulseCollision({int afterMs = 150}) =>

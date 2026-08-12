@@ -119,6 +119,14 @@ const shareUsageKey = 'share_anonymous_usage';
 /// the literal `off`.
 const pulseSetPrefix = 'pulse_set:';
 
+/// The rider's wake toggle, per ride. `wake_enabled:true` or `:false`.
+///
+/// A COMMAND AND NOT A STORE KEY, deliberately, unlike the pulse settings. Those
+/// are settings that must survive a service restart mid-ride; this one must NOT.
+/// It resets to armed at every Start by design, and a stored value is exactly
+/// how "off" would outlive the journey the rider switched it off for.
+const wakeEnabledPrefix = 'wake_enabled:';
+
 /// A pulse interval change from the UI.
 ///
 /// A COMMAND with a null interval means "the rider turned it off". A null
@@ -409,6 +417,10 @@ class GeofenceTaskHandler extends TaskHandler {
   @override
   void onNotificationButtonPressed(String id) {
     switch (id) {
+      case final String message when message.startsWith(wakeEnabledPrefix):
+        _chain?.setWakeEnabled(
+          message.substring(wakeEnabledPrefix.length) == 'true',
+        );
       case wakeAckButtonId:
         // Named apart from the screen button so the ride log says which
         // surface answered, the way the earphone tap already does.

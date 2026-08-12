@@ -27,6 +27,7 @@ import 'self_audio_interruption.dart';
 import 'spoken_copy.dart';
 import 'wake_alert_output.dart';
 import 'wake_escalation.dart';
+import 'wake_suspension.dart';
 import 'wind_down.dart';
 
 /// Runs one ride, between any two stations on the network.
@@ -379,6 +380,13 @@ class GeofenceChainService {
     // calls as our own alarm. stop() clears it, but a restart that never went
     // through stop() would not.
     _selfInterruption.noteSustainedOwnAudioEnded();
+    // THE WAKE TOGGLE RESETS EVERY RIDE, and this is where "per journey, never
+    // sticky" is actually enforced. A service that already ran one ride must
+    // not inherit an alarm the rider switched off in August, and neither must
+    // a restarted one: this runs on every start(), not only on construction.
+    _wakeEnabled = true;
+    _inRealCall = false;
+    _wakeSuspended = false;
     _wakeOutput = WakeAlertOutput(
       log: _log,
       onIosToneCommand: onIosToneCommand,
@@ -863,9 +871,11 @@ class GeofenceChainService {
           ? 'Audio session interrupted (call or other audio).'
           : 'Audio session interruption ended.',
     );
-    _handleWakeActions(
-      _wakeEscalation?.onCallStateChanged(inCall: begin, now: now) ?? const [],
-    );
+    // Same door as CallKit, for the same reason: on Android the interruption
+    // IS the call signal, so one ending while the rider has the alarm switched
+    // off must not resume it either.
+    _inRealCall = begin;
+    _syncWakeSuspension(now);
   }
 
   /// WORDING IS LOAD-BEARING. These lines must not read like the Android call
@@ -918,13 +928,10 @@ class GeofenceChainService {
     _handlePulseActions(
       _pocketPulse?.onCallState(inCall, DateTime.now()) ?? const [],
     );
-    _handleWakeActions(
-      _wakeEscalation?.onCallStateChanged(
-            inCall: inCall,
-            now: DateTime.now(),
-          ) ??
-          const [],
-    );
+    // Through the one authority, never straight at the engine: see
+    // [_syncWakeSuspension] for the alarm this stops re-arming.
+    _inRealCall = inCall;
+    _syncWakeSuspension(DateTime.now());
   }
 
   /// What the iOS audio session did when the alarm asked for it, arriving from
@@ -1198,6 +1205,70 @@ class GeofenceChainService {
         DateTime.now(),
       ),
     );
+  }
+
+  /// Whether the rider wants to be woken ON THIS RIDE.
+  ///
+  /// True unless they say otherwise, and deliberately NOT a setting: it resets
+  /// at every Start, because a remembered "off" is how somebody misses their
+  /// stop in October having switched it off in August. The service only lives
+  /// as long as the ride, so the reset is by construction.
+  ///
+  /// It exists because the ladder fires whether or not the rider is asleep, so
+  /// an awake rider on a short hop had to acknowledge an escalating alarm every
+  /// journey. That is not safety, it is a chore, and a chore is what teaches
+  /// somebody to ignore the one thing this product sells.
+  ///
+  /// IT DOES NOT TOUCH ANNOUNCEMENTS. They come from RideProgress and are the
+  /// rest of the product; the overshoot net still speaks too. Wake off means
+  /// the alarm is off, not the ride.
+  bool _wakeEnabled = true;
+
+  /// Whether a real call is in progress, tracked separately from [_wakeEnabled]
+  /// because both suspend the ladder and only one of them may resume it.
+  bool _inRealCall = false;
+
+  /// What we last told the engine, so the two inputs above cannot double-send.
+  bool _wakeSuspended = false;
+
+  /// THE ONE PLACE THAT SUSPENDS OR RESUMES THE LADDER, and the reason it
+  /// exists is a bug it makes impossible.
+  ///
+  /// A real call and the rider's wake toggle both suspend through
+  /// `WakeEscalation.onCallStateChanged`, which is the right mechanism: silent,
+  /// but not deaf, and re-orienting on the way back. Wired naively, they share
+  /// one flag, so a call ENDING while the alarm was switched off would resume
+  /// the ladder and re-arm the alarm the rider had deliberately turned off.
+  /// That is silent-alarm class in reverse: an alarm nobody asked for, on a
+  /// rider who is awake and now trusts the app less.
+  ///
+  /// So suspension is the OR of the two, resume happens only when both agree,
+  /// and neither caller talks to the engine directly.
+  void _syncWakeSuspension(DateTime now) {
+    // THE RULE ITSELF LIVES IN [WakeSuspension], in its own file, because this
+    // class cannot be built in a test and that rule is the half worth testing.
+    final next = WakeSuspension.of(
+      inRealCall: _inRealCall,
+      wakeEnabled: _wakeEnabled,
+    );
+    if (next.suspended == _wakeSuspended) return;
+    _wakeSuspended = next.suspended;
+    _handleWakeActions(
+      _wakeEscalation?.onCallStateChanged(
+            inCall: next.suspended,
+            now: now,
+            catchUp: next.catchUp,
+          ) ??
+          const [],
+    );
+  }
+
+  /// The rider turned the alarm off, or back on, mid-ride.
+  void setWakeEnabled(bool enabled) {
+    if (_wakeEnabled == enabled) return;
+    _wakeEnabled = enabled;
+    _log('WAKE ${enabled ? 'armed' : 'DISARMED'} by the rider for this ride.');
+    _syncWakeSuspension(DateTime.now());
   }
 
   /// An acknowledgment from outside the service isolate: the earphone tap

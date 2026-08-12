@@ -339,9 +339,28 @@ class WakeEscalation {
 
   /// A phone call started or ended (the shell listens to the audio-session
   /// interruption stream). Starting one silences and freezes a live ladder.
+  ///
+  /// ALSO THE RIDER'S OWN WAKE TOGGLE since 12 Aug 2026, which suspends through
+  /// this same door because it wants exactly the same behaviour: silent but not
+  /// deaf, still tracking what the train passes, re-orienting on the way back.
+  /// What it does not want is the catch-up, which is what [catchUp] is for.
+  ///
+  /// [catchUp] false means RESUME FOR WHAT IS AHEAD, and say nothing about what
+  /// went by. Two reasons, and the second is the real one:
+  ///
+  ///   - The copy would lie. Every catch-up line in [SpokenCopy] opens "While
+  ///     you were on your call", and a rider who switched off their own alarm
+  ///     was not on a call.
+  ///   - The semantics differ. A call is an interruption that happened TO the
+  ///     rider, so the app owes them what they missed. Switching the alarm off
+  ///     is a decision they made, and re-arming it is a decision about the rest
+  ///     of the journey rather than a request for a report. If they slept past
+  ///     their stop with it off, RideProgress's overshoot announcement still
+  ///     speaks, in all three languages, untouched by any of this.
   List<WakeAction> onCallStateChanged({
     required bool inCall,
     required DateTime now,
+    bool catchUp = true,
   }) {
     if (inCall) {
       if (_inCall) return const [];
@@ -358,6 +377,11 @@ class WakeEscalation {
     if (!_inCall) return const [];
     _inCall = false;
     _suspendedAt = null;
+    // Forgetting what went by is the whole of "no catch-up": every branch
+    // below reads this list, so clearing it here makes the firm-rung path and
+    // the spoken catch-up disappear together, which is correct. A rider
+    // re-arming gets the ordinary ladder for the stops still ahead.
+    if (!catchUp) _passedDuringCall.clear();
 
     final targetIndex = _targetIndex;
 

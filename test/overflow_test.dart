@@ -287,6 +287,8 @@ void main() {
       'travel mode, ${at.key}',
       () => MaterialApp(
         home: TravelModeScreen(
+        wakeEnabled: true,
+        onWakeEnabled: _ignore,
         crowdMode: false,
         pulseIntervalSeconds: 180,
         onCrowdMode: _ignore,

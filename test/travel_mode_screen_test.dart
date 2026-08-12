@@ -28,6 +28,8 @@ void main() {
     bool atStation = false,
     WakeChoice choice = WakeChoice.lastTwoStations,
     String? etaLine,
+    bool wakeEnabled = true,
+    List<bool>? wakeTaps,
     bool crowdMode = false,
     int? pulseIntervalSeconds = 180,
     List<bool>? crowdTaps,
@@ -36,6 +38,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: TravelModeScreen(
+          wakeEnabled: wakeEnabled,
+          onWakeEnabled: (on) => wakeTaps?.add(on),
           crowdMode: crowdMode,
           pulseIntervalSeconds: pulseIntervalSeconds,
           onCrowdMode: (on) => crowdTaps?.add(on),
@@ -204,6 +208,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: TravelModeScreen(
+          wakeEnabled: true,
+          onWakeEnabled: _ignore,
           crowdMode: false,
           pulseIntervalSeconds: 180,
           onCrowdMode: _ignore,
@@ -220,6 +226,55 @@ void main() {
     final label = tester.widget<Text>(find.text('Wake me up'));
     expect(label.maxLines, 1);
     expect(find.byKey(const Key('end_journey')), findsOneWidget);
+  });
+
+  group("THE RIDER'S WAKE TOGGLE, on the shield pill", () {
+    testWidgets('the pill says which state it is in, both ways', (tester) async {
+      await pump(tester, reachedIndex: 1);
+      expect(find.text('Wake-up on'), findsOneWidget);
+
+      await pump(tester, reachedIndex: 1, wakeEnabled: false);
+      expect(find.text('Wake-up off'), findsOneWidget);
+    });
+
+    testWidgets('THE PILL IS THE CONTROL, which it only looked like before', (
+      tester,
+    ) async {
+      // It was shaped like a toggle and was a statement, which is the same lie
+      // as the wake control deleted on 11 Aug with the sign reversed.
+      final taps = <bool>[];
+      await pump(tester, reachedIndex: 1, wakeTaps: taps);
+
+      await tester.tap(find.byKey(const Key('wake_toggle')));
+      await tester.pumpAndSettle();
+
+      expect(taps, [false], reason: 'an armed alarm turns off');
+    });
+
+    testWidgets('THE ROW AGREES WITH THE PILL, or the screen contradicts itself', (
+      tester,
+    ) async {
+      // The first build on the device showed "Wake-up off" directly above
+      // "Wake me up, 2 stations before Kalyan", in the two places a rider looks
+      // before pocketing the phone.
+      await pump(tester, reachedIndex: 1, wakeEnabled: false);
+
+      expect(find.text('2 stations before Kalyan'), findsNothing);
+      expect(
+        find.text('Off for this journey. Stations are still announced.'),
+        findsOneWidget,
+        reason: 'and it must say what SURVIVES, not only what stopped',
+      );
+    });
+
+    testWidgets('it clears the 48 dp floor like every other target', (
+      tester,
+    ) async {
+      await pump(tester, reachedIndex: 1);
+
+      final size = tester.getSize(find.byKey(const Key('wake_toggle')));
+      expect(size.height, greaterThanOrEqualTo(48.0));
+    });
   });
 
   group('CROWD MODE, moved onto this screen 12 Aug 2026', () {
@@ -317,6 +372,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: TravelModeScreen(
+          wakeEnabled: true,
+          onWakeEnabled: _ignore,
           crowdMode: false,
           pulseIntervalSeconds: 180,
           onCrowdMode: _ignore,
