@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/models/journey.dart';
 import 'package:commute_guardian/screens/travel_mode_screen.dart';
+import 'package:commute_guardian/widgets/pulse_switch.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -278,7 +279,7 @@ void main() {
         crowdTaps: taps,
       );
 
-      await tester.tap(find.byType(Switch));
+      await tester.tap(find.byType(PulseSwitch));
       await tester.pumpAndSettle();
 
       expect(taps, [false], reason: 'an on control turns it off');
@@ -294,7 +295,7 @@ void main() {
 
       expect(find.text('Wake me up'), findsOneWidget);
       expect(
-        find.byType(Switch),
+        find.byType(PulseSwitch),
         findsOneWidget,
         reason: 'exactly one control on this card, and it is the pulse',
       );

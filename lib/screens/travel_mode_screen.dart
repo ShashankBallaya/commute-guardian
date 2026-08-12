@@ -7,6 +7,7 @@ import '../models/station.dart';
 import '../theme/palette.dart';
 import '../theme/type_scale.dart';
 import '../widgets/pressable.dart';
+import '../widgets/pulse_switch.dart';
 
 /// Screen 4, Travel Mode. The app's home for the whole journey.
 ///
@@ -694,18 +695,12 @@ class _WakeCard extends StatelessWidget {
             icon: Icons.vibration,
             title: 'Pocket Pulse',
             detail: _pulseLine,
-            // THE SAME GREEN SETTINGS USES, stated rather than inherited. The
-            // first build on the 3T drew Material's default INDIGO thumb,
-            // which is stock Android bleeding into a locked palette, and it is
-            // the same class of fault as the InkWell ripple removed earlier
-            // today. `Switch.adaptive` would have made it worse, drawing an
-            // iOS-green switch on iOS and an indigo one here.
-            trailing: Switch(
-              value: crowdMode,
-              onChanged: onCrowdMode,
-              activeThumbColor: Palette.dotGreen,
-              activeTrackColor: Palette.greenSoft,
-            ),
+            // NOT Material's Switch. It drew an INDIGO thumb on the 3T, which
+            // is stock Android bleeding into a locked palette, and recolouring
+            // it would have fixed only the visible half: it also gives nothing
+            // on touch-down, runs a fixed-duration curve rather than a spring,
+            // and cannot be grabbed mid-flight. See [PulseSwitch].
+            trailing: PulseSwitch(value: crowdMode, onChanged: onCrowdMode),
             // The whole row is the target, not just the switch. A rider on a
             // moving train is aiming with a thumb at a 40 px control.
             onTap: () => onCrowdMode(!crowdMode),
