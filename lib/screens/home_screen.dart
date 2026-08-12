@@ -622,9 +622,19 @@ class _DestinationCard extends StatelessWidget {
                 children: [
                   Text(
                     title,
+                    // w600, NOT w700. At 20 on a near-black ground the heavy
+                    // weight read as shouting: three stacked bold station names
+                    // are the loudest thing on the screen, which is not what a
+                    // list of shortcuts should be. It also matched nothing else
+                    // in the stack; the CTA's own label is w600.
+                    //
+                    // Not lighter than w600, deliberately. Text on a dark
+                    // surface wants slightly MORE weight than the same text on
+                    // white, not less, and these names are read at a glance on
+                    // a platform.
                     style: const TextStyle(
                       fontSize: TypeScale.title,
-                      fontWeight: FontWeight.w700,
+                      fontWeight: FontWeight.w600,
                       color: Palette.text,
                     ),
                   ),
