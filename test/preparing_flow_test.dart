@@ -179,6 +179,48 @@ void main() {
   });
 
   testWidgets(
+    'A HEALTHY READING WITH EARPHONES IN SAYS WHAT IT DID NOT MEASURE',
+    (tester) async {
+      // The AirPods gap, 12 Aug 2026. `alarmVolume()` reads the current output
+      // ROUTE, so a fine number with earphones connected describes the
+      // EARPHONES. The rider has been told nothing about the speaker their
+      // alarm falls back to when those run out of battery an hour into a
+      // commute, and on the owner's own iPhone that speaker is at zero.
+      //
+      // iOS gives no way to read the built-in speaker while routed to
+      // Bluetooth, so the app cannot fix this. It can stop implying it
+      // measured something it did not.
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            stationRepositoryProvider.overrideWith(
+              (ref) async => StationRepository.parse(stationsJson),
+            ),
+            fixAcquirerProvider.overrideWithValue(
+              () async => fixAt(shahadLat, shahadLng),
+            ),
+          ],
+          child: const MaterialApp(
+            home: PreparingFlow(
+              destinationName: 'Kalyan',
+              report: PreparingReport(
+                hasFix: true,
+                originName: 'Shahad',
+                backgroundLocationGranted: true,
+                earphonesConnected: true,
+                alarmVolume: 0.8,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Checked your earphone volume'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'a low volume DRAWS the warning that had never been wired to anything',
     (tester) async {
       // The chip existed on the debug screen from the day Screen 3 was drawn
@@ -212,7 +254,13 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Volume is low'), findsOneWidget);
+      // NAMES THE DEVICE since 12 Aug 2026. `alarmVolume()` reads the current
+      // output ROUTE, so with earphones connected this reading describes the
+      // EARPHONES and says nothing about the speaker the alarm falls back to
+      // when they die mid-commute. The fixture has earphones IN, so the copy
+      // must say so.
+      expect(find.text('Your earphone volume is low'), findsOneWidget);
+      expect(find.text('Volume is low'), findsNothing);
       expect(find.text("Your earphones aren't connected"), findsNothing);
     },
   );
@@ -278,7 +326,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('No change yet'), findsOneWidget);
       expect(
-        find.text('Volume is low'),
+        find.text('Your earphone volume is low'),
         findsOneWidget,
         reason: 'the warning is still true, so it stays',
       );
@@ -294,7 +342,7 @@ void main() {
     ) async {
       final client = FakeRideServiceClient()..alarmVolumeValue = 0.05;
       await pumpPreflight(tester, client: client);
-      expect(find.text('Volume is low'), findsOneWidget);
+      expect(find.text('Your earphone volume is low'), findsOneWidget);
 
       // The rider turns it up between the screen appearing and the press.
       client.alarmVolumeValue = 0.8;
@@ -303,7 +351,7 @@ void main() {
       await tester.pump(PreflightScreen.recheckMinimum);
       await tester.pumpAndSettle();
 
-      expect(find.text('Volume is low'), findsNothing);
+      expect(find.text('Your earphone volume is low'), findsNothing);
       expect(
         find.text('No change yet'),
         findsNothing,

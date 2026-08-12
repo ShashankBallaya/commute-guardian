@@ -231,13 +231,40 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow> {
               status: PrepStatus.active,
             ),
           if (_volumeLow)
-            const PrepStep(
-              label: 'Volume is low',
+            PrepStep(
+              // NAMES THE DEVICE IT MEASURED since 12 Aug 2026, and the reason
+              // is a live failure mode rather than pedantry. `alarmVolume()`
+              // reads AVAudioSession.outputVolume, which is the volume of the
+              // CURRENT OUTPUT ROUTE. With earphones connected it describes the
+              // EARPHONES and says nothing about the phone's own speaker.
+              //
+              // That matters because of the failure this check exists for. The
+              // owner's iPhone media volume is always zero (11 Aug, the silent
+              // alarm). A rider starts with earphones in and a healthy reading,
+              // the earphones run out of battery an hour into a commute, the
+              // alarm falls back to a speaker at zero, and the check said they
+              // were fine. iOS gives no way to read the built-in speaker while
+              // routed to Bluetooth, so the app cannot fix this. It can stop
+              // implying it measured something it did not.
+              label: _earphonesConnected
+                  ? 'Your earphone volume is low'
+                  : 'Volume is low',
               // Says what to do, and does not name a number. The rider cannot
               // see a percentage on their own slider, so a threshold in the
               // copy would be advice they cannot act on.
               detail: 'Turn it up, or the alarm may not wake you',
               status: PrepStatus.active,
+            ),
+          // The honest half of the same fact, and it appears when the reading
+          // looks FINE. A rider with earphones in has been told nothing about
+          // the speaker their alarm falls back to, so this says so rather than
+          // letting a healthy number stand for both.
+          if (_earphonesConnected && !_volumeLow)
+            const PrepStep(
+              label: 'Checked your earphone volume',
+              detail: "Your phone's own volume isn't visible while they're "
+                  'connected',
+              status: PrepStatus.done,
             ),
           PrepStep(label: 'Watching for $destination', status: PrepStatus.done),
         ],
