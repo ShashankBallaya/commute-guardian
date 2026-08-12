@@ -27,10 +27,28 @@ import '../widgets/pressable.dart';
 /// That matters more here than it sounds: Kalyan and Kalwa are one fat-finger
 /// apart in the picker, and the failure mode is waking up in the wrong town.
 ///
-/// State A (frame approved 29 Jul 2026) is the wait for a fix, and lives in
-/// [PreparingScreen]. State B (cannot locate) is [CannotLocateScreen], frame
-/// approved the same day. States C (background location refused) and D
-/// (earphones or volume) are specified but not drawn yet.
+/// ALL FOUR STATES ARE DRAWN, and `preparing_flow.dart` is the thing that
+/// picks between them:
+///
+///   A. The wait for a fix, [PreparingScreen], frame approved 29 Jul 2026.
+///   B. Cannot locate, [CannotLocateScreen], same day.
+///   C. Background location refused, `BackgroundLocationScreen`.
+///   D. Earphones or volume, `PreflightScreen`, which is where the alarm
+///      volume check built on 11 Aug 2026 reaches the rider.
+///
+/// This block said C and D were "specified but not drawn yet" until 12 Aug
+/// 2026, months after both were built, and on that day it made me tell the
+/// owner the volume warning did not exist. A stale doc is worse than none: it
+/// is trusted exactly like the code and cannot be run.
+///
+/// STILL OPEN ON STATE D, and it is a real one. `alarmVolume()` reads
+/// `AVAudioSession.outputVolume`, which is the volume of the CURRENT OUTPUT
+/// ROUTE. With earphones connected it describes the earphones and says nothing
+/// about the phone's own speaker, which is what the alarm falls back to if they
+/// run out of battery mid-ride. The rider is told "Volume is low" or nothing at
+/// all, on a reading that may not apply to the thing that has to wake them.
+/// This screen already knows whether earphones are connected, so it has what it
+/// needs to say which device it measured.
 class PreparingScreen extends StatelessWidget {
   const PreparingScreen({
     super.key,
