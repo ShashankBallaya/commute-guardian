@@ -200,6 +200,45 @@ void main() {
   });
 
   group('APPLE-DESIGN PASS, 12 Aug 2026', () {
+    testWidgets('THE CARD AND THE CTA ARE THE SAME HEIGHT', (tester) async {
+      // The owner said the recent cards looked bigger than New journey. They
+      // were: 58.3 dp against 51.3 dp, measured off the device. Nobody had
+      // decided that. Both used the same padding and the whole difference came
+      // from the card's title being TypeScale.title at w700 while the button's
+      // label is bodyLarge at w600, a type choice made for another reason.
+      //
+      // Seven dp is below the threshold where a size difference reads as
+      // hierarchy, so it read as sloppiness instead. Colour carries the
+      // difference between them; height does not.
+      //
+      // THIS TEST IS THE GUARD, not the constant it holds. Change either type
+      // size and this fails, which forces the next person to decide the
+      // relationship rather than inherit a number.
+      await pumpHome(
+        tester,
+        history: await historyWith([('thane', 'Thane')]),
+      );
+
+      final card = tester
+          .getSize(find.byKey(const Key('destination_card_thane')))
+          .height;
+      final cta = tester.getSize(find.byKey(const Key('new_journey'))).height;
+
+      // 1.5 dp of tolerance, and the reason is a known property of this
+      // harness rather than slack: widget tests render in a square-glyph
+      // FALLBACK FONT whose line metrics are not Roboto's (recorded 5 Aug 2026
+      // when overflow_test was written). The same code measures 58.3 and 58.3
+      // on the 3T and 63.0 and 62.0 here. Exact equality is a device
+      // measurement; what this guard exists to catch is the 7 dp regression.
+      expect(
+        cta,
+        closeTo(card, 1.5),
+        reason: 'card is $card dp and the CTA is $cta dp; they are peers in '
+            'one stack and must share a rhythm',
+      );
+    });
+
+
     testWidgets('STARTING A RIDE TICKS, because it is the commit that matters', (
       tester,
     ) async {

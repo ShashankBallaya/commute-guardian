@@ -53,6 +53,27 @@ import '../widgets/status_chip.dart';
 /// it however tidy a smaller number would look.
 const _tapPadding = 16.0;
 
+/// The primary CTA's vertical padding, and it is NOT [_tapPadding].
+///
+/// The card and the button are peers in one stack, and they were 58.3 dp and
+/// 51.3 dp, measured off the device on 12 Aug 2026 when the owner said the
+/// cards looked bigger. They were. Nobody had decided that: both used
+/// [_tapPadding], and the whole 7 dp came from the card's title being
+/// [TypeScale.title] at w700 while the button's label is [TypeScale.bodyLarge]
+/// at w600, a type choice made for a different reason on 11 Aug.
+///
+/// Seven dp is below the threshold where a size difference reads as hierarchy.
+/// It reads as sloppiness instead, which is worse than either being deliberate,
+/// so the heights are equal now and `home_screen_test` holds them equal. That
+/// test is the real guard: change either type size and it fails, which forces
+/// the next person to decide this rather than inherit it.
+///
+/// COLOUR still carries the difference, and that is the intended split. The
+/// white fill says "the path that always works"; the cards say "the ride you
+/// probably want". They are the same size because they are the same kind of
+/// thing to a thumb.
+const _ctaPadding = 19.5;
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({
     super.key,
@@ -214,9 +235,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 /// A quiet destination in the header row.
 ///
 /// Deliberately dim, and NOT deliberately small. The emphasis rule is that the
-/// loudest thing on a screen is its primary action, and on Screen 1 that is a
-/// route card, so these two carry almost no colour. Quiet is a colour decision;
-/// it was never a licence to go under the touch floor.
+/// loudest thing on a screen belongs to going somewhere, and neither of these
+/// does: one opens a log and one opens preferences. So they carry almost no
+/// colour. Quiet is a colour decision; it was never a licence to go under the
+/// touch floor.
+///
+/// This block used to say "the primary action is a route card", which
+/// contradicted [_PrimaryCta] saying white means the primary action of the
+/// screen. Two claims, and the screen followed both: the cards took the size
+/// and the button took the colour, which is how they ended up 7 dp apart by
+/// accident. See [_ctaPadding] for the resolution.
 ///
 /// THEY WERE 42 dp UNTIL 12 AUG 2026, measured, and the floor is 48. The
 /// screen's own touch-minimum test held the chip, the cards and the CTA and
@@ -671,7 +699,7 @@ class _PrimaryCta extends StatelessWidget {
             ),
           ],
         ),
-        padding: const EdgeInsets.symmetric(vertical: _tapPadding),
+        padding: const EdgeInsets.symmetric(vertical: _ctaPadding),
         child: Center(
           child: Text(
             label,
