@@ -39,8 +39,13 @@ class HardStop extends WakeAction {
   const HardStop();
 }
 
-/// Android-only bonus layer; the iOS shell ignores it (background haptics
-/// are forbidden there, audio is the primary channel on both platforms).
+/// Buzz insistently. Honoured on BOTH platforms since 12 Aug 2026
+/// (`docs/adr/0003`); the iOS shell used to ignore it.
+///
+/// The action stays shapeless on purpose. Android controls duration and
+/// pattern, iOS has one fixed buzz and can vary only count and cadence, and
+/// this engine is platform-free: it says "buzz insistently" and
+/// [WakeAlertOutput] decides what that means on the hardware it is holding.
 class Vibrate extends WakeAction {
   const Vibrate();
 }

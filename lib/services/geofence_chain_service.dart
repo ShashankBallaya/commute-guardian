@@ -382,6 +382,7 @@ class GeofenceChainService {
     _wakeOutput = WakeAlertOutput(
       log: _log,
       onIosToneCommand: onIosToneCommand,
+      onIosVibrate: onIosVibrate,
     );
     _pulseOutput = PulseOutput(
       log: _log,
@@ -1240,6 +1241,9 @@ class GeofenceChainService {
           _selfInterruption.noteSustainedOwnAudioEnded();
           unawaited(_wakeOutput?.stopTone());
         case Vibrate():
+          // NOT awaited, and on iOS that now matters: the burst holds the
+          // future open for 800 ms while it spaces its buzzes, and the rest
+          // of this ladder's actions must not queue behind a vibration.
           unawaited(_wakeOutput?.vibrate());
         case HardStop():
           _log('WAKE hard stop: ceiling reached, ladder given up.');
@@ -1273,6 +1277,14 @@ class GeofenceChainService {
         if (!live) {
           _wakeTestCeilingAt = null;
           _wakeTestCeiling = null;
+          // Second belt on the iOS burst. WakeAlertOutput.stopTone already
+          // cancels it, and every stand-down the engine can reach today pairs
+          // with a StopTone, but an ack inside the check-in window emits none
+          // (there is no tone yet to stop). Nothing emits Vibrate that early
+          // now; if anything ever does, the failure would be a burst buzzing
+          // at a rider who has already said they are awake, which is the one
+          // outcome this feature must never produce.
+          _wakeOutput?.cancelVibration();
           unawaited(_releaseLadderAudio());
         }
         // Pocket Pulse DROPS while a ladder is live, and does not catch up when

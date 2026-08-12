@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import '../models/app_settings.dart';
@@ -196,36 +194,42 @@ class SettingsScreen extends StatelessWidget {
         onChanged: onCrowdMode,
         switchKey: const Key('settings_crowd_mode'),
       ),
-      // HIDDEN ON iOS, and written as the limitation rather than as a platform
-      // allow-list.
+      // SHOWN ON BOTH PLATFORMS AGAIN since 12 Aug 2026, and the history is
+      // worth keeping because the reasoning was right twice.
       //
-      // iOS forbids background haptics, which is a founding premise of this
-      // project, so PulseOutput.buzz returns at its first line there and this
-      // switch could never do anything on an iPhone. A control that cannot work
-      // is worse than an absent one: it invites a rider to solve a problem with
-      // a switch that will not solve it. Proven on the device rather than
-      // assumed, by a 10 Aug 2026 iPhone ride log that recorded "PULSE every
-      // 45s, with vibration" for a buzz that never happened.
+      // It was hidden on iOS on 11 Aug because iOS was believed to forbid
+      // background haptics, so PulseOutput.buzz returned at its first line
+      // there and this switch could never do anything on an iPhone. A control
+      // that cannot work is worse than an absent one. That was proven on the
+      // device rather than assumed, by a 10 Aug 2026 iPhone ride log that
+      // recorded "PULSE every 45s, with vibration" for a buzz that never
+      // happened.
       //
-      // `!Platform.isIOS`, NOT `Platform.isAndroid`. The two are identical on
-      // the two platforms this app ships to, and they differ where it is tested:
-      // the widget-test host is neither, so an allow-list would have hidden this
-      // row from the test that asserts its copy and quietly stopped checking it.
-      // State the constraint you actually have.
+      // `docs/adr/0003` then measured an iPhone buzzing 7 of 7 times from a
+      // locked pocket, so the premise is gone and the switch does something on
+      // both platforms. Hiding it now would leave every iPhone rider buzzing
+      // every 45 seconds with no way to stop it, which is the same fault as
+      // the dead control with the sign reversed: last time the switch could
+      // not act, this time the rider could not.
       //
-      // MOVED INSIDE THIS CARD from a card of its own. It is scoped to the
-      // pulse, and position makes that scope self-evident where a caption
-      // alone had to be read and believed.
-      if (!Platform.isIOS) ...[
-        const _Divider(),
-        _SwitchRow(
-          label: 'Vibrate with the pulse',
-          detail: 'The wake alarm always vibrates.',
-          value: settings.vibrateWithPulse,
-          onChanged: onVibrateWithPulse,
-          switchKey: const Key('settings_vibrate'),
-        ),
-      ],
+      // The row itself was never written as a platform allow-list, which is
+      // why re-showing it is a deleted condition rather than an edit. When it
+      // is gated at all, gate it as `!Platform.isIOS` and never as
+      // `Platform.isAndroid`: the two are identical on the two platforms this
+      // app ships to and differ where it is tested, so an allow-list would
+      // hide the row from the widget-test host and quietly stop checking it.
+      //
+      // It lives INSIDE this card rather than in one of its own. It is scoped
+      // to the pulse, and position makes that scope self-evident where a
+      // caption alone had to be read and believed.
+      const _Divider(),
+      _SwitchRow(
+        label: 'Vibrate with the pulse',
+        detail: 'The wake alarm always vibrates.',
+        value: settings.vibrateWithPulse,
+        onChanged: onVibrateWithPulse,
+        switchKey: const Key('settings_vibrate'),
+      ),
       if (onPreviewPulse != null) ...[
         const _Divider(),
         Pressable(

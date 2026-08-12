@@ -10,7 +10,7 @@ import 'package:vibration/vibration.dart';
 /// spike's throwaway ladder logic. It decides nothing; the engine says what
 /// to do and this does it.
 class WakeAlertOutput {
-  WakeAlertOutput({required this.log, this.onIosToneCommand});
+  WakeAlertOutput({required this.log, this.onIosToneCommand, this.onIosVibrate});
 
   final void Function(String message) log;
 
@@ -25,9 +25,29 @@ class WakeAlertOutput {
   /// media_ack channel, the same proven hop the session seizure rides.
   final void Function(String command, double volume)? onIosToneCommand;
 
+  /// iOS only: fires ONE system vibration natively (AudioServicesPlaySystemSound
+  /// with kSystemSoundID_Vibrate), through the same service isolate ->
+  /// sendDataToMain -> media_ack hop the tone command uses. Null off iOS, and
+  /// null on iOS until the shell wires it, which is the real platform gate:
+  /// this class never asks what platform it is on for vibration, it asks
+  /// whether it was given hands.
+  ///
+  /// Licensed by `docs/adr/0003` (12 Aug 2026). CLAUDE.md had locked "iOS
+  /// forbids background haptics", which was true of CHHapticEngine and
+  /// UIFeedbackGenerator and never applied to this call. Measured 7 of 7 from a
+  /// locked, pocketed iPhone at 45.0 s (log 559de451).
+  final void Function()? onIosVibrate;
+
   /// The last volume sent natively, so the every-tick self-heal resend
   /// does not spam the ride log.
   double? _sentIosVolume;
+
+  /// Bumped by every new burst AND by every cancel, so an in-flight burst
+  /// that wakes up from its gap finds its own number stale and stops. A
+  /// counter rather than a Timer because the burst must die on ANY path that
+  /// silences the ladder, and the ack is the one that matters: a burst that
+  /// outlives the ack buzzes at a rider who already said they are awake.
+  int _burst = 0;
 
   /// The tone rides the ALARM stream on Android (its own volume, separate
   /// from media) and the playback category on iOS (immune to the silent
@@ -55,7 +75,14 @@ class WakeAlertOutput {
     ),
   );
 
-  final AudioPlayer _player = AudioPlayer();
+  /// LAZY, and it is not a micro-optimisation. On iOS the tone is played
+  /// natively inside the session AppDelegate owns, so this player is never
+  /// touched there at all, and an unused AudioPlayer is a plugin channel and
+  /// a native player object created for nothing on every ride. It also makes
+  /// the vibration burst testable off-device: a test that never plays a tone
+  /// never constructs one.
+  AudioPlayer? _playerOrNull;
+  AudioPlayer get _player => _playerOrNull ??= AudioPlayer();
 
   /// Makes sure the looping tone is playing at [volume]. The loop can be
   /// killed under us: on iOS anything that deactivates the app's shared
@@ -66,7 +93,13 @@ class WakeAlertOutput {
   /// while a ladder is live (the watchdog for the 15 Jul iOS tone gap).
   Future<void> ensureToneAt(double volume) async {
     final iosTone = onIosToneCommand;
-    if (Platform.isIOS && iosTone != null) {
+    // `!Platform.isAndroid`, not `Platform.isIOS`, and it is the same lesson
+    // as the Settings vibration row: state the constraint you have. Android
+    // is where audioplayers owns the tone; the native command is where it
+    // does not. The two are identical on the two platforms this app ships to
+    // and differ on the test host, which is neither, so the allow-list form
+    // dragged an AudioPlayer into every test that so much as stopped a tone.
+    if (!Platform.isAndroid && iosTone != null) {
       // Sent on every call on purpose: the native side treats a repeat as
       // a volume set when playing and a restart when an interruption
       // killed the player, which is the whole watchdog collapsed into one
@@ -100,8 +133,19 @@ class WakeAlertOutput {
   }
 
   Future<void> stopTone() async {
+    // The burst dies with the tone, in the same call, so nothing outside this
+    // class has to remember to cancel it. Every path that silences a live
+    // ladder (the ack, a HardStop at the ceiling, a call suspending it) goes
+    // through StopTone, so this one line covers all three.
+    cancelVibration();
     final iosTone = onIosToneCommand;
-    if (Platform.isIOS && iosTone != null) {
+    // `!Platform.isAndroid`, not `Platform.isIOS`, and it is the same lesson
+    // as the Settings vibration row: state the constraint you have. Android
+    // is where audioplayers owns the tone; the native command is where it
+    // does not. The two are identical on the two platforms this app ships to
+    // and differ on the test host, which is neither, so the allow-list form
+    // dragged an AudioPlayer into every test that so much as stopped a tone.
+    if (!Platform.isAndroid && iosTone != null) {
       _sentIosVolume = null;
       iosTone('stopTone', 0);
       return;
@@ -113,18 +157,54 @@ class WakeAlertOutput {
     }
   }
 
+  /// How many buzzes an iOS burst fires, and how far apart.
+  ///
+  /// THE PLATFORMS CANNOT MATCH AND MUST NOT TRY. Android sends one insistent
+  /// pattern and controls every millisecond of it. iOS has exactly one fixed
+  /// buzz, no duration and no intensity (`docs/adr/0003`), so the only axes
+  /// left there are COUNT and CADENCE. Three buzzes 400 ms apart is the
+  /// nearest honest translation of the Android triple, and it is deliberately
+  /// nothing like Pocket Pulse's single tap followed by 45 s of silence: a
+  /// pocket must never have to work out which of the two it just felt.
+  static const iosBurstCount = 3;
+  static const iosBurstGap = Duration(milliseconds: 400);
+
+  /// One insistent vibration, on both platforms now.
+  ///
+  /// Audio remains the PRIMARY channel and this is a second one. It is worth
+  /// more on iOS than the count suggests: an iPhone in a pocket with the media
+  /// volume at zero (11 Aug 2026) has no other way to be felt at all.
   Future<void> vibrate() async {
-    // Haptics are an Android-only bonus layer (iOS forbids them in
-    // background); audio is the primary channel on both platforms.
-    if (!Platform.isAndroid) return;
-    try {
-      await Vibration.vibrate(pattern: [0, 500, 250, 500, 250, 800]);
-    } catch (error) {
-      log('WAKE vibration failed: $error');
+    if (Platform.isAndroid) {
+      try {
+        await Vibration.vibrate(pattern: [0, 500, 250, 500, 250, 800]);
+      } catch (error) {
+        log('WAKE vibration failed: $error');
+      }
+      return;
+    }
+    final buzz = onIosVibrate;
+    if (buzz == null) return;
+    final mine = ++_burst;
+    for (var i = 0; i < iosBurstCount; i++) {
+      // A cancel that lands during a gap stops every buzz still to come. A
+      // cancel that lands BEFORE this call does not suppress it, because the
+      // burst takes its own number on the way in, and that is correct: a
+      // cancel answers the burst that is sounding, and a rider who acks one
+      // ladder must still get the whole alarm at the next critical station.
+      if (_burst != mine) return;
+      buzz();
+      if (i < iosBurstCount - 1) await Future<void>.delayed(iosBurstGap);
     }
   }
 
+  /// Stops an iOS burst that is still mid-flight. A no-op on Android, where
+  /// the pattern is handed to the platform in one call and is over in 2.8 s.
+  void cancelVibration() => _burst++;
+
   Future<void> dispose() async {
-    await _player.dispose();
+    // Through the nullable field, so disposing a ride that never played a
+    // tone does not construct a player in order to throw it away.
+    await _playerOrNull?.dispose();
   }
 }

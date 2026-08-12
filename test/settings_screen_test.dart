@@ -233,27 +233,40 @@ void main() {
         });
     expect(crimsonBoxes, isEmpty);
   });
-  test('THE VIBRATION SWITCH IS HIDDEN ON iOS, not disabled', () {
-    // iOS forbids background haptics, so PulseOutput.buzz returns at its first
-    // line there and this switch could never do anything on an iPhone. A control
-    // that cannot work invites a rider to solve a problem with a switch that
-    // will not solve it.
+  test('THE VIBRATION SWITCH IS OFFERED ON BOTH PLATFORMS', () {
+    // REVERSED 12 Aug 2026 by `docs/adr/0003`, and the earlier version of this
+    // test was right for as long as its premise held. It asserted the row was
+    // HIDDEN on iOS, because iOS was believed to forbid background haptics and
+    // a control that cannot act invites a rider to solve a problem with a
+    // switch that will not solve it.
     //
-    // Read from the source, because Platform.isAndroid cannot be overridden in a
-    // widget test: whichever branch the host takes is the only one that renders.
+    // An iPhone then buzzed 7 times out of 7 from a locked pocket. Hiding the
+    // row now produces the mirror-image fault: an iPhone buzzing every 45
+    // seconds with nothing in the app that can stop it. Last time the switch
+    // could not act; this time the rider could not.
+    //
+    // Read from the source, because a platform branch cannot be overridden in
+    // a widget test: whichever branch the host takes is the only one that
+    // renders, so a rendering test can never see the platform it is not.
     final source = File('lib/screens/settings_screen.dart').readAsStringSync();
-    final row = source.indexOf("switchKey: const Key('settings_vibrate')");
-    expect(row, isNonNegative, reason: 'the row must exist');
-
-    final guard = source.lastIndexOf('!Platform.isIOS', row);
-    expect(guard, isNonNegative, reason: 'the row must sit behind a guard');
-    // Nothing else may open a block between the guard and the row, or the guard
-    // is guarding something else.
-    final between = source.substring(guard, row);
     expect(
-      between.contains('_SwitchRow(') && !between.contains('],'),
+      source.contains("switchKey: const Key('settings_vibrate')"),
       isTrue,
-      reason: 'the guard must wrap THIS row',
+      reason: 'the row must exist',
+    );
+
+    // No platform branch anywhere in this screen. Blunt on purpose: a guard
+    // that named only the old `!Platform.isIOS` spelling would pass against a
+    // reintroduced `Platform.isAndroid`, which is the same trap five earlier
+    // source-reading guards in this project fell into.
+    final code = source
+        .split('\n')
+        .where((line) => !line.trimLeft().startsWith('//'))
+        .join('\n');
+    expect(
+      code.contains('Platform.'),
+      isFalse,
+      reason: 'the settings screen must render the same on both platforms',
     );
   });
 }
