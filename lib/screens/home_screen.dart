@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/app_database.dart';
@@ -154,7 +155,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         // clock-with-counterclockwise-arrow, never a stopwatch,
                         // and no numeral (a "24" reads as open-24-hours).
                         icon: Icons.history,
-                        tooltip: 'Journey history',
+                        label: 'Journey history',
                         buttonKey: const Key('home_history'),
                         onTap: widget.onHistory!,
                       ),
@@ -162,7 +163,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       const SizedBox(width: 4),
                       _HeaderIcon(
                         icon: Icons.settings_outlined,
-                        tooltip: 'Settings',
+                        label: 'Settings',
                         buttonKey: const Key('home_settings'),
                         onTap: widget.onSettings!,
                       ),
@@ -212,34 +213,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
 /// A quiet destination in the header row.
 ///
-/// Deliberately dim and deliberately small. The emphasis rule is that the
+/// Deliberately dim, and NOT deliberately small. The emphasis rule is that the
 /// loudest thing on a screen is its primary action, and on Screen 1 that is a
-/// route card. These two are for the rare visit, not the daily one, so they get
-/// a 44 pt target and almost no colour.
+/// route card, so these two carry almost no colour. Quiet is a colour decision;
+/// it was never a licence to go under the touch floor.
+///
+/// THEY WERE 42 dp UNTIL 12 AUG 2026, measured, and the floor is 48. The
+/// screen's own touch-minimum test held the chip, the cards and the CTA and
+/// never listed these, so the one rule this project states as accessibility
+/// rather than taste was broken in the only two places the test could not see.
+/// Both are in that test now.
+///
+/// The doc said 44 and the padding comment said 42 and the device said 42.
+/// Three numbers for one control is how a floor gets crossed without anyone
+/// deciding to cross it.
 class _HeaderIcon extends StatelessWidget {
   const _HeaderIcon({
     required this.icon,
-    required this.tooltip,
+    required this.label,
     required this.buttonKey,
     required this.onTap,
   });
 
   final IconData icon;
-  final String tooltip;
+  final String label;
   final Key buttonKey;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
+    // SEMANTICS, NOT A Tooltip. A tooltip needs a hover or a long press, so on
+    // a phone it is unreachable in ordinary use, and when it does fire it draws
+    // a stock Material popup: the same Material bleed removed from the ripple
+    // and the switch today. A label serves the screen reader, which is who the
+    // tooltip was actually helping.
+    return Semantics(
+      button: true,
+      label: label,
       child: Pressable(
         key: buttonKey,
         onTap: onTap,
         child: Padding(
-          // 10 all round on a 22 icon gives a 42 pt target, which is the
-          // minimum a thumb finds on a moving train.
-          padding: const EdgeInsets.all(10),
+          // 13 all round on a 22 icon is 48 dp exactly, the floor.
+          padding: const EdgeInsets.all(13),
           child: Icon(icon, size: 22, color: Palette.textDim(0.6)),
         ),
       ),
@@ -349,7 +365,10 @@ class _Cards extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (suggestion != null) ...[
-          _DestinationCard(
+          _EnterOnce(
+            key: const ValueKey('enter_suggestion'),
+            index: 0,
+            child: _DestinationCard(
             cardKey: const Key('suggestion_card'),
             // "Heading home?" ONLY when the destination is the route the rider
             // labelled Home. The app does not otherwise know which of a
@@ -367,14 +386,20 @@ class _Cards extends StatelessWidget {
                 : 'You usually do, around now',
             onTap: () => onStartTo(suggestion.destinationId),
           ),
-          const SizedBox(height: 10),
-          const SizedBox(height: 6),
+          ),
+          // 16, as one value. It was `SizedBox(10)` followed by
+          // `SizedBox(6)`, which is a slip rather than a decision: every
+          // spacing number on this screen should be one somebody can defend.
+          const SizedBox(height: 16),
         ],
         if (shown.isNotEmpty) ...[
           const _Eyebrow('Saved'),
           const SizedBox(height: 10),
-          for (final route in shown) ...[
-            _DestinationCard(
+          for (final (i, route) in shown.indexed) ...[
+            _EnterOnce(
+              key: ValueKey('enter_saved_${route.label.toLowerCase()}'),
+              index: i + 1,
+              child: _DestinationCard(
               cardKey: Key('saved_route_card_${route.label.toLowerCase()}'),
               // The LABEL leads, because that is the word the rider chose and
               // the one they recognise at a glance on a platform. The station
@@ -384,6 +409,7 @@ class _Cards extends StatelessWidget {
               detail: route.destinationName,
               onTap: () => onStartTo(route.destinationStationId),
             ),
+            ),
             const SizedBox(height: 10),
           ],
         ],
@@ -391,11 +417,15 @@ class _Cards extends StatelessWidget {
           if (shown.isNotEmpty) const SizedBox(height: 6),
           const _Eyebrow('Recent'),
           const SizedBox(height: 10),
-          for (final ride in recents) ...[
-            _DestinationCard(
-              cardKey: Key('destination_card_${ride.destinationId}'),
-              title: ride.destinationName,
-              onTap: () => onStartTo(ride.destinationId),
+          for (final (i, ride) in recents.indexed) ...[
+            _EnterOnce(
+              key: ValueKey('enter_recent_${ride.destinationId}'),
+              index: shown.length + i + 1,
+              child: _DestinationCard(
+                cardKey: Key('destination_card_${ride.destinationId}'),
+                title: ride.destinationName,
+                onTap: () => onStartTo(ride.destinationId),
+              ),
             ),
             const SizedBox(height: 10),
           ],
@@ -429,6 +459,79 @@ class _Eyebrow extends StatelessWidget {
   }
 }
 
+/// Fades and rises once, the first time it is built.
+///
+/// The cards used to POP IN. `recentDestinationsProvider` answers from the
+/// database a frame or two after the screen opens, so every cold start showed
+/// an empty screen and then an abruptly full one, with nothing in between.
+///
+/// STAGGERED, WHICH SCREEN 4 IS NOT ALLOWED TO BE, and the difference is the
+/// point: a stagger is an ENTRANCE effect, this list genuinely enters once per
+/// app open, and Screen 1 is a screen the rider passes through rather than one
+/// held in a pocket for 45 minutes. The battery rule that forbids motion on
+/// Screen 4 does not reach here.
+///
+/// It runs ONCE per card, not on every rebuild. The key is derived from the
+/// card it wraps, so the State survives the rebuilds that a GPS fix or a
+/// database answer cause, and a chip going green does not re-animate the list.
+class _EnterOnce extends StatefulWidget {
+  const _EnterOnce({super.key, required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_EnterOnce> createState() => _EnterOnceState();
+}
+
+class _EnterOnceState extends State<_EnterOnce>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _in = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    // 40 ms apart, inside the 30 to 80 band. Longer and the list feels slow to
+    // arrive, which on the screen that exists to be two taps is the one thing
+    // it may not feel.
+    Future.delayed(Duration(milliseconds: 40 * widget.index), () {
+      if (mounted) _in.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _in.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Reduced motion keeps the FADE and drops the RISE. Opacity is not the
+    // category that causes motion sickness; translation is.
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    if (reduced) return widget.child;
+
+    return AnimatedBuilder(
+      animation: _in,
+      builder: (context, child) {
+        final t = Curves.easeOut.transform(_in.value);
+        return Opacity(
+          opacity: t,
+          child: Transform.translate(
+            offset: Offset(0, 8 * (1 - t)),
+            child: child,
+          ),
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
 /// One tap starts the ride, so the whole card is the target and there is no
 /// second control on it. Glass, not crimson: crimson fill is reserved for the
 /// single action that starts or ends a journey, and with several cards on
@@ -454,7 +557,18 @@ class _DestinationCard extends StatelessWidget {
     final detail = this.detail;
     return Pressable(
       key: cardKey,
-      onTap: onTap,
+      // A HAPTIC ON THE MOST MEANINGFUL COMMIT IN THE APP, and until 12 Aug 2026
+      // there was none: a crowd-mode toggle in Settings ticked and starting a
+      // journey did not. Utility says spend haptics on moments that matter, and
+      // this tap hands the rider's stop to their pocket.
+      //
+      // `selectionClick`, the system tick, for the same reason PulseSwitch uses
+      // it: this app's own buzzes MEAN things, and a UI control may not speak
+      // the vocabulary that the wake alarm and Pocket Pulse own.
+      onTap: () {
+        unawaited(HapticFeedback.selectionClick());
+        onTap();
+      },
       child: Container(
         decoration: Palette.glassCard(radius: 20),
         padding: const EdgeInsets.symmetric(

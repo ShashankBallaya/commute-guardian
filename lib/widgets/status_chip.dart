@@ -42,6 +42,11 @@ class StatusChip extends StatelessWidget {
       ),
     };
 
+    // Reduced motion takes the TRANSITIONS and never the states. The chip must
+    // still say where the rider is; it just stops moving to say it.
+    final reduced = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+    final duration = reduced ? Duration.zero : const Duration(milliseconds: 200);
+
     // The Align sits OUTSIDE the press target on purpose. The chip hugs its
     // content and the Align stretches full width, so scaling the Align would
     // scale that full-width box and slide the chip toward the centre instead
@@ -51,12 +56,28 @@ class StatusChip extends StatelessWidget {
       child: Pressable(
         key: const Key('status_chip'),
         onTap: onTap,
-        child: _chipBody(dotColor, label, station),
+        // THE WIDTH CHANGES BETWEEN STATES, and it used to jump. "Locating..."
+        // and "You're near: Dadar" and "Location unavailable. Tap to retry" are
+        // three very different widths, so the chip resized instantly under the
+        // thumb that had just tapped it. This is the one element on the screen
+        // that says the app knows where the rider is, and a hard cut on it
+        // reads as the app restarting rather than as the app answering.
+        child: AnimatedSize(
+          duration: duration,
+          curve: Curves.easeOut,
+          alignment: Alignment.centerLeft,
+          child: _chipBody(dotColor, label, station, duration),
+        ),
       ),
     );
   }
 
-  Widget _chipBody(Color dotColor, String label, String? station) {
+  Widget _chipBody(
+    Color dotColor,
+    String label,
+    String? station,
+    Duration duration,
+  ) {
     return Container(
       decoration: Palette.glassCard(radius: 28),
       // 13, not 12. At 12 the chip measured 47 dp, one under the 48 dp touch
@@ -68,7 +89,14 @@ class StatusChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
+          // The dot TWEENS between states rather than snapping. Amber to green
+          // is the moment the app found the rider, and a cut throws that away;
+          // 200 ms of colour is enough to read as an answer arriving. Colour is
+          // also the part of this that survives reduced motion, which is why
+          // the dot keeps its transition when the size loses one.
+          AnimatedContainer(
+            duration: duration,
+            curve: Curves.easeOut,
             width: 12,
             height: 12,
             decoration: BoxDecoration(
@@ -93,20 +121,28 @@ class StatusChip extends StatelessWidget {
           // 2026). It wraps rather than ellipsizing: the tail of that line is
           // the instruction, so it is the half that must not be cut.
           Flexible(
-            child: Text.rich(
-              TextSpan(
-                text: label,
-                children: [
-                  if (station != null)
-                    TextSpan(
-                      text: station,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                ],
-              ),
-              style: TextStyle(
-                fontSize: TypeScale.body,
-                color: Palette.textDim(0.9),
+            // CROSS-FADED, not swapped. One sentence replacing another in the
+            // same frame reads as a glitch; a fade reads as the chip changing
+            // its mind. Keyed on the text itself so an identical label does not
+            // fade to itself when some other part of the chip rebuilds.
+            child: AnimatedSwitcher(
+              duration: duration,
+              child: Text.rich(
+                key: ValueKey('$label$station'),
+                TextSpan(
+                  text: label,
+                  children: [
+                    if (station != null)
+                      TextSpan(
+                        text: station,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                  ],
+                ),
+                style: TextStyle(
+                  fontSize: TypeScale.body,
+                  color: Palette.textDim(0.9),
+                ),
               ),
             ),
           ),

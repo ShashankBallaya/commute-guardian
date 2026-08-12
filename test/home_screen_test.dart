@@ -8,6 +8,7 @@ import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
 import 'package:commute_guardian/widgets/pressable.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -147,10 +148,17 @@ void main() {
     // GestureDetector until 29 Jul 2026.
     await pumpHome(tester, history: await historyWith([('thane', 'Thane')]));
 
+    // THE HEADER ICONS WERE MISSING FROM THIS LIST until 12 Aug 2026, and they
+    // were 42 dp: the one rule this project calls accessibility rather than
+    // taste was broken in the only two places this test could not see. A floor
+    // test that does not name every tappable surface is a floor with a hole in
+    // it.
     for (final key in [
       'destination_card_thane',
       'new_journey',
       'status_chip',
+      'home_history',
+      'home_settings',
     ]) {
       expect(
         find
@@ -191,6 +199,76 @@ void main() {
     expect(cta.height, greaterThanOrEqualTo(48.0));
   });
 
+  group('APPLE-DESIGN PASS, 12 Aug 2026', () {
+    testWidgets('STARTING A RIDE TICKS, because it is the commit that matters', (
+      tester,
+    ) async {
+      // Utility: spend haptics on moments that matter. Until this pass a
+      // crowd-mode toggle in Settings ticked and handing your stop to your
+      // pocket did not. It must be the SYSTEM selection tick and never a
+      // vibration pattern: this app's own buzzes mean things, and a UI control
+      // may not speak the wake alarm's vocabulary.
+      final haptics = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'HapticFeedback.vibrate') {
+            haptics.add('${call.arguments}');
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+
+      final started = await pumpHome(
+        tester,
+        history: await historyWith([('thane', 'Thane')]),
+      );
+      await tester.tap(find.byKey(const Key('destination_card_thane')));
+      await tester.pumpAndSettle();
+
+      expect(started, ['thane']);
+      expect(haptics, ['HapticFeedbackType.selectionClick']);
+    });
+
+    testWidgets('THE CARDS ENTER ONCE, not on every rebuild', (tester) async {
+      // The entrance is an entrance. Screen 1 rebuilds whenever the GPS chip
+      // changes or the database answers, and a list that re-faded on each of
+      // those would flicker under the rider's thumb on the screen whose whole
+      // job is two taps.
+      await pumpHome(
+        tester,
+        history: await historyWith([('thane', 'Thane')]),
+      );
+      await tester.pumpAndSettle();
+
+      Opacity opacityOf() => tester.widget<Opacity>(
+        find
+            .ancestor(
+              of: find.byKey(const Key('destination_card_thane')),
+              matching: find.byType(Opacity),
+            )
+            .first,
+      );
+      expect(opacityOf().opacity, 1.0, reason: 'settled after the entrance');
+
+      // Force a rebuild the way a landing GPS fix would.
+      await tester.tap(find.byKey(const Key('status_chip')));
+      await tester.pump();
+
+      expect(
+        opacityOf().opacity,
+        1.0,
+        reason: 'a rebuild must not restart the entrance',
+      );
+    });
+  });
+
   testWidgets('no tappable surface falls under the 48 dp touch minimum', (
     tester,
   ) async {
@@ -202,10 +280,17 @@ void main() {
     // guarded separately, in wake_alert_screen_test.
     await pumpHome(tester, history: await historyWith([('thane', 'Thane')]));
 
+    // THE HEADER ICONS WERE MISSING FROM THIS LIST until 12 Aug 2026, and both
+    // measured 42 dp: the one rule this project calls accessibility rather than
+    // taste was broken in the only two places this test could not see. A floor
+    // test that does not name every tappable surface is a floor with a hole in
+    // it.
     for (final key in [
       'destination_card_thane',
       'new_journey',
       'status_chip',
+      'home_history',
+      'home_settings',
     ]) {
       final height = tester.getSize(find.byKey(Key(key))).height;
       expect(
