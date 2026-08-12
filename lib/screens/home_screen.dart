@@ -51,28 +51,38 @@ import '../widgets/status_chip.dart';
 /// The floor is 48 dp, the touch-target minimum, and `home_screen_test` holds
 /// it. These are still one-handed taps on a platform, so there is no room below
 /// it however tidy a smaller number would look.
-const _tapPadding = 16.0;
+///
+/// TRIMMED AGAIN ON 12 AUG 2026, from 16 to 12.5, so the cards land at 51.3 dp
+/// and match the CTA. Owner's call, and it is the second of the two ways to
+/// make them agree: the first put the button UP to 58.3, and he preferred the
+/// whole stack tighter.
+///
+/// **This leaves 3.3 dp above the floor.** That is the smallest headroom this
+/// screen has ever had, and it is the number to look at before any future trim:
+/// there is not another one available here.
+const _cardPadding = 12.5;
 
-/// The primary CTA's vertical padding, and it is NOT [_tapPadding].
+/// The primary CTA's vertical padding, and it differs from [_cardPadding] on
+/// purpose: the two numbers exist so the two HEIGHTS can be equal.
 ///
 /// The card and the button are peers in one stack, and they were 58.3 dp and
 /// 51.3 dp, measured off the device on 12 Aug 2026 when the owner said the
-/// cards looked bigger. They were. Nobody had decided that: both used
-/// [_tapPadding], and the whole 7 dp came from the card's title being
+/// cards looked bigger. They were. Nobody had decided that: both used one
+/// padding constant, and the whole 7 dp came from the card's title being
 /// [TypeScale.title] at w700 while the button's label is [TypeScale.bodyLarge]
 /// at w600, a type choice made for a different reason on 11 Aug.
 ///
 /// Seven dp is below the threshold where a size difference reads as hierarchy.
 /// It reads as sloppiness instead, which is worse than either being deliberate,
-/// so the heights are equal now and `home_screen_test` holds them equal. That
-/// test is the real guard: change either type size and it fails, which forces
-/// the next person to decide this rather than inherit it.
+/// so the heights are equal now at 51.3 dp and `home_screen_test` holds them
+/// equal. That test is the real guard: change either type size and it fails,
+/// which forces the next person to decide this rather than inherit it.
 ///
 /// COLOUR still carries the difference, and that is the intended split. The
 /// white fill says "the path that always works"; the cards say "the ride you
 /// probably want". They are the same size because they are the same kind of
 /// thing to a thumb.
-const _ctaPadding = 19.5;
+const _ctaPadding = 16.0;
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({
@@ -601,7 +611,7 @@ class _DestinationCard extends StatelessWidget {
         decoration: Palette.glassCard(radius: 20),
         padding: const EdgeInsets.symmetric(
           horizontal: 18,
-          vertical: _tapPadding,
+          vertical: _cardPadding,
         ),
         child: Row(
           children: [
