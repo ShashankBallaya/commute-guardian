@@ -104,6 +104,11 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
   /// the Figma work.
   final List<String> _logs = [];
 
+  /// Screen 4's crowd-mode control, for the PREVIEW only. The preview draws
+  /// the screen with no ride behind it, so this is the local state a press has
+  /// to move; a real ride reads the setting through the provider.
+  bool _previewCrowdMode = false;
+
   /// Debug bench flag: Sarvam clip greets at Start (Android only). Handed to
   /// the service through the store at Start; default off keeps Start stock.
   bool _sarvamGreeting = false;
@@ -217,6 +222,12 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
             journey: journey,
             reachedIndex: 2,
             wakeChoice: choice,
+            // The PREVIEW's own state, deliberately local. This bench draws the
+            // screen without a ride, so there is no live pulse for a real
+            // toggle to reach; the control is here to be looked at and pressed.
+            crowdMode: _previewCrowdMode,
+            pulseIntervalSeconds: _previewCrowdMode ? 45 : 180,
+            onCrowdMode: (on) => setLocal(() => _previewCrowdMode = on),
             onEndJourney: () => Navigator.of(context).maybePop(),
           ),
         ),

@@ -6,6 +6,7 @@ import '../models/journey.dart';
 import '../models/station.dart';
 import '../theme/palette.dart';
 import '../theme/type_scale.dart';
+import '../widgets/pressable.dart';
 
 /// Screen 4, Travel Mode. The app's home for the whole journey.
 ///
@@ -39,6 +40,9 @@ class TravelModeScreen extends StatelessWidget {
     required this.reachedIndex,
     this.atStation = false,
     required this.wakeChoice,
+    required this.crowdMode,
+    required this.pulseIntervalSeconds,
+    required this.onCrowdMode,
     required this.onEndJourney,
     this.etaLine,
   });
@@ -55,6 +59,27 @@ class TravelModeScreen extends StatelessWidget {
   final bool atStation;
 
   final WakeChoice wakeChoice;
+
+  /// CROWD MODE LIVES HERE NOW, and not only in Settings, since 12 Aug 2026.
+  ///
+  /// It is a decision about the train the rider is standing in, not about the
+  /// app: you find out the carriage is packed when the doors open, which is
+  /// long after you last looked at Settings. Owner's call, and it is the right
+  /// one; Screen 1 was considered and rejected, because you have not boarded
+  /// yet and Screen 1's whole design is two taps to a ride.
+  ///
+  /// It is the SAME setting Settings writes, not a per-ride copy. Two controls
+  /// for one behaviour is the disease that got the wake toggle deleted on
+  /// 11 Aug; this is one setting with a second, better-placed door.
+  final bool crowdMode;
+
+  /// The cadence in force, or NULL when the pulse is off. Crowd mode is already
+  /// folded in by [AppSettings.pulseIntervalSeconds]. Passed in rather than
+  /// re-derived, for the same reason [reachedIndex] is: one place folds it, and
+  /// a screen that worked it out again could disagree with the ride.
+  final int? pulseIntervalSeconds;
+
+  final ValueChanged<bool> onCrowdMode;
 
   /// Held to confirm. An accidental brush must never end a ride the rider is
   /// asleep on.
@@ -107,7 +132,13 @@ class TravelModeScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              _WakeCard(choice: wakeChoice, destinationName: _destinationName),
+              _WakeCard(
+                choice: wakeChoice,
+                destinationName: _destinationName,
+                crowdMode: crowdMode,
+                pulseIntervalSeconds: pulseIntervalSeconds,
+                onCrowdMode: onCrowdMode,
+              ),
               const SizedBox(height: 16),
               _EndJourneyButton(onConfirmed: onEndJourney),
             ],
@@ -601,58 +632,147 @@ class _ChainRow extends StatelessWidget {
 /// force, and it is the Phase 3 seam in the same shape [TravelModeScreen.etaLine]
 /// already uses.
 class _WakeCard extends StatelessWidget {
-  const _WakeCard({required this.choice, required this.destinationName});
+  const _WakeCard({
+    required this.choice,
+    required this.destinationName,
+    required this.crowdMode,
+    required this.pulseIntervalSeconds,
+    required this.onCrowdMode,
+  });
 
   final WakeChoice choice;
   final String destinationName;
+  final bool crowdMode;
+  final int? pulseIntervalSeconds;
+  final ValueChanged<bool> onCrowdMode;
 
   String get _line => switch (choice) {
     WakeChoice.lastTwoStations => '2 stations before $destinationName',
     WakeChoice.onlyDestination => 'at $destinationName',
   };
 
+  /// The cadence in the rider's words. Seconds below a minute are said in
+  /// seconds, because "0.75 minutes" is nobody's idea of a packed train.
+  String get _pulseLine {
+    final seconds = pulseIntervalSeconds;
+    // Null is the pulse switched off, which is a real state a rider chose and
+    // not a missing value. Said plainly rather than left blank.
+    if (seconds == null || seconds <= 0) return 'Off';
+    if (seconds < 60) return 'Every $seconds seconds';
+    final minutes = seconds ~/ 60;
+    return 'Every $minutes ${minutes == 1 ? 'minute' : 'minutes'}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: Palette.glassCard(radius: 20),
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      child: Row(
+      // 12, not 14. Two two-line rows overflowed a 320 dp phone at text scale
+      // 1.3 by exactly 7 px, measured rather than guessed; four pixels off each
+      // end of the card and four off the divider clears it with room, and
+      // nothing on any larger phone can tell the difference. The one-line
+      // version that also cleared it was rejected on the 3T: it truncated all
+      // three labels ("2 stations befo...", "Pocket P...", "Every 3 mi...").
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.notifications, color: Palette.text, size: 24),
-          const SizedBox(width: 12),
-          // Expanded now, not Flexible. There is no control left to give way
-          // to, so the sentence gets the whole row, which is what stopped
-          // "Wake me up before my stop" being squeezed onto three lines.
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'Wake me up',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: TypeScale.body,
-                    fontWeight: FontWeight.w700,
-                    color: Palette.text,
-                  ),
-                ),
-                Text(
-                  _line,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: TypeScale.label,
-                    color: Palette.textDim(0.7),
-                  ),
-                ),
-              ],
+          // ROW ONE STATES, ROW TWO OFFERS. The wake row is deliberately still
+          // a sentence with no control: what will happen, so the rider can
+          // pocket the phone. The pulse row is the one decision that belongs to
+          // the train they are standing in rather than to their setup.
+          _CardRow(
+            icon: Icons.notifications,
+            title: 'Wake me up',
+            detail: _line,
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Divider(height: 1, thickness: 1, color: Color(0x14FFFFFF)),
+          ),
+          _CardRow(
+            icon: Icons.vibration,
+            title: 'Pocket Pulse',
+            detail: _pulseLine,
+            // THE SAME GREEN SETTINGS USES, stated rather than inherited. The
+            // first build on the 3T drew Material's default INDIGO thumb,
+            // which is stock Android bleeding into a locked palette, and it is
+            // the same class of fault as the InkWell ripple removed earlier
+            // today. `Switch.adaptive` would have made it worse, drawing an
+            // iOS-green switch on iOS and an indigo one here.
+            trailing: Switch(
+              value: crowdMode,
+              onChanged: onCrowdMode,
+              activeThumbColor: Palette.dotGreen,
+              activeTrackColor: Palette.greenSoft,
             ),
+            // The whole row is the target, not just the switch. A rider on a
+            // moving train is aiming with a thumb at a 40 px control.
+            onTap: () => onCrowdMode(!crowdMode),
           ),
         ],
       ),
     );
+  }
+}
+
+/// One row of [_WakeCard]. Shared so the two rows cannot drift into two
+/// different-looking things, which is what happens when a control is added to
+/// a card months after the row above it was designed.
+class _CardRow extends StatelessWidget {
+  const _CardRow({
+    required this.icon,
+    required this.title,
+    required this.detail,
+    this.trailing,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String detail;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final row = Row(
+      children: [
+        Icon(icon, color: Palette.text, size: 24),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: TypeScale.body,
+                  fontWeight: FontWeight.w700,
+                  color: Palette.text,
+                ),
+              ),
+              Text(
+                detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: TypeScale.label,
+                  color: Palette.textDim(0.7),
+                ),
+              ),
+            ],
+          ),
+        ),
+        ?trailing,
+      ],
+    );
+
+    if (onTap == null) return row;
+    return PressableRow(onTap: onTap!, child: row);
   }
 }
 

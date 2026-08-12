@@ -27,11 +27,17 @@ void main() {
     bool atStation = false,
     WakeChoice choice = WakeChoice.lastTwoStations,
     String? etaLine,
+    bool crowdMode = false,
+    int? pulseIntervalSeconds = 180,
+    List<bool>? crowdTaps,
   }) async {
     final ends = <int>[];
     await tester.pumpWidget(
       MaterialApp(
         home: TravelModeScreen(
+          crowdMode: crowdMode,
+          pulseIntervalSeconds: pulseIntervalSeconds,
+          onCrowdMode: (on) => crowdTaps?.add(on),
           journey: journey,
           reachedIndex: reachedIndex,
           atStation: atStation,
@@ -197,6 +203,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: TravelModeScreen(
+          crowdMode: false,
+          pulseIntervalSeconds: 180,
+          onCrowdMode: _ignore,
           journey: longest,
           reachedIndex: 2,
           wakeChoice: WakeChoice.lastTwoStations,
@@ -210,6 +219,86 @@ void main() {
     final label = tester.widget<Text>(find.text('Wake me up'));
     expect(label.maxLines, 1);
     expect(find.byKey(const Key('end_journey')), findsOneWidget);
+  });
+
+  group('CROWD MODE, moved onto this screen 12 Aug 2026', () {
+    // It is a decision about the train the rider is standing in, not about
+    // their setup: you find out the carriage is packed when the doors open,
+    // which is long after you last looked at Settings. Screen 1 was rejected
+    // for it, because you have not boarded yet.
+
+    testWidgets('the row states the cadence in force, crowd mode folded in', (
+      tester,
+    ) async {
+      await pump(tester, reachedIndex: 1, pulseIntervalSeconds: 180);
+      expect(find.text('Every 3 minutes'), findsOneWidget);
+
+      // 45 s is crowd mode's cadence, and it is said in SECONDS. "0.75
+      // minutes" is nobody's idea of a packed train.
+      await pump(
+        tester,
+        reachedIndex: 1,
+        crowdMode: true,
+        pulseIntervalSeconds: 45,
+      );
+      expect(find.text('Every 45 seconds'), findsOneWidget);
+    });
+
+    testWidgets('a pulse switched off says so rather than going blank', (
+      tester,
+    ) async {
+      // Null is a state the rider chose, not a missing value.
+      await pump(tester, reachedIndex: 1, pulseIntervalSeconds: null);
+      expect(find.text('Off'), findsOneWidget);
+    });
+
+    testWidgets('THE WHOLE ROW IS THE TARGET, not just the switch', (
+      tester,
+    ) async {
+      // A rider aims a thumb at this on a moving train. The switch alone is
+      // about 40 px wide, under the 48 dp floor this project measures against.
+      final taps = <bool>[];
+      await pump(tester, reachedIndex: 1, crowdTaps: taps);
+
+      await tester.tap(find.text('Pocket Pulse'));
+      await tester.pumpAndSettle();
+
+      expect(taps, [true], reason: 'tapping the label must toggle it on');
+    });
+
+    testWidgets('the switch reports the value it would move to', (
+      tester,
+    ) async {
+      final taps = <bool>[];
+      await pump(
+        tester,
+        reachedIndex: 1,
+        crowdMode: true,
+        pulseIntervalSeconds: 45,
+        crowdTaps: taps,
+      );
+
+      await tester.tap(find.byType(Switch));
+      await tester.pumpAndSettle();
+
+      expect(taps, [false], reason: 'an on control turns it off');
+    });
+
+    testWidgets('the wake line is still a statement, with no control', (
+      tester,
+    ) async {
+      // Row one states, row two offers. What will happen, so the rider can
+      // pocket the phone; the pre-warning DISTANCE stays a Guardian Plus
+      // surface and must not become a second way to change leadTimeS.
+      await pump(tester, reachedIndex: 1);
+
+      expect(find.text('Wake me up'), findsOneWidget);
+      expect(
+        find.byType(Switch),
+        findsOneWidget,
+        reason: 'exactly one control on this card, and it is the pulse',
+      );
+    });
   });
 
   testWidgets('a long chain scrolls inside the card, it does not overflow', (
@@ -227,6 +316,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: TravelModeScreen(
+          crowdMode: false,
+          pulseIntervalSeconds: 180,
+          onCrowdMode: _ignore,
           journey: longest,
           reachedIndex: 1,
           wakeChoice: WakeChoice.onlyDestination,
@@ -296,3 +388,8 @@ void main() {
     });
   });
 }
+
+/// These two fixtures build the screen directly to test chain layout, and do
+/// not press the crowd-mode control. The tests that do press it pass their own
+/// collector through `pump`.
+void _ignore(bool _) {}

@@ -287,6 +287,10 @@ void main() {
       'travel mode, ${at.key}',
       () => MaterialApp(
         home: TravelModeScreen(
+        crowdMode: false,
+        pulseIntervalSeconds: 180,
+        onCrowdMode: _ignore,
+
           journey: journey,
           reachedIndex: at.value,
           wakeChoice: WakeChoice.lastTwoStations,
@@ -387,3 +391,7 @@ void main() {
 
   atEverySize('history, empty', () => wrap(const HistoryScreen()));
 }
+
+/// Screen 4 grew a crowd-mode control on 12 Aug 2026. These fixtures do not
+/// exercise it; the tests that do pass their own callback.
+void _ignore(bool _) {}

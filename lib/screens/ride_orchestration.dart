@@ -745,11 +745,30 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
                 if (routeContext.mounted) Navigator.of(routeContext).maybePop();
               });
             }
+            // WATCHED HERE, inside the pushed route's own Consumer, and that is
+            // load bearing. Screen 4 lives in a MaterialPageRoute, so a
+            // setState on the HOST does not rebuild it: punchlist item 2 was
+            // exactly this bug, reported as "I can't toggle it". A provider the
+            // route itself watches is the only thing that redraws this screen.
+            final settings =
+                ref.watch(appSettingsProvider).valueOrNull ??
+                const AppSettings();
             return TravelModeScreen(
               journey: journey,
               reachedIndex: live?.reachedIndex ?? -1,
               atStation: live?.atStation ?? false,
               wakeChoice: wakeChoice,
+              crowdMode: settings.crowdMode,
+              pulseIntervalSeconds: settings.pulseIntervalSeconds,
+              // Writes through to settings AND pushes to the running ride, the
+              // same pair Settings uses. Without the push the rider would keep
+              // the old cadence until the ride ended, which is the "it didn't
+              // take" that makes a control feel broken, and this one is tapped
+              // in the exact moment it has to take: standing on a packed train.
+              onCrowdMode: (on) async {
+                await ref.read(appSettingsProvider.notifier).setCrowdMode(on);
+                await pushPulseSettings();
+              },
               onEndJourney: () async {
                 await stop();
                 if (routeContext.mounted) {
