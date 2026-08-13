@@ -195,4 +195,80 @@ void main() {
       isNull,
     );
   });
+
+  group('the clip path is not an Android feature', () {
+    // The owner asked for clips on iOS on 13 Aug 2026, because the device TTS
+    // voice is not good enough to be the product's voice. The pack was never
+    // iOS-hostile: ClipLibrary is pure dart:io, and playback is audioplayers
+    // with a DeviceFileSource, which iOS has always supported. What made it
+    // Android-only was ONE call, getExternalStorageDirectory(), which does not
+    // exist on iOS, and the `&& Platform.isAndroid` written to guard it.
+    //
+    // The service cannot be constructed under the test binding, so this is a
+    // source guard rather than a behavioural one. It is written the way
+    // pressable_test.dart's guard had to be rewritten five times: comments
+    // stripped first, and a test below that proves it can still fail.
+    // \r stripped as well as comments: the working tree is CRLF on Windows,
+    // and a multi-line expectation written with \n silently never matches.
+    String serviceCode() => File('lib/services/geofence_chain_service.dart')
+        .readAsStringSync()
+        .replaceAll('\r\n', '\n')
+        .split('\n')
+        .where((line) => !line.trimLeft().startsWith('//'))
+        .join('\n');
+
+    /// The condition of the `if (sarvamClips ...)` that opens the pack.
+    String clipGateCondition(String code) {
+      final match = RegExp(r'if \(sarvamClips([^)]*)\)').firstMatch(code);
+      expect(
+        match,
+        isNotNull,
+        reason: 'the clip gate itself has moved or been renamed',
+      );
+      return match!.group(1)!;
+    }
+
+    test('NO PLATFORM CHECK GATES THE CLIP PACK. iOS reaching this code is '
+        'the whole point of the change', () {
+      expect(clipGateCondition(serviceCode()), isNot(contains('Platform')));
+    });
+
+    test('and the guard can still fail, on the exact line it used to read', () {
+      const old = 'if (sarvamClips && Platform.isAndroid) {';
+      expect(clipGateCondition(old), contains('Platform'));
+    });
+
+    test('ANDROID STILL READS ITS OWN DIRECTORY, so no pack already pushed to '
+        'a device moves', () {
+      final code = serviceCode();
+      expect(code, contains('getExternalStorageDirectory()'));
+      expect(code, contains('getApplicationDocumentsDirectory()'));
+      // The Android arm of the ternary, so the two cannot be swapped silently
+      // and iOS given the directory that only exists on Android.
+      expect(
+        RegExp(
+          r'Platform\.isAndroid\s*\?\s*await getExternalStorageDirectory\(\)',
+        ).hasMatch(code),
+        isTrue,
+        reason: 'Android must keep the external files dir it already uses',
+      );
+    });
+
+    test('iOS EXPOSES ITS DOCUMENTS FOLDER, or the pack cannot be delivered '
+        'to the phone at all', () {
+      final plist = File('ios/Runner/Info.plist').readAsStringSync();
+      // Both keys, each immediately followed by <true/>. Checking the key
+      // alone would pass on a plist that sets it false.
+      for (final key in const [
+        'UIFileSharingEnabled',
+        'LSSupportsOpeningDocumentsInPlace',
+      ]) {
+        expect(
+          RegExp('<key>$key</key>\\s*<true/>').hasMatch(plist),
+          isTrue,
+          reason: '$key must be present AND true',
+        );
+      }
+    });
+  });
 }

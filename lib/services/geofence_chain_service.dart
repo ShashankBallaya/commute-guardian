@@ -446,8 +446,22 @@ class GeofenceChainService {
       );
     }
 
-    if (sarvamClips && Platform.isAndroid) {
-      final dir = await getExternalStorageDirectory();
+    if (sarvamClips) {
+      // THE PACK LIVES IN A DIFFERENT PLACE ON EACH PLATFORM, and only
+      // because the platforms offer different adb-and-Finder-reachable spots.
+      // Everything past this line is identical, which is the point: the clip
+      // path was Android-only by ACCIDENT of this one call, not by design.
+      // getExternalStorageDirectory() does not exist on iOS and returns null
+      // there, so the old `&& Platform.isAndroid` guard was really just
+      // guarding a null.
+      //
+      // Android keeps the external files dir it has used since 20 Jul, so
+      // every pack already on a device stays exactly where it is. iOS uses
+      // the app's Documents directory, which is what UIFileSharingEnabled
+      // exposes to Finder and the Apple Devices app: see ios/Runner/Info.plist.
+      final dir = Platform.isAndroid
+          ? await getExternalStorageDirectory()
+          : await getApplicationDocumentsDirectory();
       // ONE DIRECTORY PER LANGUAGE, named by the same tag FlutterTts is given,
       // which is what makes a pack physically unable to be played under the
       // wrong voice: a Hindi ride looks in clips/hi-IN and finds nothing at

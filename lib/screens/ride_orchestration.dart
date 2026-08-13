@@ -78,7 +78,20 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// Debug bench flags, per Start, handed to the service through the store.
   /// False here keeps every product Start stock.
   bool get sarvamGreeting => false;
-  bool get sarvamClips => false;
+
+  /// TRUE SINCE 13 AUG 2026, and no longer a bench flag. The owner asked for
+  /// the Sarvam voice on a real ride because the device TTS floor is not good
+  /// enough to be the product's voice, and until today a clip had only ever
+  /// played on a ride started from the debug screen.
+  ///
+  /// Safe to ask for unconditionally, which is why this is one word rather
+  /// than a setting. A phone with no pack logs "CLIPS requested but no pack
+  /// found" and speaks exactly the same sentences through device TTS; a pack
+  /// with a broken manifest is refused whole; and a single clip that fails to
+  /// play drops to the floor with the identical sentence
+  /// (see _enqueueClip). The rider can lose the nicer voice. They can never
+  /// lose the information.
+  bool get sarvamClips => true;
 
   /// Should a host that comes up mid-ride open Screen 4 by itself?
   ///
