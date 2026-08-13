@@ -24,11 +24,16 @@ void main() {
 
   test('THE VOLUME IS RESTORED BEFORE THE WELCOME IS QUEUED', () {
     // The pre-warm drops the volume to speak one silent space. Both the drop
-    // and the restore chain onto `_speaking`, the same queue every utterance
+    // and the restore chain onto `_audioChain`, the same queue every utterance
     // uses, so the welcome can only run after the restore. Reordering these,
     // or moving the restore off the chain, speaks the welcome at volume zero.
     // That is a silent first impression on the one line whose whole job is to
     // prove through the earphones that the audio path works.
+    //
+    // The queue was called `_speaking` until 13 Aug 2026, when it was merged
+    // with the clip queue so a clip could not start on top of a half-spoken
+    // welcome. Only the name changed here; the ordering this test pins did
+    // not.
     final warm = source.indexOf('Future<void> _preWarmTts()');
     expect(warm, greaterThan(-1), reason: 'the pre-warm is gone');
 
@@ -40,9 +45,9 @@ void main() {
     expect(drop, greaterThan(-1));
     expect(speak, greaterThan(drop), reason: 'volume drops before the space');
     expect(restore, greaterThan(speak), reason: 'volume restores after it');
-    // On the chain, not fired loose: `_speaking = _speaking.then` is what
+    // On the chain, not fired loose: `_audioChain = _audioChain.then` is what
     // orders it against the welcome.
-    expect(body, contains('_speaking = _speaking.then'));
+    expect(body, contains('_audioChain = _audioChain.then'));
   });
 
   test('the pre-warm goes through _speak, never straight at the plugin', () {

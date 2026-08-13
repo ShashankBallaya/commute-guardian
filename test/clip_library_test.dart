@@ -254,6 +254,46 @@ void main() {
       );
     });
 
+    test('CLIPS AND SPEECH SHARE ONE QUEUE, so a clip cannot start on top of '
+        'a half-spoken line', () {
+      // The 13 Aug 2026 ride opened with the welcome at 17:14:04.023 and the
+      // origin's clip at 17:14:04.033, two voices at once. They were two
+      // separate chains, and the comment on the clip chain accepted that race
+      // because "Android TTS gives no completion to await mid-ride". That
+      // premise died on 30 Jul when _utteranceDone was added.
+      final code = serviceCode();
+      expect(
+        code,
+        contains('_audioChain = _audioChain'),
+        reason: 'the clip queue and the speech queue must be the same future',
+      );
+      expect(
+        code,
+        isNot(contains('_clipChain')),
+        reason: 'a second queue is the bug coming back',
+      );
+    });
+
+    test('AND THE CLIP FALLBACK MUST NOT RE-ENTER THAT QUEUE, or the ride '
+        'deadlocks on its first failed clip', () {
+      // _enqueueClip's catch runs INSIDE _audioChain. Calling _speak there
+      // appends to the same chain and awaits it, which cannot complete until
+      // the code doing the awaiting returns. Two separate queues hid this;
+      // one queue makes it fatal, and a failed clip is not rare (4 of 14 on
+      // the 13 Aug ride).
+      final code = serviceCode();
+      final start = code.indexOf('void _enqueueClip(');
+      expect(start, greaterThan(-1), reason: '_enqueueClip has been renamed');
+      final body = code.substring(start, code.indexOf('\n  }', start));
+
+      expect(body, contains('_speakNow('));
+      expect(
+        RegExp(r'await _speak\(').hasMatch(body),
+        isFalse,
+        reason: 'the fallback must call _speakNow, never the queueing _speak',
+      );
+    });
+
     test('iOS EXPOSES ITS DOCUMENTS FOLDER, or the pack cannot be delivered '
         'to the phone at all', () {
       final plist = File('ios/Runner/Info.plist').readAsStringSync();

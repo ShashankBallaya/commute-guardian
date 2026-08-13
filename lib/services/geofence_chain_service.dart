@@ -228,9 +228,13 @@ class GeofenceChainService {
   /// means to Pocket Pulse.
   int _pendingClips = 0;
 
-  /// Serializes announcements so two never overlap, and so the ducking window
-  /// spans a whole run of them (see [_speak]).
-  Future<void> _speaking = Future<void>.value();
+  /// How many announcements are queued or speaking. Drives the ducking window
+  /// (the session is released only when the last one finishes) and Pocket
+  /// Pulse's "the announcer is busy" suppression.
+  ///
+  /// The queue itself is [_audioChain] now, shared with clips. It used to be a
+  /// separate `_speaking` future, which is exactly what let a clip start on top
+  /// of a half-spoken welcome.
   int _pendingSpeaks = 0;
 
   /// Completed when the CURRENT utterance actually finishes speaking, on
@@ -265,14 +269,28 @@ class GeofenceChainService {
   /// templates instead: see announcement_templates.dart.
   SpokenCopy _copy = const SpokenCopy();
 
-  /// Serializes clip playback the way [_speaking] serializes TTS: a burst of
-  /// catch-up announcements (passed + arrival on one gap-end fix) must play
-  /// one clip after another, not on top of each other. A TTS line landing in
-  /// the middle of a burst is chained here too, so it starts only after the
-  /// clips before it finished; the reverse race (a clip starting while an
-  /// earlier TTS line still speaks) is accepted for this slice because
-  /// Android TTS gives no completion to await mid-ride (QUEUE_ADD).
-  Future<void> _clipChain = Future<void>.value();
+  /// ONE QUEUE FOR EVERYTHING THE RIDE SAYS, clips and speech alike.
+  ///
+  /// This used to be a second, separate chain, and the comment on it accepted
+  /// one race on purpose: "a clip starting while an earlier TTS line still
+  /// speaks is accepted for this slice because Android TTS gives no completion
+  /// to await mid-ride (QUEUE_ADD)".
+  ///
+  /// THAT PREMISE DIED ON 30 JUL 2026, when [_utteranceDone] was added to fix
+  /// ducking. Android now waits for the ENGINE's completion, and iOS honours
+  /// `awaitSpeakCompletion`, so on both platforms the speech future already
+  /// resolves when the words actually stop. Nothing was left to accept, and
+  /// the accepted race duly happened in the field.
+  ///
+  /// THE 13 AUG 2026 RIDE: the welcome began at 17:14:04.023 and the origin's
+  /// clip began at 17:14:04.033, ten milliseconds later, two voices at once in
+  /// the rider's earphones. Both rides that day opened that way, because the
+  /// origin is announced on the ride's very first fix, which lands while the
+  /// welcome is still talking.
+  ///
+  /// Merging the chains costs one ordering guarantee and buys the obvious one:
+  /// nothing the app says can start until the last thing it said has finished.
+  Future<void> _audioChain = Future<void>.value();
 
   /// Mirrors the spike's live state so [_speak] knows not to release the
   /// shared audio session while the alarm tone is looping.
@@ -653,14 +671,20 @@ class GeofenceChainService {
   /// the nicer voice, never the information.
   void _enqueueClip(File clip, {required String floorText}) {
     _pendingClips++;
-    _clipChain = _clipChain
+    _audioChain = _audioChain
         .then((_) async {
           try {
             _log('CLIP ${clip.uri.pathSegments.last}');
             await _playClipFile(clip);
           } catch (error) {
             _log('CLIP failed, using device TTS: $error');
-            await _speak(floorText);
+            // _speakNow, NOT _speak. This code is already running INSIDE
+            // _audioChain, and _speak appends to that same chain, so awaiting
+            // it here would wait for a future that cannot complete until this
+            // one does. One shared queue makes that deadlock possible where
+            // two separate queues hid it.
+            _pendingSpeaks++;
+            await _speakNow(floorText);
           } finally {
             _pendingClips--;
           }
@@ -1004,7 +1028,15 @@ class GeofenceChainService {
 
   Future<void> _speak(String text) {
     _pendingSpeaks++;
-    _speaking = _speaking.then((_) async {
+    _audioChain = _audioChain.then((_) => _speakNow(text));
+    return _audioChain;
+  }
+
+  /// Speaks one line WITHOUT queueing it. Callers already inside [_audioChain]
+  /// use this; everyone else uses [_speak]. The caller owns the matching
+  /// `_pendingSpeaks++`.
+  Future<void> _speakNow(String text) async {
+    {
       try {
         // Activating the session is itself one half of the collision, so the
         // window opens here rather than after the utterance starts.
@@ -1047,8 +1079,7 @@ class GeofenceChainService {
           await _session?.setActive(false);
         }
       }
-    });
-    return _speaking;
+    }
   }
 
   /// Loads the TTS engine before the ride needs it, by speaking one silent
@@ -1074,16 +1105,16 @@ class GeofenceChainService {
   /// impression on the one line that proves the audio path works at all.
   Future<void> _preWarmTts() {
     final startedAt = DateTime.now();
-    _speaking = _speaking.then((_) => _tts.setVolume(0));
+    _audioChain = _audioChain.then((_) => _tts.setVolume(0));
     unawaited(_speak(' '));
-    _speaking = _speaking.then((_) async {
+    _audioChain = _audioChain.then((_) async {
       await _tts.setVolume(1);
       _log(
         'TTS pre-warm done in '
         '${DateTime.now().difference(startedAt).inMilliseconds}ms',
       );
     });
-    return _speaking;
+    return _audioChain;
   }
 
   /// Debug-only: speaks a test line through the same [FlutterTts] instance
