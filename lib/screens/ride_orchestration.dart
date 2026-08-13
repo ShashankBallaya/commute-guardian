@@ -754,62 +754,78 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final journey = ref.read(plannedJourneyProvider).journey;
     if (journey == null) return;
 
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (routeContext) => Consumer(
-          builder: (context, ref, _) {
-            final live = ref.watch(liveRideProvider).valueOrNull;
-            if (live == null) {
-              // The ride is over. Leave on the next frame: popping during a
-              // build is not allowed.
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (routeContext.mounted) Navigator.of(routeContext).maybePop();
-              });
-            }
-            // WATCHED HERE, inside the pushed route's own Consumer, and that is
-            // load bearing. Screen 4 lives in a MaterialPageRoute, so a
-            // setState on the HOST does not rebuild it: punchlist item 2 was
-            // exactly this bug, reported as "I can't toggle it". A provider the
-            // route itself watches is the only thing that redraws this screen.
-            final settings =
-                ref.watch(appSettingsProvider).valueOrNull ??
-                const AppSettings();
-            return TravelModeScreen(
-              journey: journey,
-              wakeEnabled: wakeEnabled,
-              // setState on the HOST is enough here ONLY because this route is
-              // rebuilt by the Consumer around it; the flag is read on every
-              // build. Punchlist item 2 was the same shape and did not have
-              // that, which is why it looked dead.
-              onWakeEnabled: (on) {
-                setState(() => wakeEnabled = on);
-                service.setWakeEnabled(on);
-              },
-              reachedIndex: live?.reachedIndex ?? -1,
-              atStation: live?.atStation ?? false,
-              wakeChoice: wakeChoice,
-              crowdMode: settings.crowdMode,
-              pulseIntervalSeconds: settings.pulseIntervalSeconds,
-              // Writes through to settings AND pushes to the running ride, the
-              // same pair Settings uses. Without the push the rider would keep
-              // the old cadence until the ride ended, which is the "it didn't
-              // take" that makes a control feel broken, and this one is tapped
-              // in the exact moment it has to take: standing on a packed train.
-              onCrowdMode: (on) async {
-                await ref.read(appSettingsProvider.notifier).setCrowdMode(on);
-                await pushPulseSettings();
-              },
-              onEndJourney: () async {
-                await stop();
-                if (routeContext.mounted) {
-                  Navigator.of(routeContext).maybePop();
-                }
-              },
-            );
-          },
-        ),
+    late final MaterialPageRoute<void> route;
+    route = MaterialPageRoute(
+      builder: (routeContext) => Consumer(
+        builder: (context, ref, _) {
+          final live = ref.watch(liveRideProvider).valueOrNull;
+          if (live == null) {
+            // The ride is over. Leave on the next frame: removing during a
+            // build is not allowed.
+            //
+            // removeRoute(THIS route), not maybePop(). maybePop takes the
+            // TOP route, not the route that asked, and on the product stack
+            // (Home -> Screen 4 -> Screen 5) this route is UNDERNEATH Screen
+            // 5 when the ride ends. Both watchers fire in the same frame,
+            // routes build bottom up, so this one popped SCREEN 5, the
+            // arrival's own callback then found itself unmounted, and the
+            // rider was left holding Screen 4 needing a second End journey.
+            // Reported from the Dombivli platform, 13 Aug 2026, against a
+            // comment in showArrival() that asserted the opposite.
+            //
+            // Naming the route makes the two watchers order-independent:
+            // each removes itself, neither can take the other's route, and
+            // popUntil is avoided because it would also unwind the DEBUG
+            // host, which is itself a pushed route.
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (routeContext.mounted && route.isActive) {
+                Navigator.of(routeContext).removeRoute(route);
+              }
+            });
+          }
+          // WATCHED HERE, inside the pushed route's own Consumer, and that is
+          // load bearing. Screen 4 lives in a MaterialPageRoute, so a
+          // setState on the HOST does not rebuild it: punchlist item 2 was
+          // exactly this bug, reported as "I can't toggle it". A provider the
+          // route itself watches is the only thing that redraws this screen.
+          final settings =
+              ref.watch(appSettingsProvider).valueOrNull ?? const AppSettings();
+          return TravelModeScreen(
+            journey: journey,
+            wakeEnabled: wakeEnabled,
+            // setState on the HOST is enough here ONLY because this route is
+            // rebuilt by the Consumer around it; the flag is read on every
+            // build. Punchlist item 2 was the same shape and did not have
+            // that, which is why it looked dead.
+            onWakeEnabled: (on) {
+              setState(() => wakeEnabled = on);
+              service.setWakeEnabled(on);
+            },
+            reachedIndex: live?.reachedIndex ?? -1,
+            atStation: live?.atStation ?? false,
+            wakeChoice: wakeChoice,
+            crowdMode: settings.crowdMode,
+            pulseIntervalSeconds: settings.pulseIntervalSeconds,
+            // Writes through to settings AND pushes to the running ride, the
+            // same pair Settings uses. Without the push the rider would keep
+            // the old cadence until the ride ended, which is the "it didn't
+            // take" that makes a control feel broken, and this one is tapped
+            // in the exact moment it has to take: standing on a packed train.
+            onCrowdMode: (on) async {
+              await ref.read(appSettingsProvider.notifier).setCrowdMode(on);
+              await pushPulseSettings();
+            },
+            onEndJourney: () async {
+              await stop();
+              if (routeContext.mounted && route.isActive) {
+                Navigator.of(routeContext).removeRoute(route);
+              }
+            },
+          );
+        },
       ),
     );
+    await Navigator.of(context).push<void>(route);
   }
 
   /// Screen 5, Arrival, wired to the live ride. The last thing a ride shows.
@@ -868,63 +884,72 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final alreadySaved = await _isSaved(live.destinationId);
     if (!mounted) return;
 
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (routeContext) => Consumer(
-          builder: (context, ref, _) {
-            final alerts = ref.watch(rideAlertsProvider);
-            final running = ref.watch(liveRideProvider).valueOrNull;
-            final stillRunning = running != null;
-            // Re-read from the WATCHED ride, so a pin reached while this screen
-            // is already open renames the platform under the rider rather than
-            // leaving the headline on the stop they were carried past.
-            final alightingAt = running == null
-                ? here
-                : stationName(running.alightStationId ?? running.destinationId);
-            if (!stillRunning) {
-              // The ride is over, by auto-off or by End now. Leave on the next
-              // frame: popping during a build is not allowed.
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (routeContext.mounted) Navigator.of(routeContext).maybePop();
-              });
-            }
-            final counting = alerts.windDownLive;
-            return ArrivalScreen(
-              destinationName: alightingAt,
-              summaryLine: summary,
-              autoEndAt: alerts.windDownEndsAt,
-              window: alerts.windDownWindow,
-              // NO POP HERE, deliberately. Ending the ride clears
-              // liveRideProvider, and the watcher above pops this route on the
-              // next frame. Doing both popped TWICE: on the device this screen
-              // came down and took the screen underneath with it, landing on
-              // Settings. It is invisible on the product path (Screen 5 over
-              // Screen 4 lands on Screen 1 either way) which is exactly why it
-              // would have survived.
-              onEndNow: () async {
-                if (counting) {
-                  service.windDownEndNow();
-                } else {
-                  await stop();
-                }
-              },
-              onExtend: counting ? service.windDownExtend : null,
-              // Null hides the card, which is what a route already saved
-              // should do. The screen asks for the label; the destination is
-              // the one the service actually rode, never the draft, for the
-              // same reason recordRide replans from the persisted ids.
-              onSaveRoute: alreadySaved
-                  ? null
-                  : (label) => saveRoute(
-                      label: label,
-                      destinationId: live.destinationId,
-                      destinationName: here,
-                    ),
-            );
-          },
-        ),
+    late final MaterialPageRoute<void> route;
+    route = MaterialPageRoute(
+      builder: (routeContext) => Consumer(
+        builder: (context, ref, _) {
+          final alerts = ref.watch(rideAlertsProvider);
+          final running = ref.watch(liveRideProvider).valueOrNull;
+          final stillRunning = running != null;
+          // Re-read from the WATCHED ride, so a pin reached while this screen
+          // is already open renames the platform under the rider rather than
+          // leaving the headline on the stop they were carried past.
+          final alightingAt = running == null
+              ? here
+              : stationName(running.alightStationId ?? running.destinationId);
+          if (!stillRunning) {
+            // The ride is over, by auto-off or by End now. Leave on the next
+            // frame: removing during a build is not allowed.
+            //
+            // removeRoute(THIS route), for the reason written out in full on
+            // the matching watcher in showTravelMode(). The comment that used
+            // to sit here claimed the pop was "invisible on the product path
+            // (Screen 5 over Screen 4 lands on Screen 1 either way)". That
+            // was reasoned rather than measured, and the 13 Aug 2026 ride
+            // disproved it: one End journey left the rider on Screen 4.
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (routeContext.mounted && route.isActive) {
+                Navigator.of(routeContext).removeRoute(route);
+              }
+            });
+          }
+          final counting = alerts.windDownLive;
+          return ArrivalScreen(
+            destinationName: alightingAt,
+            summaryLine: summary,
+            autoEndAt: alerts.windDownEndsAt,
+            window: alerts.windDownWindow,
+            // NO POP HERE, deliberately. Ending the ride clears
+            // liveRideProvider, and the watcher above pops this route on the
+            // next frame. Doing both popped TWICE: on the device this screen
+            // came down and took the screen underneath with it, landing on
+            // Settings. It is invisible on the product path (Screen 5 over
+            // Screen 4 lands on Screen 1 either way) which is exactly why it
+            // would have survived.
+            onEndNow: () async {
+              if (counting) {
+                service.windDownEndNow();
+              } else {
+                await stop();
+              }
+            },
+            onExtend: counting ? service.windDownExtend : null,
+            // Null hides the card, which is what a route already saved
+            // should do. The screen asks for the label; the destination is
+            // the one the service actually rode, never the draft, for the
+            // same reason recordRide replans from the persisted ids.
+            onSaveRoute: alreadySaved
+                ? null
+                : (label) => saveRoute(
+                    label: label,
+                    destinationId: live.destinationId,
+                    destinationName: here,
+                  ),
+          );
+        },
       ),
     );
+    await Navigator.of(context).push<void>(route);
   }
 
   /// Screen 7. Replaces the debug bottom sheet the debug screen used to carry.
