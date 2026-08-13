@@ -674,6 +674,14 @@ class GeofenceChainService {
     _audioChain = _audioChain
         .then((_) async {
           try {
+            // THE SESSION, exactly as _speakNow takes it. Clips used to duck
+            // only through the audioplayers AudioContext and never touched
+            // _session at all, so nothing ever handed the ducking back: on the
+            // 13 Aug 2026 ride the owner's music dipped for a clip and stayed
+            // quiet for the rest of the journey, unducking once at Kalyan,
+            // which is the one clip on that ride whose player failed. Speech
+            // was always paired; clips never were.
+            await _session?.setActive(true);
             _log('CLIP ${clip.uri.pathSegments.last}');
             await _playClipFile(clip);
           } catch (error) {
@@ -687,6 +695,7 @@ class GeofenceChainService {
             await _speakNow(floorText);
           } finally {
             _pendingClips--;
+            await _releaseAudioSessionIfIdle();
           }
           // Nothing may escape into the chain itself. A rejected future here
           // poisons every clip queued after it for the rest of the ride, which
@@ -700,20 +709,63 @@ class GeofenceChainService {
 
   /// Plays one clip file through the announcement duck: music dips while
   /// the clip speaks, comes back after, same shape as the greeting slice.
+  ///
+  /// Throws only when the clip NEVER BECAME SOUND, which is the only case the
+  /// caller may answer by speaking the sentence again.
+  ///
+  /// THE 13 AUG 2026 RIDE MADE THAT DISTINCTION MATTER. Four clips of fourteen
+  /// finished playing and then had the identical sentence spoken over the top
+  /// of them twelve seconds later, because `onPlayerComplete` never arrived and
+  /// the old code read a missing COMPLETION EVENT as a failed CLIP. The rider
+  /// heard every one of those announcements twice. A missing event is not a
+  /// missing announcement, so the wait now ends quietly and the queue moves on.
   Future<void> _playClipFile(File clip) async {
     final player = ap.AudioPlayer();
+    var started = false;
     try {
       await player.setAudioContext(_clipDuckContext);
       final completed = player.onPlayerComplete.first..ignore();
       _selfInterruption.noteOwnAudioStarted(DateTime.now());
       await player.play(ap.DeviceFileSource(clip.path));
-      // The longest templates run ~8 s; a wedged player must not dam the
-      // clip chain for the rest of the ride.
-      await completed.timeout(const Duration(seconds: 12));
+      // Past this line the file is playing. Anything that goes wrong now is a
+      // bookkeeping problem, never a silent rider.
+      started = true;
+
+      // Wait for the clip's OWN length where the platform will report it,
+      // rather than a flat twelve seconds for a two second station name. The
+      // margin covers the gap between the last sample and the event.
+      final duration = await player.getDuration();
+      final budget = duration == null
+          ? _clipCompletionCap
+          : duration + const Duration(seconds: 2);
+      await completed.timeout(
+        budget < _clipCompletionCap ? budget : _clipCompletionCap,
+        onTimeout: () {
+          // Quietly. See the note above: the words were heard.
+          _log(
+            'CLIP completion never arrived after '
+            '${budget.inMilliseconds}ms, continuing.',
+          );
+          return null;
+        },
+      );
+    } catch (error) {
+      if (started) {
+        // Played, then something failed on the way out. Not worth repeating
+        // the sentence over the rider.
+        _log('CLIP played but did not close cleanly: $error');
+        return;
+      }
+      rethrow;
     } finally {
       unawaited(player.release());
     }
   }
+
+  /// Ceiling on waiting for a clip to report that it finished. The longest
+  /// template runs about 8 s, so this only ever bites when the platform has
+  /// stopped answering.
+  static const _clipCompletionCap = Duration(seconds: 12);
 
   /// Android transient duck, the same shape [_speak]'s session takes: the
   /// clip is a navigation prompt, not a media track.
@@ -792,9 +844,11 @@ class GeofenceChainService {
   Future<void> _releaseLadderAudio() async {
     try {
       await _session?.configure(_duckProfile);
-      if (_pendingSpeaks == 0) {
-        await _session?.setActive(false);
-      }
+      // Through the shared idle test, which also counts clips. This used to
+      // check _pendingSpeaks alone, so a clip playing as the ladder stood down
+      // could have the session pulled from under it, or leave it held.
+      await _releaseAudioSessionIfIdle();
+      _log('WAKE audio: session handed back.');
     } catch (error) {
       _log('Could not restore the announcement audio profile: $error');
     }
@@ -1070,16 +1124,27 @@ class GeofenceChainService {
         _log('Announcement failed: $error');
       } finally {
         _pendingSpeaks--;
-        // While a wake ladder is live the session must STAY active: on iOS
-        // the audio context is the app-wide shared AVAudioSession, and
-        // deactivating it here is what silenced the looping alarm tone the
-        // moment rung 1's speech finished (15 Jul iPhone bench). The ladder
-        // releases the session itself when it stands down.
-        if (_pendingSpeaks == 0 && !_wakeLadderLive) {
-          await _session?.setActive(false);
-        }
+        await _releaseAudioSessionIfIdle();
       }
     }
+  }
+
+  /// Hands the audio session back once NOTHING of ours is making noise.
+  ///
+  /// The clip half of this test was missing until 13 Aug 2026: the condition
+  /// read `_pendingSpeaks == 0` alone, so a clip queued behind an announcement
+  /// had the session deactivated out from under it, and a clip on its own
+  /// never activated one to release. Both halves of the ride's ducking
+  /// complaint live here.
+  ///
+  /// While a wake ladder is live the session must STAY active: on iOS the
+  /// audio context is the app-wide shared AVAudioSession, and deactivating it
+  /// here is what silenced the looping alarm tone the moment rung 1's speech
+  /// finished (15 Jul iPhone bench). The ladder releases the session itself
+  /// when it stands down.
+  Future<void> _releaseAudioSessionIfIdle() async {
+    if (_pendingSpeaks > 0 || _pendingClips > 0 || _wakeLadderLive) return;
+    await _session?.setActive(false);
   }
 
   /// Loads the TTS engine before the ride needs it, by speaking one silent

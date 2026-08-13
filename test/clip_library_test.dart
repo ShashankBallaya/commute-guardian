@@ -294,6 +294,51 @@ void main() {
       );
     });
 
+    test('A MISSING COMPLETION EVENT IS NOT A MISSING ANNOUNCEMENT', () {
+      // 4 clips of 14 on the 13 Aug 2026 ride finished playing and were then
+      // spoken again by TTS twelve seconds later, because onPlayerComplete
+      // never arrived and the code read that as a failed clip. The rider heard
+      // those four announcements twice.
+      final code = serviceCode();
+      final start = code.indexOf('Future<void> _playClipFile(');
+      expect(start, greaterThan(-1), reason: '_playClipFile has been renamed');
+      final body = code.substring(start, code.indexOf('\n  }', start));
+
+      // The timeout must resolve, never throw: throwing is what reached the
+      // caller's fallback and spoke over the rider.
+      expect(body, contains('onTimeout:'));
+      // And a failure AFTER playback began must not propagate either.
+      expect(body, contains('if (started)'));
+      expect(
+        body,
+        contains('rethrow'),
+        reason: 'a clip that never became sound must still reach the fallback',
+      );
+    });
+
+    test('THE AUDIO SESSION IS ONLY HANDED BACK WHEN CLIPS ARE IDLE TOO', () {
+      // The owner's music ducked for a clip and stayed quiet for the rest of
+      // the journey. Clips ducked through the audioplayers context and never
+      // touched the session, so nothing ever gave the ducking back, and the
+      // release test counted only speech.
+      final code = serviceCode();
+      final start = code.indexOf('Future<void> _releaseAudioSessionIfIdle()');
+      expect(start, greaterThan(-1), reason: 'the idle test has been renamed');
+      final body = code.substring(start, code.indexOf('\n  }', start));
+
+      expect(body, contains('_pendingSpeaks'));
+      expect(
+        body,
+        contains('_pendingClips'),
+        reason: 'counting speech alone is the 13 Aug ducking bug',
+      );
+      expect(
+        body,
+        contains('_wakeLadderLive'),
+        reason: 'releasing under a live ladder silences the alarm on iOS',
+      );
+    });
+
     test('iOS EXPOSES ITS DOCUMENTS FOLDER, or the pack cannot be delivered '
         'to the phone at all', () {
       final plist = File('ios/Runner/Info.plist').readAsStringSync();
