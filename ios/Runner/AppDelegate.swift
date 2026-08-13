@@ -26,6 +26,11 @@ import flutter_foreground_task
   private var ackTargets: [(MPRemoteCommand, Any)] = []
   private var keepAliveEngine: AVAudioEngine?
 
+  /// The hidden volume control. See [raiseAlarmVolume]. Held so the view stays
+  /// in the hierarchy: a slider on a deallocated MPVolumeView moves nothing.
+  private var volumeView: MPVolumeView?
+  private var volumeSlider: UISlider?
+
   /// The ladder tone, played natively. audioplayers' ReleaseMode.loop never
   /// actually looped under the seized session (IPA #18, all four runs: the
   /// 5 s wav died each cycle and the Dart watchdog restarted it with an
@@ -103,6 +108,12 @@ import flutter_foreground_task
         result(nil)
       case "getAlarmVolume":
         result(self?.alarmVolume())
+      case "raiseAlarmVolume":
+        let floor = (call.arguments as? NSNumber)?.floatValue ?? 0.7
+        result(self?.raiseAlarmVolume(to: floor))
+      case "restoreAlarmVolume":
+        let previous = (call.arguments as? NSNumber)?.floatValue ?? -1
+        result(self?.restoreAlarmVolume(to: previous))
       case "vibrate":
         // THE BENCH, 11 Aug 2026. CLAUDE.md locked "haptics are Android-only"
         // on the correct premise that iOS forbids BACKGROUND haptics, and both
@@ -197,6 +208,78 @@ import flutter_foreground_task
     let volume = session.outputVolume
     guard volume.isFinite, volume >= 0 else { return nil }
     return NSNumber(value: volume)
+  }
+
+  /// THE MEDIA SLIDER IS THE ALARM'S VOLUME ON THIS PLATFORM, so an alarm that
+  /// respects a slider at zero is an alarm that cannot wake anybody.
+  ///
+  /// Owner decision, 13 Aug 2026, after the Bench B Part 2 log opened with
+  /// "Alarm volume at start: 0%" and the whole ladder ran its course in
+  /// silence. It is the third time his phone has done this. Android needs none
+  /// of it: the tone rides STREAM_ALARM and the media slider cannot touch it.
+  ///
+  /// WHAT THIS IS: MPVolumeView's embedded UISlider, which is the only way an
+  /// app can move system volume. MPVolumeView is public API and the view is
+  /// never shown; what is not contractual is that its first UISlider subview is
+  /// the volume control, so this fails SOFTLY and says so rather than throwing.
+  ///
+  /// IT ONLY EVER RAISES, and only to [floor]. A rider who has deliberately set
+  /// 90 percent keeps 90. Lowering someone's volume would be a worse fault than
+  /// the one this fixes.
+  ///
+  /// THE RISK WORTH KNOWING: this drives a UIKit control, and the ride runs in
+  /// a headless engine with the phone locked in a pocket, which is exactly when
+  /// it matters. Whether UIKit will move a slider for a backgrounded app is not
+  /// something the documentation answers. That is why every step returns a note
+  /// into the ride log: the next bench reads the log and says.
+  private func raiseAlarmVolume(to floor: Float) -> String? {
+    let session = AVAudioSession.sharedInstance()
+    let before = session.outputVolume
+    guard before.isFinite, before >= 0 else {
+      return "ALARM VOLUME: could not read, left alone."
+    }
+    if before >= floor {
+      return String(
+        format: "ALARM VOLUME: %.0f%% already at or above the %.0f%% floor.",
+        before * 100, floor * 100)
+    }
+    guard let slider = systemVolumeSlider() else {
+      return String(
+        format: "ALARM VOLUME: %.0f%%, BUT NO SYSTEM SLIDER, left alone.",
+        before * 100)
+    }
+    DispatchQueue.main.async { slider.value = floor }
+    return String(
+      format: "ALARM VOLUME: raised from %.0f%% to %.0f%% for the alarm.",
+      before * 100, floor * 100)
+  }
+
+  /// Puts the rider's own volume back. A negative [previous] means the ladder
+  /// never raised it, so nothing is touched: restoring a number we did not take
+  /// would be its own way of changing someone's volume behind their back.
+  private func restoreAlarmVolume(to previous: Float) -> String? {
+    guard previous >= 0 else { return nil }
+    guard let slider = systemVolumeSlider() else {
+      return "ALARM VOLUME: no system slider, could not restore."
+    }
+    DispatchQueue.main.async { slider.value = previous }
+    return String(
+      format: "ALARM VOLUME: restored to %.0f%%.", previous * 100)
+  }
+
+  /// The hidden MPVolumeView's slider, built once and kept in the window so
+  /// iOS treats it as a real control. Never visible: zero size and clear.
+  private func systemVolumeSlider() -> UISlider? {
+    if let existing = volumeSlider { return existing }
+    let view = MPVolumeView(frame: CGRect(x: -4000, y: -4000, width: 1, height: 1))
+    view.isHidden = false
+    view.alpha = 0.001
+    if let window = UIApplication.shared.windows.first {
+      window.addSubview(view)
+    }
+    volumeView = view
+    volumeSlider = view.subviews.compactMap { $0 as? UISlider }.first
+    return volumeSlider
   }
 
   private func startTone(volume: Float) -> String? {

@@ -79,6 +79,20 @@ class FakeRideServiceClient implements RideServiceClient {
   @override
   Future<double?> alarmVolume() async => alarmVolumeValue;
 
+  /// What [raiseAlarmVolume] hands back: the rider's own volume, or null when
+  /// nothing was raised (already loud enough, not iOS, or refused).
+  double? raisedFrom;
+
+  @override
+  Future<double?> raiseAlarmVolume({double floor = 0.7}) async {
+    commands.add('raiseAlarmVolume:$floor');
+    return raisedFrom;
+  }
+
+  @override
+  Future<void> restoreAlarmVolume(double? previous) async =>
+      commands.add('restoreAlarmVolume:$previous');
+
   /// Native vibrations asked for. Recorded rather than sent, like every other
   /// command here.
   int vibrateCount = 0;

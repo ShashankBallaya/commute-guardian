@@ -339,6 +339,17 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
         // Claim media buttons exactly while a ladder is live, so the rider's
         // earphone taps keep controlling their music the rest of the time.
         unawaited(ref.read(rideServiceClientProvider).setMediaSession(live));
+        // AND TAKE THE VOLUME WITH THEM, on iOS only. Owner decision 13 Aug
+        // 2026: the phone has no alarm stream, the ladder plays at whatever
+        // the media slider says, and his slider is habitually at zero. Bench B
+        // Part 2 opened "Alarm volume at start: 0%" and the whole ladder ran
+        // its course in silence.
+        //
+        // Hung on LIVENESS rather than on the tone, because the check-in
+        // speaks 25 seconds before the first tone and is the rung most riders
+        // will ever hear. Raised once when the ladder arms, put back when it
+        // stands down, and never raised for a rider already loud enough.
+        unawaited(_followAlarmVolume(live));
       case WindDownChanged(:final live, :final endsAt, :final window):
         state = RideAlerts(
           wakeLadderLive: state.wakeLadderLive,
@@ -369,6 +380,34 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
 
   /// Clears both alerts as a ride tears down.
   ///
+  /// The rider's own media volume, remembered only while WE raised it.
+  ///
+  /// Null means the ladder never touched it, and their slider is not ours to
+  /// move: a rider who was already loud enough, or an Android phone, or a
+  /// platform that refused, all end here and are left exactly alone.
+  double? _volumeBeforeLadder;
+
+  /// Raises the media volume while an alarm is live and puts it back after.
+  /// See the note at [WakeLadderChanged]. iOS only, enforced in the client.
+  Future<void> _followAlarmVolume(bool live) async {
+    final client = ref.read(rideServiceClientProvider);
+    if (live) {
+      // A ladder re-arming after a call must not overwrite the rider's real
+      // volume with the one we ourselves set a minute ago.
+      _volumeBeforeLadder ??= await client.raiseAlarmVolume();
+      return;
+    }
+    // NOTHING WE DID NOT TAKE. A rider already loud enough, an Android phone,
+    // or a platform that refused all land here with nothing remembered, and
+    // the correct action is to make no call at all. The client would also
+    // refuse a null, but "we never touch a slider we did not move" is a
+    // promise worth keeping in the one place that decides it.
+    final previous = _volumeBeforeLadder;
+    if (previous == null) return;
+    _volumeBeforeLadder = null;
+    await client.restoreAlarmVolume(previous);
+  }
+
   /// The dying service isolate announces this too, but a teardown race must
   /// not leave a phantom "I'm awake" button or a claimed media session behind.
   Future<void> standDown() async {
@@ -377,6 +416,11 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
     if (hadLadder) {
       await ref.read(rideServiceClientProvider).setMediaSession(false);
     }
+    // ALWAYS, not only when a ladder was live. A ride torn down mid-alarm is
+    // exactly the path that would otherwise leave the rider's phone at a
+    // volume they never chose, and _followAlarmVolume is a no-op when we
+    // raised nothing.
+    await _followAlarmVolume(false);
   }
 }
 

@@ -492,6 +492,47 @@ class RideServiceClient {
     }
   }
 
+  /// Raises the iPhone's media volume to [floor] for the duration of an alarm,
+  /// and returns the rider's own volume so it can be put back.
+  ///
+  /// OWNER DECISION, 13 Aug 2026. iOS has no alarm stream, so the ladder plays
+  /// at whatever the media slider says, and his slider is habitually at zero:
+  /// the Bench B Part 2 log opened "Alarm volume at start: 0%" and the entire
+  /// ladder ran its course in silence. An alarm that obeys a zero slider cannot
+  /// do the one job this product exists for.
+  ///
+  /// Returns null when nothing was changed, which is also what a rider already
+  /// above the floor gets, and [restoreAlarmVolume] then leaves them alone.
+  Future<double?> raiseAlarmVolume({double floor = 0.7}) async {
+    if (!Platform.isIOS) return null;
+    final before = await alarmVolume();
+    if (before == null || before >= floor) return null;
+    try {
+      final note = await _mediaAckChannel
+          .invokeMethod<String>('raiseAlarmVolume', floor)
+          .timeout(const Duration(seconds: 2));
+      _forwardAudioNote(note);
+      return before;
+    } catch (error) {
+      _emit(ServiceLogged('Could not raise the alarm volume: $error'));
+      return null;
+    }
+  }
+
+  /// Puts the rider's volume back after an alarm. A null [previous] means the
+  /// ladder never raised it, and their slider is not ours to move.
+  Future<void> restoreAlarmVolume(double? previous) async {
+    if (!Platform.isIOS || previous == null) return;
+    try {
+      final note = await _mediaAckChannel
+          .invokeMethod<String>('restoreAlarmVolume', previous)
+          .timeout(const Duration(seconds: 2));
+      _forwardAudioNote(note);
+    } catch (error) {
+      _emit(ServiceLogged('Could not restore the alarm volume: $error'));
+    }
+  }
+
   /// Drives the native ladder tone, and carries back what the audio session
   /// did about it.
   Future<void> sendNativeTone(String command, double volume) async {
