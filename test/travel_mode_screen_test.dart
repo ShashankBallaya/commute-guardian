@@ -64,7 +64,7 @@ void main() {
     await pump(tester, reachedIndex: 0);
     final remaining = journey.chain.length - 1;
     expect(find.text('$remaining'), findsOneWidget);
-    expect(find.text('stations to'), findsOneWidget);
+    expect(find.text('stations to go'), findsOneWidget);
     expect(find.text('Kalyan'), findsOneWidget);
   });
 
@@ -73,8 +73,61 @@ void main() {
   ) async {
     await pump(tester, reachedIndex: journey.chain.length - 2);
     expect(find.text('1'), findsOneWidget);
-    expect(find.text('station to'), findsOneWidget);
-    expect(find.text('stations to'), findsNothing);
+    expect(find.text('station to go'), findsOneWidget);
+    expect(find.text('stations to go'), findsNothing);
+  });
+
+  group('a route with no station two before the destination', () {
+    // Shahad to Ambivli, adjacent on the Kasara branch. Reported by the owner
+    // 13 Aug 2026: the card promised "2 stations before Ambivli" on a route
+    // whose whole length is two stations.
+    Future<void> pumpShort(WidgetTester tester) async {
+      final short = repo.planner.plan(
+        originId: 'shahad',
+        destinationId: 'ambivli',
+      );
+      expect(
+        short.chain,
+        hasLength(2),
+        reason: 'the fixture is only meaningful if these are adjacent',
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TravelModeScreen(
+            wakeEnabled: true,
+            onWakeEnabled: (_) {},
+            crowdMode: false,
+            pulseIntervalSeconds: 180,
+            onCrowdMode: (_) {},
+            journey: short,
+            reachedIndex: 0,
+            atStation: true,
+            wakeChoice: WakeChoice.lastTwoStations,
+            onEndJourney: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('THE CARD DOES NOT PROMISE A STATION THE ROUTE DOES NOT HAVE', (
+      tester,
+    ) async {
+      await pumpShort(tester);
+
+      expect(find.text('2 stations before Ambivli'), findsNothing);
+      expect(find.text('as you approach Ambivli'), findsOneWidget);
+    });
+
+    testWidgets('and a route that IS long enough still says two', (
+      tester,
+    ) async {
+      // The same control on the ordinary Thane to Kalyan ride, so the fix is
+      // a narrowing and not a blanket rewording.
+      await pump(tester, reachedIndex: 0);
+
+      expect(find.text('2 stations before Kalyan'), findsOneWidget);
+    });
   });
 
   testWidgets('the ride collapses where it has been and names where it is', (

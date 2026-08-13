@@ -226,7 +226,30 @@ class WakeEscalation {
     // point, and mis-tell hang-up that a mid-call stop was reached. Only
     // arrival/passed/overshoot move the train here; the ETA zone is the
     // honest early signal.
-    if (announcement.kind == AnnouncementKind.approach) return const [];
+    //
+    // ONE EXCEPTION, and it is the whole fix for a one-station journey.
+    // The normal trigger below arms on the station BEFORE the target. When
+    // the target sits at chain index 1, that station is the ORIGIN, and
+    // RideProgress announces the origin on the ride's very first fix, so a
+    // Shahad to Ambivli rider had the full ladder climbing the instant they
+    // pressed Start. A false alarm is the one thing that teaches a rider to
+    // ignore the voice meant to wake them.
+    //
+    // The target's own approach fence is the only forward-looking station
+    // event such a journey has, and it always exists: Journey.approachRadiusM
+    // gives 1000 m to the destination and 1200 m to every interchange, which
+    // is precisely the set this ladder ever targets. It is not used for
+    // longer journeys, where the station before the target is a real station
+    // and the original objection stands untouched.
+    if (announcement.kind == AnnouncementKind.approach) {
+      if (!_inCall &&
+          !_ladderLive &&
+          _targetIndex == 1 &&
+          announcement.stationId == _targets[_cursor]) {
+        return _startLadder(now);
+      }
+      return const [];
+    }
 
     if (_inCall) {
       // Suspended means silent, not deaf: the train keeps moving during
@@ -251,8 +274,11 @@ class WakeEscalation {
       return [if (toneWasPlaying) const StopTone(), const HardStop()];
     }
 
+    // targetIndex > 1, NOT > 0: at 1 the station before the target is the
+    // origin, and that ladder is handled by the approach branch above. See
+    // the comment there for why the origin can never be a trigger.
     if (!_ladderLive &&
-        targetIndex > 0 &&
+        targetIndex > 1 &&
         announcement.stationId == chain[targetIndex - 1].id) {
       return _startLadder(now);
     }
@@ -416,7 +442,7 @@ class WakeEscalation {
     // suspended mid-flight), tell the rider what the call swallowed and arm
     // the ladder from hang-up. The catch-up doubles as the check-in.
     final triggerPassedDuringCall =
-        targetIndex > 0 &&
+        targetIndex > 1 &&
         _passedDuringCall.contains(chain[targetIndex - 1].id);
     if (triggerPassedDuringCall || _suspendedLadder) {
       _suspendedLadder = false;

@@ -705,7 +705,20 @@ void main() {
         walkInterchangeStationIds: const {'dadar_western'},
       );
 
-      wake.onStationEvent(_arrival('prabhadevi'), _t0);
+      // Armed by the interchange's own 1200 m approach fence, not by the
+      // arrival at Prabhadevi. Prabhadevi is the ORIGIN of this fixture, and
+      // arming a ladder there is the 13 Aug one-station bug: the origin is
+      // announced on the ride's first fix, so this used to start the alarm
+      // the instant the rider pressed Start. The ceiling behaviour under
+      // test is unchanged either way.
+      wake.onStationEvent(
+        Announcement(
+          stationId: 'dadar_western',
+          kind: AnnouncementKind.approach,
+          text: 'Now approaching Dadar.',
+        ),
+        _t0,
+      );
       wake.onTick(_t0.add(const Duration(seconds: 25))); // rung 1
       expect(wake.isLadderLive, isTrue);
 
@@ -740,7 +753,15 @@ void main() {
         destinationStationId: 'sion',
       );
 
-      wake.onStationEvent(_arrival('prabhadevi'), _t0);
+      // Armed by the interchange's own approach fence, as above.
+      wake.onStationEvent(
+        Announcement(
+          stationId: 'dadar_western',
+          kind: AnnouncementKind.approach,
+          text: 'Now approaching Dadar.',
+        ),
+        _t0,
+      );
       wake.onTick(_t0.add(const Duration(seconds: 25)));
 
       final atNext = wake.onStationEvent(
@@ -875,6 +896,160 @@ void _wakeToggleTests() {
 
       expect(spoken, hasLength(1));
       expect(spoken.single.text, startsWith('While you were on your call'));
+    });
+  });
+
+  _oneStationJourneyTests();
+}
+
+/// Shahad to Ambivli: adjacent stations, so the chain is two long and the
+/// station "one before the target" IS the origin.
+///
+/// Reported by the owner on 13 Aug 2026 from the moto edge 50 neo, at the desk,
+/// without riding anything. The screen also promised "2 stations before
+/// Ambivli" on a route that contains no such station.
+void _oneStationJourneyTests() {
+  final shortChain = <Station>[
+    _s('shahad', 'Shahad', 19.2519, 73.1300, 400),
+    _s('ambivli', 'Ambivli', 19.2686, 73.1531, 400),
+  ];
+
+  Announcement approach(String stationId) => Announcement(
+    stationId: stationId,
+    kind: AnnouncementKind.approach,
+    text: 'Now approaching $stationId.',
+  );
+
+  WakeEscalation build() => WakeEscalation(
+    chain: shortChain,
+    interchangeStationIds: const [],
+    destinationStationId: 'ambivli',
+  );
+
+  group('a journey one station long', () {
+    test('THE ORIGIN DOES NOT START THE LADDER. RideProgress announces it on '
+        'the ride\'s first fix, so this fired the alarm at the moment the '
+        'rider pressed Start', () {
+      final wake = build();
+
+      final actions = wake.onStationEvent(_arrival('shahad'), _t0);
+
+      expect(actions, isEmpty);
+      expect(wake.isLadderLive, isFalse);
+    });
+
+    test('nothing the origin can say arms it: a passed counts no more than an '
+        'arrival', () {
+      final wake = build();
+
+      final passed = wake.onStationEvent(
+        Announcement(
+          stationId: 'shahad',
+          kind: AnnouncementKind.passed,
+          text: 'You have passed Shahad.',
+        ),
+        _t0,
+      );
+
+      expect(passed, isEmpty);
+      expect(wake.isLadderLive, isFalse);
+    });
+
+    test('THE DESTINATION\'S OWN APPROACH FENCE ARMS IT INSTEAD, so the rider '
+        'is still woken', () {
+      final wake = build();
+      wake.onStationEvent(_arrival('shahad'), _t0);
+
+      final armed = wake.onStationEvent(
+        approach('ambivli'),
+        _t0.add(const Duration(minutes: 2)),
+      );
+
+      expect(wake.isLadderLive, isTrue);
+      expect(armed, hasLength(1));
+      expect(
+        (armed.single as Speak).text,
+        'Your stop, Ambivli, is next. Tap your earphones, or press the '
+        'I am awake button, to show you are awake.',
+      );
+    });
+
+    test('and it still climbs from there, so this is a real ladder and not '
+        'one announcement', () {
+      final wake = build();
+      wake.onStationEvent(approach('ambivli'), _t0);
+
+      final rung1 = wake.onTick(_t0.add(const Duration(seconds: 25)));
+
+      expect(rung1, hasLength(2));
+      expect(rung1[0], isA<Tone>());
+      expect(
+        (rung1[1] as Speak).text,
+        'Wake up! Wake up. Your stop, Ambivli, is next.',
+      );
+    });
+
+    test('an acknowledgement still stands it down', () {
+      final wake = build();
+      wake.onStationEvent(approach('ambivli'), _t0);
+      expect(wake.isLadderLive, isTrue);
+
+      wake.acknowledge(_t0.add(const Duration(seconds: 5)));
+
+      expect(wake.isLadderLive, isFalse);
+      expect(wake.onTick(_t0.add(const Duration(seconds: 30))), isEmpty);
+    });
+
+    test('a call still suppresses it: the approach must not start a ladder '
+        'into the rider\'s conversation', () {
+      final wake = build();
+      wake.onCallStateChanged(inCall: true, now: _t0);
+
+      final armed = wake.onStationEvent(
+        approach('ambivli'),
+        _t0.add(const Duration(seconds: 10)),
+      );
+
+      expect(armed, isEmpty);
+      expect(wake.isLadderLive, isFalse);
+    });
+
+    test('the approach arms it once, not on every repeat', () {
+      final wake = build();
+      wake.onStationEvent(approach('ambivli'), _t0);
+      final second = wake.onStationEvent(
+        approach('ambivli'),
+        _t0.add(const Duration(seconds: 5)),
+      );
+
+      expect(second, isEmpty);
+    });
+  });
+
+  group('a longer journey is untouched by the one-station fix', () {
+    test('the station before the target still arms the ladder', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+
+      final armed = wake.onStationEvent(_arrival('thane'), _t0);
+
+      expect(wake.isLadderLive, isTrue);
+      expect(armed, hasLength(1));
+    });
+
+    test('AND THE ORIGIN STILL CANNOT ARM IT, which is the same rule seen '
+        'from the other end', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+
+      expect(wake.onStationEvent(_arrival('kalyan'), _t0), isEmpty);
+      expect(wake.isLadderLive, isFalse);
     });
   });
 }

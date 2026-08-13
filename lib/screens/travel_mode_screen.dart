@@ -156,6 +156,7 @@ class TravelModeScreen extends StatelessWidget {
                 choice: wakeChoice,
                 wakeEnabled: wakeEnabled,
                 destinationName: _destinationName,
+                chainLength: _chain.length,
                 crowdMode: crowdMode,
                 pulseIntervalSeconds: pulseIntervalSeconds,
                 onCrowdMode: onCrowdMode,
@@ -255,7 +256,15 @@ class _Header extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 6),
                       child: Text(
-                        stationsRemaining == 1 ? 'station to' : 'stations to',
+                        // "to go", not "to". The owner read "1 station to
+                        // Ambivli" as one station BEFORE Ambivli and reported
+                        // it as an off-by-one, on a screen he wrote himself.
+                        // The count was right; the phrase had two readings,
+                        // and this is the number a half-asleep rider trusts
+                        // most because it is the largest thing here.
+                        stationsRemaining == 1
+                            ? 'station to go'
+                            : 'stations to go',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -686,6 +695,7 @@ class _WakeCard extends StatelessWidget {
     required this.choice,
     required this.wakeEnabled,
     required this.destinationName,
+    required this.chainLength,
     required this.crowdMode,
     required this.pulseIntervalSeconds,
     required this.onCrowdMode,
@@ -694,6 +704,12 @@ class _WakeCard extends StatelessWidget {
   final WakeChoice choice;
   final bool wakeEnabled;
   final String destinationName;
+
+  /// How many stations the route holds, origin and destination included. The
+  /// line below is the only thing that reads it, and only to avoid promising
+  /// a station the route does not contain.
+  final int chainLength;
+
   final bool crowdMode;
   final int? pulseIntervalSeconds;
   final ValueChanged<bool> onCrowdMode;
@@ -702,9 +718,17 @@ class _WakeCard extends StatelessWidget {
   /// toggle showed "Wake-up off" directly above "Wake me up, 2 stations before
   /// Kalyan", which is the screen contradicting itself in the two places a
   /// rider looks before pocketing the phone.
+  ///
+  /// AND IT MUST AGREE WITH THE ROUTE. "2 stations before Ambivli" was printed
+  /// on a Shahad to Ambivli ride, which contains no such station: the wording
+  /// was a constant that never looked at the chain. Owner found it 13 Aug 2026
+  /// at the desk. On a route this short the ladder arms at the destination's
+  /// own approach fence, so "as you approach" is what actually happens.
   String get _line => switch (wakeEnabled) {
     false => 'Off for this journey. Stations are still announced.',
     true => switch (choice) {
+      WakeChoice.lastTwoStations when chainLength <= 2 =>
+        'as you approach $destinationName',
       WakeChoice.lastTwoStations => '2 stations before $destinationName',
       WakeChoice.onlyDestination => 'at $destinationName',
     },
