@@ -52,13 +52,13 @@ class SpokenCopy {
               'each station along the way. To end the journey at any time, '
               'press and hold the End journey button.',
         AppLanguage.hindi =>
-          'ट्रैवल मोड चालू है, $origin से $destination तक। मैं रास्ते का हर '
-              'स्टेशन बताऊँगा। यात्रा कभी भी खत्म करने के लिए, End journey '
-              'बटन को दबाकर रखें।',
+          'ट्रैवल मोड चालू है, $origin से $destination तक। रास्ते में हर '
+              'स्टेशन की घोषणा की जाएगी। यात्रा कभी भी समाप्त करने के लिए '
+              'End journey बटन को दबाकर रखें।',
         AppLanguage.marathi =>
-          'ट्रॅव्हल मोड चालू आहे, $origin ते $destination. मी वाटेतील प्रत्येक '
-              'स्टेशन सांगेन. प्रवास कधीही थांबवण्यासाठी, End journey बटण '
-              'दाबून धरा.',
+          'ट्रॅव्हल मोड सुरू आहे, $origin ते $destination पर्यंत. मार्गातील '
+              'प्रत्येक स्टेशनची घोषणा केली जाईल. प्रवास कधीही संपवण्यासाठी '
+              'End journey बटण दाबून धरून ठेवा.',
       };
 
   /// The debug screen's text-to-speech self test.
@@ -67,11 +67,11 @@ class SpokenCopy {
       'This is a test announcement from Commute Guardian. If you can hear '
           'this, text to speech is working.',
     AppLanguage.hindi =>
-      'यह कम्यूट गार्जियन की जाँच के लिए घोषणा है। अगर आपको यह सुनाई दे रहा '
+      'यह कम्यूट गार्जियन की परीक्षण घोषणा है। अगर आपको यह सुनाई दे रही '
           'है, तो टेक्स्ट टू स्पीच काम कर रहा है।',
     AppLanguage.marathi =>
-      'ही कम्यूट गार्जियनची चाचणी घोषणा आहे. तुम्हाला हे ऐकू येत असेल, तर '
-          'टेक्स्ट टू स्पीच काम करत आहे.',
+      'ही कम्यूट गार्जियनची चाचणी घोषणा आहे. हे आपल्याला ऐकू येत असेल, तर '
+          'टेक्स्ट टू स्पीच व्यवस्थित काम करत आहे.',
   };
 
   /// Change trains here, and walk to a different station to do it (Dadar
@@ -88,13 +88,13 @@ class SpokenCopy {
           '$walkTo, then ${_platformThen(platform)}board the $line train '
           'towards $towards to continue to your destination.',
     AppLanguage.hindi =>
-      'आप $station पहुँच गए हैं। ट्रेन से उतरें और $walkTo तक पैदल जाएँ, फिर '
-          '${_platformThen(platform)}$towards की ओर जाने वाली $line ट्रेन में '
-          'चढ़ें और अपनी यात्रा जारी रखें।',
+      'आप $station पहुँच गए हैं। ट्रेन से उतरें और पैदल चलकर $walkTo पहुँचें, '
+          'फिर ${_platformThen(platform)}$line ट्रेन में चढ़ें, जो $towards की '
+          'ओर जाती है, ताकि आप अपने गंतव्य तक पहुँच सकें।',
     AppLanguage.marathi =>
-      'तुम्ही $station आला आहात. गाडीतून उतरा आणि $walkTo पर्यंत चालत जा, '
-          'नंतर ${_platformThen(platform)}$towards च्या दिशेने जाणारी $line '
-          'गाडी पकडा आणि प्रवास सुरू ठेवा.',
+      'आपण $station येथे पोहोचलात. ट्रेनमधून उतरा आणि पायी चालत $walkTo येथे '
+          'जा, त्यानंतर ${_platformThen(platform)}$line ट्रेनमध्ये चढा, जी '
+          '$towards च्या दिशेने जाते, आणि आपले गंतव्य गाठा.',
   };
 
   /// Change trains where both services are spoken the same way (the Kasara
@@ -111,13 +111,13 @@ class SpokenCopy {
           '${_platformThen(platform)}board the train towards $towards to '
           'continue to your destination.',
     AppLanguage.hindi =>
-      'आप $station पहुँच गए हैं। यहाँ ट्रेन बदलें। ट्रेन से उतरें, '
-          '${_platformThen(platform)}$towards की ओर जाने वाली ट्रेन में चढ़ें '
-          'और अपनी यात्रा जारी रखें।',
+      'आप $station पहुँच गए हैं। यहाँ ट्रेन बदलें। ट्रेन से उतरें और '
+          '${_platformThen(platform)}$towards की ओर जाने वाली ट्रेन में चढ़ें, '
+          'ताकि आप अपने गंतव्य तक पहुँच सकें।',
     AppLanguage.marathi =>
-      'तुम्ही $station आला आहात. येथे गाडी बदला. गाडीतून उतरा, '
-          '${_platformThen(platform)}$towards च्या दिशेने जाणारी गाडी पकडा '
-          'आणि प्रवास सुरू ठेवा.',
+      'आपण $station येथे पोहोचलात. येथे ट्रेन बदला. ट्रेनमधून उतरा आणि '
+          '${_platformThen(platform)}$towards च्या दिशेने जाणाऱ्या ट्रेनमध्ये '
+          'चढा, आणि आपले गंतव्य गाठा.',
   };
 
   /// The ordinary same-station change onto a differently named line.
@@ -131,12 +131,13 @@ class SpokenCopy {
           'the train, ${_platformThen(platform)}board the $line train to '
           'continue to your destination.',
     AppLanguage.hindi =>
-      'आप $station पहुँच गए हैं। यहाँ $line लाइन पर बदलें। ट्रेन से उतरें, '
-          '${_platformThen(platform)}$line ट्रेन में चढ़ें और अपनी यात्रा '
-          'जारी रखें।',
+      'आप $station पहुँच गए हैं। यहाँ $line लाइन की ट्रेन में बदलें। ट्रेन से '
+          'उतरें और ${_platformThen(platform)}$line ट्रेन में चढ़ें, ताकि आप '
+          'अपने गंतव्य तक पहुँच सकें।',
     AppLanguage.marathi =>
-      'तुम्ही $station आला आहात. येथे $line लाईनवर बदला. गाडीतून उतरा, '
-          '${_platformThen(platform)}$line गाडी पकडा आणि प्रवास सुरू ठेवा.',
+      'आपण $station येथे पोहोचलात. येथे $line लाईनची ट्रेन घ्या. ट्रेनमधून '
+          'उतरा आणि ${_platformThen(platform)}$line ट्रेनमध्ये चढा, आणि आपले '
+          'गंतव्य गाठा.',
   };
 
   /// "go to platform number 9, 10, or 10 A, then ", or nothing when the
@@ -147,7 +148,7 @@ class SpokenCopy {
     return switch (language) {
       AppLanguage.english => 'go to platform number $platform, then ',
       AppLanguage.hindi => 'प्लेटफ़ॉर्म नंबर $platform पर जाएँ, फिर ',
-      AppLanguage.marathi => 'प्लॅटफॉर्म क्रमांक $platform वर जा, नंतर ',
+      AppLanguage.marathi => 'प्लॅटफॉर्म क्रमांक $platform वर जा, त्यानंतर ',
     };
   }
 
@@ -158,11 +159,11 @@ class SpokenCopy {
       'While you were on your call, the train passed your stop, $station. '
           'Please get off the train now.',
     AppLanguage.hindi =>
-      'आप कॉल पर थे, तब ट्रेन आपका स्टेशन $station पार कर गई। कृपया अभी '
+      'जब आप कॉल पर थे, ट्रेन आपके स्टॉप $station से आगे निकल गई। कृपया अभी '
           'ट्रेन से उतरें।',
     AppLanguage.marathi =>
-      'तुम्ही कॉलवर असताना गाडी तुमचे स्टेशन $station ओलांडून गेली. कृपया '
-          'आता गाडीतून उतरा.',
+      'आपण कॉलवर असताना ट्रेन आपल्या थांब्याच्या $station पुढे गेली. कृपया '
+          'आता ट्रेनमधून उतरा.',
   };
 
   /// The same moment, but the train is AT the stop rather than past it.
@@ -171,11 +172,11 @@ class SpokenCopy {
       'While you were on your call, the train reached your stop, $station. '
           'Get off the train now.',
     AppLanguage.hindi =>
-      'आप कॉल पर थे, तब ट्रेन आपके स्टेशन $station पर पहुँच गई। अभी ट्रेन '
+      'जब आप कॉल पर थे, ट्रेन आपके स्टॉप $station पर पहुँच गई। अब ट्रेन '
           'से उतरें।',
     AppLanguage.marathi =>
-      'तुम्ही कॉलवर असताना गाडी तुमच्या स्टेशन $station वर पोहोचली. आता '
-          'गाडीतून उतरा.',
+      'आपण कॉलवर असताना ट्रेन आपल्या थांब्यावर $station येथे पोहोचली. आता '
+          'ट्रेनमधून उतरा.',
   };
 
   /// Re-orientation after a call, not a history replay: what the call
@@ -185,9 +186,9 @@ class SpokenCopy {
         AppLanguage.english =>
           'While you were on your call, the train passed $stations. $checkIn',
         AppLanguage.hindi =>
-          'आप कॉल पर थे, तब ट्रेन $stations पार कर गई। $checkIn',
+          'जब आप कॉल पर थे, ट्रेन $stations से आगे निकल गई। $checkIn',
         AppLanguage.marathi =>
-          'तुम्ही कॉलवर असताना गाडी $stations ओलांडून गेली. $checkIn',
+          'आपण कॉलवर असताना ट्रेन $stations पुढे गेली. $checkIn',
       };
 
   /// "Thane, Kalwa and Mumbra", in this language's conjunction.
@@ -211,12 +212,13 @@ class SpokenCopy {
           'train, get off at the next station and cross to the other '
           'platform. Travel Mode is still on.',
     AppLanguage.hindi =>
-      'लगता है आप $destination से दूर जा रहे हैं। अगर यह गलत ट्रेन है, तो '
-          'अगले स्टेशन पर उतरें और दूसरे प्लेटफ़ॉर्म पर जाएँ। ट्रैवल मोड चालू है।',
+      'लगता है कि आप $destination से दूर जा रहे हैं। अगर यह गलत ट्रेन है, तो '
+          'अगले स्टेशन पर उतरें और दूसरे प्लेटफ़ॉर्म पर जाएँ। ट्रैवल मोड अभी '
+          'भी चालू है।',
     AppLanguage.marathi =>
-      'तुम्ही $destination पासून दूर जात आहात असे दिसते. ही चुकीची गाडी असेल, '
-          'तर पुढील स्टेशनवर उतरा आणि दुसऱ्या प्लॅटफॉर्मवर जा. ट्रॅव्हल मोड '
-          'चालू आहे.',
+      'आपण $destination पासून दूर जात असल्याचे दिसत आहे. ही चुकीची ट्रेन '
+          'असल्यास, पुढच्या स्टेशनवर उतरा आणि दुसऱ्या प्लॅटफॉर्मवर जा. '
+          'ट्रॅव्हल मोड अजूनही सुरू आहे.',
   };
 
   /// Two minutes with no usable fix. Promises that the ride is still
@@ -227,11 +229,11 @@ class SpokenCopy {
       'The signal is weak here. Travel Mode is still on. If you can, move '
           'near a door or a window.',
     AppLanguage.hindi =>
-      'यहाँ सिग्नल कमज़ोर है। ट्रैवल मोड चालू है। हो सके तो दरवाज़े या खिड़की '
-          'के पास जाएँ।',
+      'यहाँ सिग्नल कमज़ोर है। ट्रैवल मोड अभी भी चालू है। अगर संभव हो, तो '
+          'दरवाज़े या खिड़की के पास जाएँ।',
     AppLanguage.marathi =>
-      'येथे सिग्नल कमकुवत आहे. ट्रॅव्हल मोड चालू आहे. शक्य असेल तर दरवाजा '
-          'किंवा खिडकीजवळ जा.',
+      'येथे सिग्नल कमकुवत आहे. ट्रॅव्हल मोड अजूनही सुरू आहे. शक्य असल्यास, '
+          'दरवाज्याजवळ किंवा खिडकीजवळ जा.',
   };
 
   /// A stall. Gentle, and it says nothing about why: the app cannot tell a
@@ -242,11 +244,11 @@ class SpokenCopy {
       'The train seems to be held up. Travel Mode is still on and I am '
           'still watching for your stop.',
     AppLanguage.hindi =>
-      'ट्रेन रुकी हुई लगती है। ट्रैवल मोड चालू है और मैं आपके स्टेशन पर नज़र '
-          'रखे हूँ।',
+      'लगता है कि ट्रेन को आगे जाने में देरी हो रही है। ट्रैवल मोड अभी भी '
+          'चालू है और आपके स्टॉप पर नज़र रखी जा रही है।',
     AppLanguage.marathi =>
-      'गाडी थांबलेली दिसते. ट्रॅव्हल मोड चालू आहे आणि मी तुमच्या स्टेशनवर लक्ष '
-          'ठेवत आहे.',
+      'ट्रेनला पुढे जाण्यास विलंब होत असल्याचे दिसत आहे. ट्रॅव्हल मोड अजूनही '
+          'सुरू आहे आणि आपल्या थांब्यावर लक्ष ठेवले जात आहे.',
   };
 
   /// Four hours with no end. A rider still aboard has half an hour to answer
@@ -256,11 +258,11 @@ class SpokenCopy {
       'Travel Mode has been on for four hours. It will switch itself off in '
           'half an hour unless you are still travelling.',
     AppLanguage.hindi =>
-      'ट्रैवल मोड चार घंटे से चालू है। अगर आप अब भी यात्रा नहीं कर रहे हैं, '
+      'ट्रैवल मोड चार घंटे से चालू है। अगर आप अभी भी यात्रा नहीं कर रहे हैं, '
           'तो यह आधे घंटे में अपने आप बंद हो जाएगा।',
     AppLanguage.marathi =>
-      'ट्रॅव्हल मोड चार तासांपासून चालू आहे. तुम्ही अजूनही प्रवास करत नसाल, '
-          'तर तो अर्ध्या तासात आपोआप बंद होईल.',
+      'ट्रॅव्हल मोड चार तासांपासून सुरू आहे. आपला प्रवास अजूनही सुरू नसेल, '
+          'तर ते अर्ध्या तासात आपोआप बंद होईल.',
   };
 
   /// The rider has walked out of the station: the one-minute countdown.
@@ -270,18 +272,19 @@ class SpokenCopy {
           'minute. Use the notification to end it now, or keep it running '
           'longer.',
     AppLanguage.hindi =>
-      'लगता है आप स्टेशन से निकल गए हैं। ट्रैवल मोड एक मिनट में बंद हो जाएगा। '
-          'इसे अभी बंद करने या और चलाने के लिए नोटिफ़िकेशन का इस्तेमाल करें।',
+      'लगता है कि आप स्टेशन से बाहर निकल गए हैं। ट्रैवल मोड एक मिनट में '
+          'समाप्त हो जाएगा। इसे अभी समाप्त करने के लिए नोटिफ़िकेशन का '
+          'इस्तेमाल करें, या इसे और देर तक चालू रखें।',
     AppLanguage.marathi =>
-      'तुम्ही स्टेशनमधून बाहेर पडला आहात असे दिसते. ट्रॅव्हल मोड एका मिनिटात '
-          'बंद होईल. तो आताच बंद करण्यासाठी किंवा आणखी चालू ठेवण्यासाठी '
-          'नोटिफिकेशन वापरा.',
+      'आपण स्टेशनमधून बाहेर पडल्याचे दिसत आहे. ट्रॅव्हल मोड एका मिनिटात '
+          'संपेल. ते आत्ताच संपवण्यासाठी नोटिफिकेशन वापरा, किंवा ते आणखी '
+          'काही वेळ सुरू ठेवा.',
   };
 
   /// The rider pressed Extend.
   String windDownExtended() => switch (language) {
     AppLanguage.english => 'Travel Mode will stay on for ten more minutes.',
-    AppLanguage.hindi => 'ट्रैवल मोड दस मिनट और चालू रहेगा।',
-    AppLanguage.marathi => 'ट्रॅव्हल मोड आणखी दहा मिनिटे चालू राहील.',
+    AppLanguage.hindi => 'ट्रैवल मोड अगले दस मिनट तक चालू रहेगा।',
+    AppLanguage.marathi => 'ट्रॅव्हल मोड आणखी दहा मिनिटे सुरू राहील.',
   };
 }

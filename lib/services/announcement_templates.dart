@@ -57,21 +57,22 @@ enum ClipKind {
         'You have arrived at your destination, $stationName.',
     },
     AppLanguage.hindi => switch (this) {
-      ClipKind.approach => 'अगला स्टेशन $stationName।',
-      ClipKind.passed => 'ट्रेन $stationName से आगे निकल गई है।',
+      ClipKind.approach => 'अब $stationName पहुँचने वाला है।',
+      ClipKind.passed => 'आप $stationName से आगे निकल चुके हैं।',
       ClipKind.overshoot =>
-        'आपका स्टेशन पीछे छूट गया है। कोई बात नहीं। कृपया यहीं, '
+        'आप अपने स्टॉप से आगे निकल चुके हैं। कोई बात नहीं। कृपया यहीं, '
             '$stationName पर उतरें।',
       ClipKind.destination =>
-        'आप अपने गंतव्य स्टेशन $stationName पर पहुँच गए हैं।',
+        'आप अपने गंतव्य $stationName पर पहुँच गए हैं।',
     },
     AppLanguage.marathi => switch (this) {
-      ClipKind.approach => 'पुढील स्टेशन $stationName.',
-      ClipKind.passed => 'गाडी $stationName च्या पुढे गेली आहे.',
+      ClipKind.approach => 'आता $stationName येत आहे.',
+      ClipKind.passed => 'आपण $stationName मागे सोडले आहे.',
       ClipKind.overshoot =>
-        'तुमचे स्टेशन मागे राहिले आहे. काळजी करू नका. '
+        'आपण आपल्या थांब्याच्या पुढे निघून गेला आहात. काही हरकत नाही. '
             'कृपया येथेच, $stationName येथे उतरा.',
-      ClipKind.destination => 'तुमचे गंतव्य स्टेशन $stationName आले आहे.',
+      ClipKind.destination =>
+        'आपण आपल्या गंतव्यस्थानी $stationName येथे पोहोचलात.',
     },
   };
 }
@@ -124,28 +125,29 @@ enum WakeLine {
     },
     AppLanguage.hindi => switch (this) {
       WakeLine.checkIn =>
-        'आपका स्टेशन, $stationName, अगला है। जागे हैं यह बताने के लिए अपने '
-            'ईयरफ़ोन को टैप करें, या \'मैं जाग गया\' बटन दबाएँ।',
+        'आपका स्टॉप $stationName अगला है। जागने का संकेत देने के लिए अपने '
+            'ईयरफ़ोन पर टैप करें, या स्क्रीन पर दिए बटन को दबाएँ।',
       WakeLine.checkInChange =>
-        '$stationName पर आपकी ट्रेन बदलनी है, वह अगला स्टेशन है। जागे हैं यह '
-            'बताने के लिए अपने ईयरफ़ोन को टैप करें, या \'मैं जाग गया\' बटन दबाएँ।',
-      WakeLine.wakeUpStop =>
-        'जागिए! जागिए! आपका स्टेशन, $stationName, अगला है।',
+        '$stationName पर ट्रेन बदलनी है, वह अगला स्टेशन है। जागने का संकेत '
+            'देने के लिए अपने ईयरफ़ोन पर टैप करें, या स्क्रीन पर दिए बटन को '
+            'दबाएँ।',
+      WakeLine.wakeUpStop => 'जागिए! जागिए। आपका स्टॉप $stationName अगला है।',
       WakeLine.wakeUpChange =>
-        'जागिए! जागिए! $stationName पर आपकी ट्रेन बदलनी है, '
-            'वह अगला स्टेशन है।',
+        'जागिए! जागिए। $stationName पर ट्रेन बदलनी है, वह अगला स्टेशन है।',
     },
     AppLanguage.marathi => switch (this) {
       WakeLine.checkIn =>
-        'तुमचे स्टेशन, $stationName, पुढे आहे. तुम्ही जागे आहात हे दाखवण्यासाठी '
-            'इयरफोनला टॅप करा, किंवा \'मी जागा आहे\' बटण दाबा.',
+        'आपला थांबा $stationName पुढचा आहे. आपण जागे आहात हे दाखवण्यासाठी '
+            'आपल्या ईअरफोनवर टॅप करा, किंवा स्क्रीनवरील बटण दाबा.',
       WakeLine.checkInChange =>
-        '$stationName येथे गाडी बदलायची आहे, ते पुढील स्टेशन आहे. तुम्ही जागे '
-            'आहात हे दाखवण्यासाठी इयरफोनला टॅप करा, किंवा \'मी जागा आहे\' बटण दाबा.',
-      WakeLine.wakeUpStop => 'उठा! उठा! तुमचे स्टेशन, $stationName, पुढे आहे.',
+        '$stationName येथे ट्रेन बदलायची आहे, हे पुढचे स्टेशन आहे. आपण जागे '
+            'आहात हे दाखवण्यासाठी आपल्या ईअरफोनवर टॅप करा, किंवा स्क्रीनवरील '
+            'बटण दाबा.',
+      WakeLine.wakeUpStop =>
+        'जागे व्हा! जागे व्हा. आपला थांबा $stationName पुढचा आहे.',
       WakeLine.wakeUpChange =>
-        'उठा! उठा! $stationName येथे गाडी बदलायची आहे, '
-            'ते पुढील स्टेशन आहे.',
+        'जागे व्हा! जागे व्हा. $stationName येथे ट्रेन बदलायची आहे, हे पुढचे '
+            'स्टेशन आहे.',
     },
   };
 }
