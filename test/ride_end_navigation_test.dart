@@ -105,4 +105,51 @@ void main() {
       reason: 'a finished ride returns the rider to Home',
     );
   });
+
+  test('END JOURNEY CLOSES FIRST AND STILL TIDIES AFTER', () {
+    // Split on 13 Aug 2026: the rider used to watch a battery read (allowed
+    // two whole seconds) and a database write before Screen 4 would close.
+    // Closing first is only safe if the tidying still happens, and losing it
+    // would cost the history row silently, which is the half nobody would
+    // notice until they opened History a week later.
+    final source = File(
+      'lib/screens/ride_orchestration.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+
+    final start = source.indexOf('onEndJourney: () async {');
+    expect(start, greaterThan(-1), reason: 'the End journey handler is gone');
+    final body = source.substring(
+      start,
+      source.indexOf('\n            },', start),
+    );
+
+    final ends = body.indexOf('endRide()');
+    final closes = body.indexOf('removeRoute(route)');
+    final tidies = body.indexOf('finishRide()');
+
+    expect(ends, greaterThan(-1), reason: 'the ride must actually be stopped');
+    expect(closes, greaterThan(ends), reason: 'stop the ride, then close');
+    expect(
+      tidies,
+      greaterThan(closes),
+      reason: 'the history row and battery reading come AFTER the screen goes',
+    );
+  });
+
+  test('and the service-ended path shares that tidying, so the two cannot '
+      'drift apart', () {
+    final source = File(
+      'lib/screens/ride_orchestration.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    final start = source.indexOf('Future<void> onRideEndedByService() async {');
+    expect(start, greaterThan(-1));
+    final body = source.substring(start, source.indexOf('\n  }', start));
+
+    expect(body, contains('finishRide()'));
+    expect(
+      body,
+      isNot(contains('recordRide()')),
+      reason: 'a second copy of the tidying is how one path loses a step',
+    );
+  });
 }

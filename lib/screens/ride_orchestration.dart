@@ -461,11 +461,44 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   }
 
   Future<void> stop() async {
+    await endRide();
+    await finishRide();
+  }
+
+  /// The half a WAITING RIDER is entitled to: tell the service, then let the
+  /// screens see that the ride is gone. Nothing here touches a database or a
+  /// platform channel that can take seconds.
+  Future<void> endRide() async {
+    final startedAt = DateTime.now();
     await service.stopRide();
     await ref.read(liveRideProvider.notifier).refresh();
+    onOrchestrationLog(
+      'Ride stopped in '
+      '${DateTime.now().difference(startedAt).inMilliseconds}ms',
+    );
+  }
+
+  /// The half NOBODY IS WAITING FOR: stand the alerts down, write the history
+  /// row, and pick the next ride's default origin.
+  ///
+  /// Split out on 13 Aug 2026 because the rider was watching this run. Pressing
+  /// End journey held Screen 4 on the phone until all of it finished, and it
+  /// includes [_batteryPct], which is allowed to take two whole seconds, plus a
+  /// read of the service store and a database write. The owner reported it as
+  /// "it takes time to go back to the Home Screen", and he was watching the
+  /// battery reading he asked us to record.
+  ///
+  /// It still runs, and still runs in this order. It simply no longer stands
+  /// between the rider and their home screen.
+  Future<void> finishRide() async {
+    final startedAt = DateTime.now();
     await ref.read(rideAlertsProvider.notifier).standDown();
     await recordRide();
     await _defaultOriginToRideEnd();
+    onOrchestrationLog(
+      'After-ride tidying took '
+      '${DateTime.now().difference(startedAt).inMilliseconds}ms',
+    );
   }
 
   /// The service ended the ride itself (wind-down auto-off or its End now
@@ -474,9 +507,10 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   Future<void> onRideEndedByService() async {
     // liveRideProvider refreshes itself from the same event, so this handler
     // only does the parts a screen owns: the history row and the turnaround.
-    await ref.read(rideAlertsProvider.notifier).standDown();
-    await recordRide();
-    await _defaultOriginToRideEnd();
+    // Which is exactly [finishRide], and saying so keeps the two end-of-ride
+    // paths from drifting: a step added to one and forgotten in the other is
+    // how a wind-down auto-off loses its history row.
+    await finishRide();
   }
 
   /// Battery percentage, or null if the platform will not say.
@@ -816,10 +850,16 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
               await pushPulseSettings();
             },
             onEndJourney: () async {
-              await stop();
+              // CLOSE FIRST, TIDY AFTER. The rider pressed a button that means
+              // "I am done"; making them watch a battery read and a database
+              // write is what "it takes time to go back to the Home Screen"
+              // was. The work is unchanged and still runs in the same order.
+              // Only its position relative to the screen closing moved.
+              await endRide();
               if (routeContext.mounted && route.isActive) {
                 Navigator.of(routeContext).removeRoute(route);
               }
+              await finishRide();
             },
           );
         },
