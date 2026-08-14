@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:vibration/vibration.dart';
 
+import 'duck_audio_context.dart';
 import 'player_completion.dart';
 import 'self_audio_interruption.dart';
 
@@ -72,30 +73,11 @@ class PulseOutput {
       usageType: ap.AndroidUsageType.assistanceNavigationGuidance,
       audioFocus: ap.AndroidAudioFocus.gainTransientMayDuck,
     ),
-    // duckOthers AND mixWithOthers, which is what the announcement session
-    // (_duckProfile) has always used. This comment used to say "NO
-    // mixWithOthers, matching the announcement session", and it was wrong
-    // about the thing it named: _duckProfile is
-    // `speech().copyWith(duckOthers | mixWithOthers)`.
-    //
-    // THE 14 AUG 2026 BENCH IS WHY IT MATTERS NOW. On iOS this context sets
-    // the app-wide shared AVAudioSession category, and `playback` with no
-    // mixWithOthers is EXCLUSIVE: other audio is interrupted rather than
-    // ducked. While nothing activated a session for the chime the category
-    // change alone was survivable; the moment the pulse started taking the
-    // session properly, the rider's music PAUSED instead of dipping. Same
-    // shape as the 13 Jul bench, where bare speech() stopped his music
-    // outright.
-    //
-    // mixWithOthers does NOT cost the dip. duckOthers is what produces the
-    // dip; mixWithOthers only stops us claiming the session exclusively.
-    iOS: ap.AudioContextIOS(
-      category: ap.AVAudioSessionCategory.playback,
-      options: const {
-        ap.AVAudioSessionOptions.duckOthers,
-        ap.AVAudioSessionOptions.mixWithOthers,
-      },
-    ),
+    // SHARED WITH THE CLIP PATH, see duck_audio_context.dart. The chime was
+    // never the odd one out: clips paused the rider's music too, and the owner
+    // proved it on 14 Aug 2026 by pressing Announce and then waiting for a
+    // chime and hearing both pause.
+    iOS: duckingIosContext,
   );
 
   /// One chime. Fire and forget: a pulse that fails is a pulse that is missed,

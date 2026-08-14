@@ -19,6 +19,7 @@ import 'analytics.dart';
 import 'announcement_templates.dart';
 import 'audio_session_idle.dart';
 import 'clip_library.dart';
+import 'duck_audio_context.dart';
 import 'player_completion.dart';
 import 'pocket_pulse.dart';
 import 'pulse_output.dart';
@@ -801,6 +802,13 @@ class GeofenceChainService {
       usageType: ap.AndroidUsageType.assistanceNavigationGuidance,
       audioFocus: ap.AndroidAudioFocus.gainTransientMayDuck,
     ),
+    // THE iOS BLOCK WAS MISSING ENTIRELY UNTIL 14 Aug 2026, and an omitted one
+    // is not "leave the session alone": audioplayers substitutes
+    // AudioContextIOS(), which is `playback` with NO options, and that is
+    // EXCLUSIVE. So every clip interrupted the rider's music and let it resume
+    // afterwards, instead of ducking under it, for as long as clips have
+    // existed. See duck_audio_context.dart.
+    iOS: duckingIosContext,
   );
 
   /// Plays the bundled greeting clip, then hands over to the normal TTS
