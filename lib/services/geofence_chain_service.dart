@@ -724,7 +724,20 @@ class GeofenceChainService {
     var started = false;
     try {
       await player.setAudioContext(_clipDuckContext);
-      final completed = player.onPlayerComplete.first..ignore();
+      // THE `.map` BELOW READS AS DECORATION AND IT IS NOT. audioplayers
+      // DECLARES onPlayerComplete as Stream<void>, but it is
+      // `eventStream.where(...)`
+      // with no map, so at runtime it is a Stream<AudioEvent>. Awaiting
+      // `.first` therefore gives a runtime Future<AudioEvent> wearing a
+      // Future<void> static type, and `timeout(onTimeout: ...)` type-checks
+      // its closure against the RUNTIME type. The 14 Aug 2026 ride is what
+      // that cost: nine clips of nine threw
+      // "() => Null is not a subtype of () => FutureOr<AudioEvent>", the
+      // catch below read it as "played, do not repeat", and the rider heard
+      // NOTHING at Kalyan, Thakurli, Dombivli, Kopar or Diva. The analyzer
+      // cannot see it, because Stream<void> is what the package promises.
+      final completed = player.onPlayerComplete.map<void>((_) {}).first
+        ..ignore();
       _selfInterruption.noteOwnAudioStarted(DateTime.now());
       await player.play(ap.DeviceFileSource(clip.path));
       // Past this line the file is playing. Anything that goes wrong now is a
