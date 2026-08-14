@@ -78,6 +78,54 @@ void main() {
       expect(RegExp(r'\.chime\(\)').allMatches(old), hasLength(3));
     });
 
+    test('THE STAMP COMES BEFORE setActive, NEVER AFTER', () {
+      // Activating the session can itself raise an audio interruption, and the
+      // service feeds interruptions to the wake engine as "the rider took a
+      // call". SelfAudioInterruptionFilter measures FORWARD from the stamp
+      // only, so a stamp that lands after setActive is a stamp that did not
+      // happen. That chain stood the ladder down on a sleeping rider on
+      // 21 Jul 2026. _speakNow has always had this order; the chime helper
+      // was written on 14 Aug 2026 with it backwards.
+      final body = chimeHelperBody(serviceCode());
+      final stampAt = body.indexOf('noteOwnAudioStarted(');
+      final activateAt = body.indexOf('setActive(true)');
+
+      expect(stampAt, greaterThan(-1), reason: 'the chime helper never stamps');
+      expect(activateAt, greaterThan(-1));
+      expect(
+        stampAt,
+        lessThan(activateAt),
+        reason: 'the interruption window must open BEFORE the line that can '
+            'raise an interruption',
+      );
+    });
+
+    test('and that guard can still fail, on the order it replaced', () {
+      const old = '''
+  Future<void> _chimeThroughSession(PulseOutput output) async {
+    _pendingPulses++;
+    try {
+      await _session?.setActive(true);
+      await output.chime();
+  }
+''';
+      final body = chimeHelperBody(old);
+      expect(body.indexOf('noteOwnAudioStarted('), -1);
+    });
+
+    test('THE CLIP PATH STAMPS BEFORE ITS setActive TOO. Same defect, and it '
+        'shipped in befaca4 a day earlier', () {
+      final code = serviceCode();
+      final start = code.indexOf("_log('CLIP \${clip.uri");
+      expect(start, greaterThan(-1), reason: 'the clip log line has moved');
+      // The 400 characters before the CLIP log line hold the session take.
+      final before = code.substring(start - 400, start);
+      final stampAt = before.lastIndexOf('noteOwnAudioStarted(');
+      final activateAt = before.lastIndexOf('setActive(true)');
+      expect(stampAt, greaterThan(-1));
+      expect(stampAt, lessThan(activateAt));
+    });
+
     test('THE HELPER TAKES THE SESSION, COUNTS ITSELF, AND RELEASES', () {
       final body = chimeHelperBody(serviceCode());
 

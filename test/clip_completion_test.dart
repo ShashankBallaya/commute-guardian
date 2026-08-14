@@ -19,6 +19,7 @@
 // shape, so the trap is caught at the desk from now on.
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -136,6 +137,52 @@ void main() {
       );
 
       expect(timedOut, isTrue);
+    });
+  });
+
+  group('nowhere disarms the trap by hand', () {
+    // The trap was disarmed at three call sites before it was extracted, and
+    // three copies of a fix leave it armed at site four. completionOf is now
+    // the only way to await a player, so this guard watches ONE SYMBOL rather
+    // than a text shape.
+    final audioFiles = Directory('lib')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.dart'))
+        .where(
+          (file) => !file.path.replaceAll(r'\', '/').endsWith(
+            'services/player_completion.dart',
+          ),
+        );
+
+    test('NO FILE TOUCHES onPlayerComplete EXCEPT player_completion.dart', () {
+      final offenders = <String>[];
+      for (final file in audioFiles) {
+        final code = file
+            .readAsStringSync()
+            .replaceAll('\r\n', '\n')
+            .split('\n')
+            .where((line) => !line.trimLeft().startsWith('//'))
+            .join('\n');
+        if (code.contains('onPlayerComplete')) offenders.add(file.path);
+      }
+      expect(
+        offenders,
+        isEmpty,
+        reason: 'use completionOf(player); a raw onPlayerComplete is the '
+            '14 Aug 2026 bug waiting for its next onTimeout closure',
+      );
+    });
+
+    test('and that guard can still fail, on the code it replaced', () {
+      const old = '''
+      final completed = player.onPlayerComplete.first..ignore();
+''';
+      final stripped = old
+          .split('\n')
+          .where((line) => !line.trimLeft().startsWith('//'))
+          .join('\n');
+      expect(stripped, contains('onPlayerComplete'));
     });
   });
 }

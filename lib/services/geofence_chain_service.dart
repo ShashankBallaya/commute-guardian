@@ -19,6 +19,7 @@ import 'analytics.dart';
 import 'announcement_templates.dart';
 import 'audio_session_idle.dart';
 import 'clip_library.dart';
+import 'player_completion.dart';
 import 'pocket_pulse.dart';
 import 'pulse_output.dart';
 import 'ride_health.dart';
@@ -691,6 +692,15 @@ class GeofenceChainService {
             // quiet for the rest of the journey, unducking once at Kalyan,
             // which is the one clip on that ride whose player failed. Speech
             // was always paired; clips never were.
+            //
+            // STAMPED FIRST, added 14 Aug 2026. befaca4 took the session here
+            // but left the stamp inside _playClipFile, after activation, so an
+            // interruption raised by this very line reached the wake engine as
+            // a real call. _speakNow has always opened the window before
+            // setActive and its comment says why. The stamp inside
+            // _playClipFile stays: the two calls cover the two separate
+            // moments our own audio can disturb the session.
+            _selfInterruption.noteOwnAudioStarted(DateTime.now());
             await _session?.setActive(true);
             _log('CLIP ${clip.uri.pathSegments.last}');
             await _playClipFile(clip);
@@ -734,20 +744,10 @@ class GeofenceChainService {
     var started = false;
     try {
       await player.setAudioContext(_clipDuckContext);
-      // THE `.map` BELOW READS AS DECORATION AND IT IS NOT. audioplayers
-      // DECLARES onPlayerComplete as Stream<void>, but it is
-      // `eventStream.where(...)`
-      // with no map, so at runtime it is a Stream<AudioEvent>. Awaiting
-      // `.first` therefore gives a runtime Future<AudioEvent> wearing a
-      // Future<void> static type, and `timeout(onTimeout: ...)` type-checks
-      // its closure against the RUNTIME type. The 14 Aug 2026 ride is what
-      // that cost: nine clips of nine threw
-      // "() => Null is not a subtype of () => FutureOr<AudioEvent>", the
-      // catch below read it as "played, do not repeat", and the rider heard
-      // NOTHING at Kalyan, Thakurli, Dombivli, Kopar or Diva. The analyzer
-      // cannot see it, because Stream<void> is what the package promises.
-      final completed = player.onPlayerComplete.map<void>((_) {}).first
-        ..ignore();
+      // completionOf, NEVER onPlayerComplete raw. See player_completion.dart
+      // for the audioplayers type lie this exists to disarm, and for what it
+      // cost on the 14 Aug 2026 ride.
+      final completed = completionOf(player);
       _selfInterruption.noteOwnAudioStarted(DateTime.now());
       await player.play(ap.DeviceFileSource(clip.path));
       // Past this line the file is playing. Anything that goes wrong now is a
@@ -812,14 +812,7 @@ class GeofenceChainService {
     try {
       _log('GREETING clip: welcome_greeting.wav');
       await player.setAudioContext(_clipDuckContext);
-      // ignore() marks the future safe if play() throws before the await
-      // reaches it; otherwise its error would surface unhandled later.
-      //
-      // MAPPED, like the station clips. See _playClipFile for what the
-      // unmapped stream cost on the 14 Aug 2026 ride: the type is a lie, and
-      // it only bites once someone passes an onTimeout closure here.
-      final completed = player.onPlayerComplete.map<void>((_) {}).first
-        ..ignore();
+      final completed = completionOf(player);
       await player.play(ap.AssetSource('audio/welcome_greeting.wav'));
       // Past this line the greeting is sounding.
       started = true;
@@ -1171,10 +1164,14 @@ class GeofenceChainService {
 
   /// Hands the audio session back once NOTHING of ours is making noise.
   ///
-  /// The rule itself, and the three separate rides that each cost a term in
-  /// it, live in [audioSessionIsIdle]. It is a free function so that it can
-  /// have real tests: this service cannot be built under the test binding, so
-  /// anything decided in here can only ever be guarded from source.
+  /// The rule itself lives in [audioSessionIsIdle], with the evidence for each
+  /// of its four terms: two rides (clips, 13 Aug 2026; the pulse chime,
+  /// 14 Aug) and one bench (the ladder, 15 Jul). Speech cost nothing, because
+  /// speech has always released what it activated.
+  ///
+  /// It is a free function so that it can have real tests: this service cannot
+  /// be built under the test binding, so anything decided in here can only
+  /// ever be guarded from source.
   Future<void> _releaseAudioSessionIfIdle() async {
     if (!audioSessionIsIdle(
       pendingSpeaks: _pendingSpeaks,
@@ -1332,12 +1329,32 @@ class GeofenceChainService {
   Future<void> _chimeThroughSession(PulseOutput output) async {
     _pendingPulses++;
     try {
+      // STAMPED BEFORE setActive, NOT AFTER, and this order is the whole
+      // reason the 21 Jul 2026 bug is not back. Activating the session is
+      // itself one half of the collision: it can raise an audio interruption,
+      // the service feeds interruptions to the wake engine as "the rider took
+      // a call", and SelfAudioInterruptionFilter's window only ever measures
+      // FORWARD from the stamp. So an interruption raised by this line with
+      // the stamp still to come is attributed to the rider, not to us.
+      //
+      // PulseOutput.chime stamps again just before play(), which is correct
+      // and not redundant: the two calls open the window at the two separate
+      // moments our own audio can disturb the session.
+      //
+      // _speakNow has always done it in this order and says so in its own
+      // comment. The chime did not, because until today it never took the
+      // session at all.
+      _selfInterruption.noteOwnAudioStarted(DateTime.now());
       await _session?.setActive(true);
       await output.chime();
     } catch (error) {
-      // NOT DEAD CODE, though it looks it: PulseOutput.chime swallows its own
-      // failures, so the only thing that can throw here is setActive(true).
-      // That is a real and observed failure, not a theoretical one. The
+      // NOT DEAD CODE, though it looks it: PulseOutput.chime is written to
+      // swallow its own failures, so setActive(true) is the only thing that
+      // SHOULD throw here. "Should" rather than "can": the output is
+      // injected, and nothing enforces that contract on a double or on a
+      // future rewrite.
+      //
+      // The setActive failure is real and observed, not theoretical. The
       // 14 Aug 2026 bench logged "Could not restore the announcement audio
       // profile: PlatformException(560557684)" when iOS refused the session
       // while another app held it, which is the same refusal (CannotInterrupt
