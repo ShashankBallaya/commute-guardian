@@ -6,6 +6,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import '../foreground/geofence_task_handler.dart';
 import '../models/app_settings.dart';
+import 'alarm_volume_answer.dart';
 import 'wind_down.dart';
 
 /// One thing that happened on the other side of the isolate boundary.
@@ -503,16 +504,28 @@ class RideServiceClient {
   ///
   /// Returns null when nothing was changed, which is also what a rider already
   /// above the floor gets, and [restoreAlarmVolume] then leaves them alone.
+  /// ONE READ, AND IT IS THE NATIVE ONE. This used to take its own reading
+  /// here and remember that, while the native side took a second reading to
+  /// decide what to do. `AVAudioSession.outputVolume` is only trustworthy on an
+  /// ACTIVE session, and this read lands before the ladder seizes one, so the
+  /// two disagreed. On the 14 Aug 2026 bench they disagreed in both directions
+  /// within one evening, and the ladder put the rider's phone back to a volume
+  /// nobody had measured: 85 percent down to 65, having never raised it.
+  ///
+  /// Now the answer comes from the side that acts. `raisedFrom` is absent
+  /// unless the slider really moved, and absent means null, which
+  /// [restoreAlarmVolume] and its caller both read as "leave them alone".
   Future<double?> raiseAlarmVolume({double floor = 0.7}) async {
     if (!Platform.isIOS) return null;
-    final before = await alarmVolume();
-    if (before == null || before >= floor) return null;
     try {
-      final note = await _mediaAckChannel
-          .invokeMethod<String>('raiseAlarmVolume', floor)
+      final answer = await _mediaAckChannel
+          .invokeMapMethod<String, Object?>('raiseAlarmVolume', floor)
           .timeout(const Duration(seconds: 2));
-      _forwardAudioNote(note);
-      return before;
+      _forwardAudioNote(answer?['note'] as String?);
+      // volumeTakenFrom, not an inline cast. This line cannot be reached by a
+      // test on a desktop host (see the Platform gate above), so the decision
+      // lives where it can be.
+      return volumeTakenFrom(answer);
     } catch (error) {
       _emit(ServiceLogged('Could not raise the alarm volume: $error'));
       return null;

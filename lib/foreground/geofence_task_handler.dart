@@ -112,6 +112,18 @@ const announceEveryStationServiceKey = 'announce_every_station_ride';
 /// exclusively, climbed all three rungs, and the owner heard nothing, and no
 /// log anywhere recorded the one number that decides whether success is
 /// audible. Absent means the platform would not say.
+///
+/// DO NOT TRUST THIS NUMBER IN A DIAGNOSIS, learned 14 Aug 2026. It is read
+/// with NO ACTIVE AUDIO SESSION, and `AVAudioSession.outputVolume` is only
+/// trustworthy on an active one. Two bench logs that evening disagreed with
+/// the ladder's own reading, in opposite directions:
+///
+///   18:36  here: 85%  ->  ladder, session active: 65%
+///   18:42  here: 65%  ->  ladder, session active: 85%
+///
+/// It is still worth logging, because a reading of zero has been right three
+/// times and is the fault it was added for. Treat it as a hint, and take the
+/// ladder's own ALARM VOLUME line as the measurement.
 const alarmVolumeKey = 'alarm_volume_at_start';
 
 /// The rider's analytics opt-out, `AppSettings.shareAnonymousUsage`.

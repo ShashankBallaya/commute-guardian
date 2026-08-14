@@ -72,12 +72,29 @@ class PulseOutput {
       usageType: ap.AndroidUsageType.assistanceNavigationGuidance,
       audioFocus: ap.AndroidAudioFocus.gainTransientMayDuck,
     ),
-    // NO mixWithOthers, matching the announcement session rather than the
-    // alarm's: mixing would leave the rider's music at full volume and lose
-    // the dip that carries the signal when the chime is masked.
+    // duckOthers AND mixWithOthers, which is what the announcement session
+    // (_duckProfile) has always used. This comment used to say "NO
+    // mixWithOthers, matching the announcement session", and it was wrong
+    // about the thing it named: _duckProfile is
+    // `speech().copyWith(duckOthers | mixWithOthers)`.
+    //
+    // THE 14 AUG 2026 BENCH IS WHY IT MATTERS NOW. On iOS this context sets
+    // the app-wide shared AVAudioSession category, and `playback` with no
+    // mixWithOthers is EXCLUSIVE: other audio is interrupted rather than
+    // ducked. While nothing activated a session for the chime the category
+    // change alone was survivable; the moment the pulse started taking the
+    // session properly, the rider's music PAUSED instead of dipping. Same
+    // shape as the 13 Jul bench, where bare speech() stopped his music
+    // outright.
+    //
+    // mixWithOthers does NOT cost the dip. duckOthers is what produces the
+    // dip; mixWithOthers only stops us claiming the session exclusively.
     iOS: ap.AudioContextIOS(
       category: ap.AVAudioSessionCategory.playback,
-      options: const {ap.AVAudioSessionOptions.duckOthers},
+      options: const {
+        ap.AVAudioSessionOptions.duckOthers,
+        ap.AVAudioSessionOptions.mixWithOthers,
+      },
     ),
   );
 

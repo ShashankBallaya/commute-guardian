@@ -232,26 +232,48 @@ import flutter_foreground_task
   /// it matters. Whether UIKit will move a slider for a backgrounded app is not
   /// something the documentation answers. That is why every step returns a note
   /// into the ride log: the next bench reads the log and says.
-  private func raiseAlarmVolume(to floor: Float) -> String? {
+  /// RETURNS THE VOLUME IT ACTUALLY TOOK, and only when it took one.
+  ///
+  /// THE 14 AUG 2026 BENCH IS WHY THIS RETURNS A MAP INSTEAD OF A NOTE. Dart
+  /// used to take its OWN reading of `outputVolume` to decide what to remember,
+  /// while this method took a second one to decide what to do. The two
+  /// disagreed, in both directions across two logs of the same evening:
+  ///
+  ///   18:36  "Alarm volume at start: 85%"  ->  here: "raised from 65% to 70%"
+  ///   18:42  "Alarm volume at start: 65%"  ->  here: "85% already at or above"
+  ///
+  /// `outputVolume` is only trustworthy on an ACTIVE session, and Dart's read
+  /// happened before the ladder seized one. So the rider's phone was restored
+  /// to a number nobody had measured: at 18:46 it was dropped from 85 to 65,
+  /// having never been raised at all. Lowering a rider's alarm volume is the
+  /// exact fault this whole feature exists to prevent.
+  ///
+  /// ONE READ NOW, taken here, after the session is active. `raisedFrom` is
+  /// absent unless the slider really moved, and absent is what Dart turns into
+  /// "leave them alone".
+  private func raiseAlarmVolume(to floor: Float) -> [String: Any] {
     let session = AVAudioSession.sharedInstance()
     let before = session.outputVolume
     guard before.isFinite, before >= 0 else {
-      return "ALARM VOLUME: could not read, left alone."
+      return ["note": "ALARM VOLUME: could not read, left alone."]
     }
     if before >= floor {
-      return String(
+      return ["note": String(
         format: "ALARM VOLUME: %.0f%% already at or above the %.0f%% floor.",
-        before * 100, floor * 100)
+        before * 100, floor * 100)]
     }
     guard let slider = systemVolumeSlider() else {
-      return String(
+      return ["note": String(
         format: "ALARM VOLUME: %.0f%%, BUT NO SYSTEM SLIDER, left alone.",
-        before * 100)
+        before * 100)]
     }
     DispatchQueue.main.async { slider.value = floor }
-    return String(
-      format: "ALARM VOLUME: raised from %.0f%% to %.0f%% for the alarm.",
-      before * 100, floor * 100)
+    return [
+      "note": String(
+        format: "ALARM VOLUME: raised from %.0f%% to %.0f%% for the alarm.",
+        before * 100, floor * 100),
+      "raisedFrom": Double(before),
+    ]
   }
 
   /// Puts the rider's own volume back. A negative [previous] means the ladder
