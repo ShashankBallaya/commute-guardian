@@ -813,6 +813,14 @@ class GeofenceChainService {
       _log('GREETING clip: welcome_greeting.wav');
       await player.setAudioContext(_clipDuckContext);
       final completed = completionOf(player);
+      // STAMPED, and until 14 Aug 2026 this was the one sound in the app that
+      // never was. The greeting ducks through _clipDuckContext like any clip,
+      // so it can raise the same interruption, and an unstamped one reaches
+      // the wake engine as "the rider took a call". Harmless in practice
+      // (this plays at ride start, where no ladder exists) and still wrong:
+      // the rule is that every sound of ours opens the window before it
+      // makes a noise, with no exceptions to remember.
+      _selfInterruption.noteOwnAudioStarted(DateTime.now());
       await player.play(ap.AssetSource('audio/welcome_greeting.wav'));
       // Past this line the greeting is sounding.
       started = true;

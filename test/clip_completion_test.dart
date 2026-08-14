@@ -145,7 +145,23 @@ void main() {
     // three copies of a fix leave it armed at site four. completionOf is now
     // the only way to await a player, so this guard watches ONE SYMBOL rather
     // than a text shape.
-    final audioFiles = Directory('lib')
+    //
+    // WHAT IT DOES NOT CATCH, said plainly so the next reader does not trust
+    // it further than it goes: someone hand-rolling
+    // `player.eventStream.where(...)` rebuilds the same lie under a different
+    // name and walks straight past this.
+
+    /// The real predicate. Both the guard and its twin run THIS, so the two
+    /// cannot drift apart while the twin keeps passing. That drift is the
+    /// repo's recurring guard failure, now six variations deep.
+    bool mentionsRawCompletion(String source) => source
+        .replaceAll('\r\n', '\n')
+        .split('\n')
+        .where((line) => !line.trimLeft().startsWith('//'))
+        .join('\n')
+        .contains('onPlayerComplete');
+
+    List<File> audioFiles() => Directory('lib')
         .listSync(recursive: true)
         .whereType<File>()
         .where((file) => file.path.endsWith('.dart'))
@@ -153,19 +169,26 @@ void main() {
           (file) => !file.path.replaceAll(r'\', '/').endsWith(
             'services/player_completion.dart',
           ),
-        );
+        )
+        .toList();
+
+    test('THE WALK ACTUALLY FINDS THE SOURCE. Without this the guard below '
+        'greens on an empty list and proves nothing', () {
+      final files = audioFiles();
+      expect(files, isNotEmpty);
+      expect(
+        files.map((file) => file.path.replaceAll(r'\', '/')),
+        contains(endsWith('lib/services/pulse_output.dart')),
+        reason: 'a known audio file must be inside the walk, or the walk is '
+            'looking somewhere else',
+      );
+    });
 
     test('NO FILE TOUCHES onPlayerComplete EXCEPT player_completion.dart', () {
-      final offenders = <String>[];
-      for (final file in audioFiles) {
-        final code = file
-            .readAsStringSync()
-            .replaceAll('\r\n', '\n')
-            .split('\n')
-            .where((line) => !line.trimLeft().startsWith('//'))
-            .join('\n');
-        if (code.contains('onPlayerComplete')) offenders.add(file.path);
-      }
+      final offenders = [
+        for (final file in audioFiles())
+          if (mentionsRawCompletion(file.readAsStringSync())) file.path,
+      ];
       expect(
         offenders,
         isEmpty,
@@ -174,15 +197,23 @@ void main() {
       );
     });
 
-    test('and that guard can still fail, on the code it replaced', () {
-      const old = '''
-      final completed = player.onPlayerComplete.first..ignore();
-''';
-      final stripped = old
-          .split('\n')
-          .where((line) => !line.trimLeft().startsWith('//'))
-          .join('\n');
-      expect(stripped, contains('onPlayerComplete'));
+    test('and that guard can still fail, through the same predicate, on the '
+        'exact line it replaced', () {
+      expect(
+        mentionsRawCompletion(
+          'final completed = player.onPlayerComplete.first..ignore();',
+        ),
+        isTrue,
+      );
+    });
+
+    test('and it does not fire on a comment that merely mentions the name', () {
+      // The fix is discussed in prose in several files. A guard that cannot
+      // tell a warning from a use is the substring-guard bug again.
+      expect(
+        mentionsRawCompletion('// see player_completion: onPlayerComplete'),
+        isFalse,
+      );
     });
   });
 }

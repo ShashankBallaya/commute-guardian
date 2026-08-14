@@ -38,6 +38,25 @@ String chimeHelperBody(String code) {
   return code.substring(start, code.indexOf('\n  }', start));
 }
 
+/// Where a method stamps the interruption filter, and where it activates the
+/// session, as offsets inside that method's own body.
+///
+/// ONE FUNCTION FOR BOTH THE GUARD AND ITS NEGATIVE TWIN, deliberately. The
+/// first draft of these tests re-implemented the search inline against a
+/// literal, so the twin proved nothing about the guard: the two could drift
+/// apart and the twin would still pass. That is the sixth variation of the
+/// same mistake in this repo, and the rule from the previous five is that a
+/// "can still fail" test must run the REAL predicate.
+({int stampAt, int activateAt}) stampOrderIn(String code, String signature) {
+  final start = code.indexOf(signature);
+  expect(start, greaterThan(-1), reason: '$signature has moved or been renamed');
+  final body = code.substring(start, code.indexOf('\n  }', start));
+  return (
+    stampAt: body.indexOf('noteOwnAudioStarted('),
+    activateAt: body.indexOf('setActive(true)'),
+  );
+}
+
 /// The body of the method that decides when the rider's music comes back.
 String releaseMethodBody(String code) {
   final start = code.indexOf('Future<void> _releaseAudioSessionIfIdle(');
@@ -78,52 +97,77 @@ void main() {
       expect(RegExp(r'\.chime\(\)').allMatches(old), hasLength(3));
     });
 
-    test('THE STAMP COMES BEFORE setActive, NEVER AFTER', () {
-      // Activating the session can itself raise an audio interruption, and the
-      // service feeds interruptions to the wake engine as "the rider took a
-      // call". SelfAudioInterruptionFilter measures FORWARD from the stamp
-      // only, so a stamp that lands after setActive is a stamp that did not
-      // happen. That chain stood the ladder down on a sleeping rider on
-      // 21 Jul 2026. _speakNow has always had this order; the chime helper
-      // was written on 14 Aug 2026 with it backwards.
-      final body = chimeHelperBody(serviceCode());
-      final stampAt = body.indexOf('noteOwnAudioStarted(');
-      final activateAt = body.indexOf('setActive(true)');
+    // Activating the session can itself raise an audio interruption, and the
+    // service feeds interruptions to the wake engine as "the rider took a
+    // call". SelfAudioInterruptionFilter measures FORWARD from the stamp only,
+    // so a stamp that lands after setActive is a stamp that did not happen.
+    // That chain stood the ladder down on a sleeping rider on 21 Jul 2026.
+    // _speakNow has always had this order. The chime helper was written on
+    // 14 Aug 2026 with it backwards, and the clip path shipped backwards in
+    // befaca4 the day before.
+    for (final (name, signature) in [
+      ('the pulse chime', 'Future<void> _chimeThroughSession('),
+      ('the clip path', 'void _enqueueClip('),
+      ('speech, which has always been right', 'Future<void> _speakNow('),
+    ]) {
+      test('THE STAMP COMES BEFORE setActive IN $name', () {
+        final order = stampOrderIn(serviceCode(), signature);
+        expect(
+          order.stampAt,
+          greaterThan(-1),
+          reason: '$name never stamps at all',
+        );
+        expect(order.activateAt, greaterThan(-1), reason: '$name never asks '
+            'for the session, so this guard is watching the wrong method');
+        expect(
+          order.stampAt,
+          lessThan(order.activateAt),
+          reason: 'the interruption window must open BEFORE the line that can '
+              'raise an interruption',
+        );
+      });
+    }
 
-      expect(stampAt, greaterThan(-1), reason: 'the chime helper never stamps');
-      expect(activateAt, greaterThan(-1));
-      expect(
-        stampAt,
-        lessThan(activateAt),
-        reason: 'the interruption window must open BEFORE the line that can '
-            'raise an interruption',
-      );
-    });
-
-    test('and that guard can still fail, on the order it replaced', () {
-      const old = '''
+    test('AND THE ORDERING GUARD CAN STILL FAIL, on the exact code it '
+        'replaced, through the same predicate the guard uses', () {
+      // The order as _chimeThroughSession was first written on 14 Aug. The
+      // stamp is PRESENT, so this proves the ORDERING assertion can fail and
+      // not merely the presence one. The first draft of this twin used a
+      // fixture with no stamp at all, which proved the wrong thing.
+      const stampAfterActivate = '''
   Future<void> _chimeThroughSession(PulseOutput output) async {
     _pendingPulses++;
     try {
       await _session?.setActive(true);
       await output.chime();
+      _selfInterruption.noteOwnAudioStarted(DateTime.now());
+    } finally {
+      _pendingPulses--;
+    }
   }
 ''';
-      final body = chimeHelperBody(old);
-      expect(body.indexOf('noteOwnAudioStarted('), -1);
+      final order = stampOrderIn(
+        stampAfterActivate,
+        'Future<void> _chimeThroughSession(',
+      );
+      expect(order.stampAt, greaterThan(-1), reason: 'the fixture must stamp, '
+          'or it proves presence rather than order');
+      expect(order.activateAt, greaterThan(-1));
+      expect(order.stampAt, greaterThan(order.activateAt));
     });
 
-    test('THE CLIP PATH STAMPS BEFORE ITS setActive TOO. Same defect, and it '
-        'shipped in befaca4 a day earlier', () {
-      final code = serviceCode();
-      final start = code.indexOf("_log('CLIP \${clip.uri");
-      expect(start, greaterThan(-1), reason: 'the clip log line has moved');
-      // The 400 characters before the CLIP log line hold the session take.
-      final before = code.substring(start - 400, start);
-      final stampAt = before.lastIndexOf('noteOwnAudioStarted(');
-      final activateAt = before.lastIndexOf('setActive(true)');
-      expect(stampAt, greaterThan(-1));
-      expect(stampAt, lessThan(activateAt));
+    test('and it can fail the other way too, when nothing stamps', () {
+      const noStamp = '''
+  Future<void> _chimeThroughSession(PulseOutput output) async {
+    await _session?.setActive(true);
+    await output.chime();
+  }
+''';
+      final order = stampOrderIn(
+        noStamp,
+        'Future<void> _chimeThroughSession(',
+      );
+      expect(order.stampAt, -1);
     });
 
     test('THE HELPER TAKES THE SESSION, COUNTS ITSELF, AND RELEASES', () {
