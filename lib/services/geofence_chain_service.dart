@@ -17,6 +17,7 @@ import '../models/journey.dart';
 import '../models/station.dart';
 import 'analytics.dart';
 import 'announcement_templates.dart';
+import 'audio_session_idle.dart';
 import 'clip_library.dart';
 import 'pocket_pulse.dart';
 import 'pulse_output.dart';
@@ -227,6 +228,15 @@ class GeofenceChainService {
   /// counterpart, and together they are what "the app is talking right now"
   /// means to Pocket Pulse.
   int _pendingClips = 0;
+
+  /// Pulse chimes currently sounding.
+  ///
+  /// NOT part of "the app is talking": the pulse is the least important sound
+  /// this app makes and must never suppress anything. It exists only so the
+  /// chime holds and releases the shared audio session like every other sound,
+  /// which it did not do until the 14 Aug 2026 ride showed the rider's music
+  /// staying ducked between announcements.
+  int _pendingPulses = 0;
 
   /// How many announcements are queued or speaking. Drives the ducking window
   /// (the session is released only when the last one finishes) and Pocket
@@ -1155,8 +1165,19 @@ class GeofenceChainService {
   /// here is what silenced the looping alarm tone the moment rung 1's speech
   /// finished (15 Jul iPhone bench). The ladder releases the session itself
   /// when it stands down.
+  /// The PULSE half was missing until the 14 Aug 2026 ride, and it is the same
+  /// mistake a third time: the chime ducked through its own AudioContext and
+  /// nothing handed the ducking back, so the rider's music dipped every 45 s
+  /// and came up only when an announcement happened to speak.
   Future<void> _releaseAudioSessionIfIdle() async {
-    if (_pendingSpeaks > 0 || _pendingClips > 0 || _wakeLadderLive) return;
+    if (!audioSessionIsIdle(
+      pendingSpeaks: _pendingSpeaks,
+      pendingClips: _pendingClips,
+      pendingPulses: _pendingPulses,
+      wakeLadderLive: _wakeLadderLive,
+    )) {
+      return;
+    }
     await _session?.setActive(false);
   }
 
@@ -1261,7 +1282,7 @@ class GeofenceChainService {
     }
     if (collideAfterMs == null) {
       _log('PULSE test chime.');
-      await output.chime();
+      await _chimeThroughSession(output);
       await output.buzz();
       return;
     }
@@ -1285,7 +1306,35 @@ class GeofenceChainService {
       await Future<void>.delayed(Duration(milliseconds: at - elapsed));
       elapsed = at;
       _log('PULSE collision chime at ${at}ms.');
+      await _chimeThroughSession(output);
+    }
+  }
+
+  /// One chime, through the same audio-session discipline speech and clips
+  /// obey. THE ONLY WAY THE SERVICE MAY SOUND A CHIME.
+  ///
+  /// Calling [PulseOutput.chime] directly is the 14 Aug 2026 bug: the chime
+  /// ducks the rider's music through its own AudioContext, and on iOS that
+  /// context is the app-wide shared AVAudioSession, so without a matching
+  /// release the music stays down until something else happens to speak. The
+  /// rider heard exactly that, every 45 s, for a whole leg.
+  ///
+  /// The counter is what makes the release safe rather than merely present: a
+  /// chime that finishes while an announcement is still speaking must not pull
+  /// the session out from under it, which is the same trap
+  /// [_releaseAudioSessionIfIdle] was widened for on 13 Aug.
+  Future<void> _chimeThroughSession(PulseOutput output) async {
+    _pendingPulses++;
+    try {
+      await _session?.setActive(true);
       await output.chime();
+    } catch (error) {
+      // Matching PulseOutput's own rule: a missed pulse is a missed
+      // reassurance, never a damaged ride.
+      _log('PULSE chime failed: $error');
+    } finally {
+      _pendingPulses--;
+      await _releaseAudioSessionIfIdle();
     }
   }
 
@@ -1996,7 +2045,7 @@ class GeofenceChainService {
           // "the pulse stopped" leaves nothing to read. Same rule the rest of
           // this service follows: silence has no cause in a log.
           _log('PULSE chime.');
-          unawaited(output.chime());
+          unawaited(_chimeThroughSession(output));
           if (_pulseVibrate) unawaited(output.buzz());
         case PulseNote(:final reason):
           // Uppercase prefix, like every other line in this file. The engine
