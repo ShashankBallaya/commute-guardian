@@ -8,18 +8,16 @@
 ///
 /// THE FAULT THIS EXISTS TO STOP, from the 14 Aug 2026 bench. Dart used to take
 /// its own reading of the volume to decide what to remember, while the native
-/// side took a second reading to decide what to do. `AVAudioSession
-/// .outputVolume` is only trustworthy on an ACTIVE session and the Dart read
-/// landed before the ladder seized one, so the two disagreed, in BOTH
-/// directions across two logs of one evening:
+/// side took a second reading to decide what to do, and the two disagreed. The
+/// damage was a phone at 85 percent, never raised by us, dropped to 65.
+/// Lowering a rider's alarm volume is the exact fault the whole feature exists
+/// to prevent.
 ///
-///   18:36  Dart: 85%  ->  native, session active: 65%
-///   18:42  Dart: 65%  ->  native, session active: 85%
-///   18:46  "ALARM VOLUME: restored to 65%"
-///
-/// That last line is the damage: a phone at 85 percent, never raised by us,
-/// dropped to 65. Lowering a rider's alarm volume is the exact fault the whole
-/// feature exists to prevent.
+/// STILL BROKEN UPSTREAM OF HERE, and this file cannot fix it. Later that
+/// evening the ladder read 65 percent, four samples running, while the slider
+/// was at 90. This function faithfully remembers whatever native measured, and
+/// native is still measuring the wrong number. See AppDelegate's
+/// `raiseAlarmVolume` for the category hypothesis and what it owes a bench.
 ///
 /// So there is ONE reading now, taken natively after activation, and this is
 /// the only thing allowed to interpret it. `raisedFrom` absent means the slider

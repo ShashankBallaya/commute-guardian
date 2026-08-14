@@ -287,27 +287,29 @@ import flutter_foreground_task
   /// entire purpose is to guarantee the alarm can be heard made the phone
   /// quieter, twice.
   ///
-  /// The reading was the fault, not the logic. It was taken ONE MILLISECOND
-  /// after `setActive(true)`:
+  /// THE SAMPLING BELOW DID NOT FIX IT, and this comment is the correction.
   ///
-  ///     19:10:39.499  WAKE audio: ladder session exclusive
-  ///     19:10:39.500  ALARM VOLUME: raised from 65% to 70%
+  /// It was built on the theory that the reading was STALE because it lands one
+  /// millisecond after `setActive(true)`. The bench that followed took four
+  /// samples 80 ms apart and got `65%, 65%, 65%, 65%` while the rider's slider
+  /// was at 90 and he confirmed it by eye. Stable, and still wrong. Timing is
+  /// not the variable.
   ///
-  /// `outputVolume` reflects the active ROUTE, and a session that has just been
-  /// activated has not settled its route yet, so the value is stale. The same
-  /// stale 65 appears across three logs of one evening while the slider was at
-  /// 85, at 65 and at 90.
+  /// WHAT THE VARIABLE LOOKS LIKE, and it is a HYPOTHESIS awaiting one bench:
+  /// the CATEGORY. The reading that has been right every time comes from
+  /// `alarmVolume()`, which activates `.ambient` with `mixWithOthers`. This one
+  /// runs after `seizeSession()` has taken `.playback` with NO options, which
+  /// is EXCLUSIVE. Taking an exclusive session appears to change which route's
+  /// volume iOS reports.
   ///
-  /// SO IT TAKES THE HIGHEST OF SEVERAL READINGS. A stale reading can only be
-  /// wrong downwards here (it lags a rider who is louder than the cache), and
-  /// taking the maximum means a wrong sample can only cost us a raise we did
-  /// not need, never cost the rider volume they chose. If ANY sample is at or
-  /// above the floor, nothing is touched at all.
+  /// THE SAMPLING IS KEPT because it costs 240 ms and it is the instrument that
+  /// proved timing innocent. Every sample goes into the ride log, so the next
+  /// bench can read them rather than argue about them.
   ///
-  /// EVERY SAMPLE GOES INTO THE RIDE LOG, because whether the readings settle
-  /// is the open question and the next bench is what answers it. If they are
-  /// all identical and still wrong, sampling is not the fix and this feature
-  /// needs a different mechanism, or needs turning off.
+  /// THE FEATURE STILL LOWERS A LOUD RIDER'S VOLUME. Taking the maximum of four
+  /// wrong readings is still a wrong reading. The owner was shown this and
+  /// chose to leave it for now; the design question (fail quiet, or fail loud)
+  /// is open and is the first thing to settle before touching this again.
   private func raiseAlarmVolume(
     to floor: Float, done: @escaping ([String: Any]) -> Void
   ) {

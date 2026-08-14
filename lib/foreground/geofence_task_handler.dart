@@ -113,17 +113,21 @@ const announceEveryStationServiceKey = 'announce_every_station_ride';
 /// log anywhere recorded the one number that decides whether success is
 /// audible. Absent means the platform would not say.
 ///
-/// DO NOT TRUST THIS NUMBER IN A DIAGNOSIS, learned 14 Aug 2026. It is read
-/// with NO ACTIVE AUDIO SESSION, and `AVAudioSession.outputVolume` is only
-/// trustworthy on an active one. Two bench logs that evening disagreed with
-/// the ladder's own reading, in opposite directions:
+/// CORRECTED 14 Aug 2026, LATE. An earlier version of this comment said this
+/// number was the untrustworthy one. That was backwards, and it was written
+/// before the evening's benches finished.
 ///
-///   18:36  here: 85%  ->  ladder, session active: 65%
-///   18:42  here: 65%  ->  ladder, session active: 85%
+/// THIS READING HAS BEEN RIGHT EVERY TIME. `alarmVolume()` activates the
+/// session as `.ambient` with `mixWithOthers` before reading, and it reported
+/// 90 percent when the rider's slider was at 90. The LADDER's reading is the
+/// wrong one: `seizeSession()` takes `.playback` with no options, which is
+/// EXCLUSIVE, and then reads 65 percent for the same slider, four samples
+/// running.
 ///
-/// It is still worth logging, because a reading of zero has been right three
-/// times and is the fault it was added for. Treat it as a hint, and take the
-/// ladder's own ALARM VOLUME line as the measurement.
+/// So the variable is the CATEGORY, not the timing, and taking an exclusive
+/// session appears to change which route's volume iOS reports. That is a
+/// HYPOTHESIS awaiting one bench, not a fact. Until it is measured, prefer
+/// this number over the ladder's.
 const alarmVolumeKey = 'alarm_volume_at_start';
 
 /// The rider's analytics opt-out, `AppSettings.shareAnonymousUsage`.
