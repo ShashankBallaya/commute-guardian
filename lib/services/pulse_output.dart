@@ -88,7 +88,16 @@ class PulseOutput {
     try {
       await player.setAudioContext(_duckContext);
       await player.setReleaseMode(ap.ReleaseMode.release);
-      final completed = player.onPlayerComplete.first..ignore();
+      // MAPPED TO ITS DECLARED TYPE, and the map is load-bearing. audioplayers
+      // declares onPlayerComplete as Stream<void> and builds it as
+      // eventStream.where(...) with no map, so the runtime object is a
+      // Stream<AudioEvent>. The lie is harmless while the timeout below takes
+      // no onTimeout closure, and fatal the moment someone adds one: that is
+      // exactly what silenced nine station clips of nine on the 14 Aug 2026
+      // ride. Leaving the trap armed in the one audio path that fires every
+      // 45 s is not worth the two words it costs to disarm it.
+      final completed = player.onPlayerComplete.map<void>((_) {}).first
+        ..ignore();
       // STAMPED BEFORE PLAY, not after. The interruption our own audio can
       // raise arrives within ~150 ms of the sound starting, and a stamp that
       // lands after it is a stamp that did not happen.

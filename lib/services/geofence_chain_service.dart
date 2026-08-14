@@ -808,19 +808,36 @@ class GeofenceChainService {
   /// enhancement and must never cost the rider the route confirmation.
   Future<void> _greetThenSpeak(String welcomeBody) async {
     final player = ap.AudioPlayer();
+    var started = false;
     try {
       _log('GREETING clip: welcome_greeting.wav');
       await player.setAudioContext(_clipDuckContext);
       // ignore() marks the future safe if play() throws before the await
       // reaches it; otherwise its error would surface unhandled later.
-      final completed = player.onPlayerComplete.first..ignore();
+      //
+      // MAPPED, like the station clips. See _playClipFile for what the
+      // unmapped stream cost on the 14 Aug 2026 ride: the type is a lie, and
+      // it only bites once someone passes an onTimeout closure here.
+      final completed = player.onPlayerComplete.map<void>((_) {}).first
+        ..ignore();
       await player.play(ap.AssetSource('audio/welcome_greeting.wav'));
+      // Past this line the greeting is sounding.
+      started = true;
       // The clip is ~3s; a wedged player must not hold the welcome hostage.
       await completed.timeout(const Duration(seconds: 6));
     } catch (error) {
-      _log('GREETING clip failed, using device TTS: $error');
-      await _speak(_fullWelcome(welcomeBody));
-      return;
+      if (started) {
+        // A MISSING COMPLETION EVENT IS NOT A MISSING GREETING, the same
+        // distinction _playClipFile had to learn on 13 Aug 2026. Speaking
+        // _fullWelcome here would greet a rider who has just been greeted,
+        // and onPlayerComplete failed to arrive for 4 clips of 14 on that
+        // ride, so this is not a rare path.
+        _log('GREETING clip played but did not close cleanly: $error');
+      } else {
+        _log('GREETING clip failed, using device TTS: $error');
+        await _speak(_fullWelcome(welcomeBody));
+        return;
+      }
     } finally {
       unawaited(player.release());
     }
@@ -1154,21 +1171,10 @@ class GeofenceChainService {
 
   /// Hands the audio session back once NOTHING of ours is making noise.
   ///
-  /// The clip half of this test was missing until 13 Aug 2026: the condition
-  /// read `_pendingSpeaks == 0` alone, so a clip queued behind an announcement
-  /// had the session deactivated out from under it, and a clip on its own
-  /// never activated one to release. Both halves of the ride's ducking
-  /// complaint live here.
-  ///
-  /// While a wake ladder is live the session must STAY active: on iOS the
-  /// audio context is the app-wide shared AVAudioSession, and deactivating it
-  /// here is what silenced the looping alarm tone the moment rung 1's speech
-  /// finished (15 Jul iPhone bench). The ladder releases the session itself
-  /// when it stands down.
-  /// The PULSE half was missing until the 14 Aug 2026 ride, and it is the same
-  /// mistake a third time: the chime ducked through its own AudioContext and
-  /// nothing handed the ducking back, so the rider's music dipped every 45 s
-  /// and came up only when an announcement happened to speak.
+  /// The rule itself, and the three separate rides that each cost a term in
+  /// it, live in [audioSessionIsIdle]. It is a free function so that it can
+  /// have real tests: this service cannot be built under the test binding, so
+  /// anything decided in here can only ever be guarded from source.
   Future<void> _releaseAudioSessionIfIdle() async {
     if (!audioSessionIsIdle(
       pendingSpeaks: _pendingSpeaks,
@@ -1329,10 +1335,19 @@ class GeofenceChainService {
       await _session?.setActive(true);
       await output.chime();
     } catch (error) {
-      // Matching PulseOutput's own rule: a missed pulse is a missed
-      // reassurance, never a damaged ride.
+      // NOT DEAD CODE, though it looks it: PulseOutput.chime swallows its own
+      // failures, so the only thing that can throw here is setActive(true).
+      // That is a real and observed failure, not a theoretical one. The
+      // 14 Aug 2026 bench logged "Could not restore the announcement audio
+      // profile: PlatformException(560557684)" when iOS refused the session
+      // while another app held it, which is the same refusal (CannotInterrupt
+      // Others) the wake ladder meets. A pulse must lose that argument
+      // quietly.
       _log('PULSE chime failed: $error');
     } finally {
+      // THE finally IS WHAT CARRIES THE FIX. A chime that threw on the way in
+      // must still give the music back, or one refused session leaves the
+      // rider's music ducked for the rest of the ride.
       _pendingPulses--;
       await _releaseAudioSessionIfIdle();
     }
