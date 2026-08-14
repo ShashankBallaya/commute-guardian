@@ -110,7 +110,9 @@ import flutter_foreground_task
         result(self?.alarmVolume())
       case "raiseAlarmVolume":
         let floor = (call.arguments as? NSNumber)?.floatValue ?? 0.7
-        result(self?.raiseAlarmVolume(to: floor))
+        // ASYNC, because the decision now needs more than one reading. See
+        // raiseAlarmVolume. Dart already allows two seconds for this call.
+        self?.raiseAlarmVolume(to: floor) { result($0) }
       case "restoreAlarmVolume":
         let previous = (call.arguments as? NSNumber)?.floatValue ?? -1
         result(self?.restoreAlarmVolume(to: previous))
@@ -251,29 +253,95 @@ import flutter_foreground_task
   /// ONE READ NOW, taken here, after the session is active. `raisedFrom` is
   /// absent unless the slider really moved, and absent is what Dart turns into
   /// "leave them alone".
-  private func raiseAlarmVolume(to floor: Float) -> [String: Any] {
+  /// How many readings of `outputVolume` are taken before acting, and how far
+  /// apart. See [raiseAlarmVolume] for what one reading cost.
+  private static let volumeSamples = 4
+  private static let volumeSampleGap = 0.08
+
+  /// Samples `outputVolume` [volumeSamples] times and hands back every reading.
+  ///
+  /// ONE READING IS NOT ENOUGH, learned the hard way on 14 Aug 2026. See
+  /// [raiseAlarmVolume].
+  private func sampleOutputVolume(
+    _ done: @escaping ([Float]) -> Void, collected: [Float] = []
+  ) {
     let session = AVAudioSession.sharedInstance()
-    let before = session.outputVolume
-    guard before.isFinite, before >= 0 else {
-      return ["note": "ALARM VOLUME: could not read, left alone."]
+    var samples = collected
+    samples.append(session.outputVolume)
+    if samples.count >= AppDelegate.volumeSamples {
+      done(samples)
+      return
     }
-    if before >= floor {
-      return ["note": String(
-        format: "ALARM VOLUME: %.0f%% already at or above the %.0f%% floor.",
-        before * 100, floor * 100)]
+    DispatchQueue.main.asyncAfter(
+      deadline: .now() + AppDelegate.volumeSampleGap
+    ) { [weak self] in
+      self?.sampleOutputVolume(done, collected: samples)
     }
-    guard let slider = systemVolumeSlider() else {
-      return ["note": String(
-        format: "ALARM VOLUME: %.0f%%, BUT NO SYSTEM SLIDER, left alone.",
-        before * 100)]
+  }
+
+  /// Raises the media volume to [floor] for an alarm, and NEVER LOWERS IT.
+  ///
+  /// THE 14 AUG 2026 BENCH BROKE THE ONLY PROMISE THIS MAKES. The rider's
+  /// slider was at 90 percent with earphones connected. The ladder read 65,
+  /// set the slider to 70, and afterwards restored it to 65. A feature whose
+  /// entire purpose is to guarantee the alarm can be heard made the phone
+  /// quieter, twice.
+  ///
+  /// The reading was the fault, not the logic. It was taken ONE MILLISECOND
+  /// after `setActive(true)`:
+  ///
+  ///     19:10:39.499  WAKE audio: ladder session exclusive
+  ///     19:10:39.500  ALARM VOLUME: raised from 65% to 70%
+  ///
+  /// `outputVolume` reflects the active ROUTE, and a session that has just been
+  /// activated has not settled its route yet, so the value is stale. The same
+  /// stale 65 appears across three logs of one evening while the slider was at
+  /// 85, at 65 and at 90.
+  ///
+  /// SO IT TAKES THE HIGHEST OF SEVERAL READINGS. A stale reading can only be
+  /// wrong downwards here (it lags a rider who is louder than the cache), and
+  /// taking the maximum means a wrong sample can only cost us a raise we did
+  /// not need, never cost the rider volume they chose. If ANY sample is at or
+  /// above the floor, nothing is touched at all.
+  ///
+  /// EVERY SAMPLE GOES INTO THE RIDE LOG, because whether the readings settle
+  /// is the open question and the next bench is what answers it. If they are
+  /// all identical and still wrong, sampling is not the fix and this feature
+  /// needs a different mechanism, or needs turning off.
+  private func raiseAlarmVolume(
+    to floor: Float, done: @escaping ([String: Any]) -> Void
+  ) {
+    sampleOutputVolume { [weak self] samples in
+      let usable = samples.filter { $0.isFinite && $0 >= 0 }
+      let readings = samples
+        .map { String(format: "%.0f%%", $0 * 100) }
+        .joined(separator: ", ")
+      guard let highest = usable.max() else {
+        done(["note": "ALARM VOLUME: could not read (\(readings)), left alone."])
+        return
+      }
+      if highest >= floor {
+        done(["note": String(
+          format: "ALARM VOLUME: %.0f%% already at or above the %.0f%% floor "
+            + "(read %@).",
+          highest * 100, floor * 100, readings)])
+        return
+      }
+      guard let slider = self?.systemVolumeSlider() else {
+        done(["note": String(
+          format: "ALARM VOLUME: %.0f%%, BUT NO SYSTEM SLIDER, left alone.",
+          highest * 100)])
+        return
+      }
+      DispatchQueue.main.async { slider.value = floor }
+      done([
+        "note": String(
+          format: "ALARM VOLUME: raised from %.0f%% to %.0f%% for the alarm "
+            + "(read %@).",
+          highest * 100, floor * 100, readings),
+        "raisedFrom": Double(highest),
+      ])
     }
-    DispatchQueue.main.async { slider.value = floor }
-    return [
-      "note": String(
-        format: "ALARM VOLUME: raised from %.0f%% to %.0f%% for the alarm.",
-        before * 100, floor * 100),
-      "raisedFrom": Double(before),
-    ]
   }
 
   /// Puts the rider's own volume back. A negative [previous] means the ladder
