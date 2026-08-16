@@ -535,7 +535,11 @@ class GeofenceChainService {
     // the six replays could not show a problem, which is not the same as
     // showing there is none.
     _tts.setStartHandler(_noteSpeechStarted);
-    _tts.setCompletionHandler(_finishUtterance);
+    // Completion gets its own wrapper because it is the only one of the three
+    // that means the engine reached the end of the sentence. A cancel and an
+    // error also release the waiter, and logging a duration for either would
+    // report speech that did not happen.
+    _tts.setCompletionHandler(_noteSpeechFinished);
     _tts.setCancelHandler(_finishUtterance);
     _tts.setErrorHandler((dynamic message) {
       _log('Announcement error: $message');
@@ -1116,6 +1120,20 @@ class GeofenceChainService {
   /// can say how long it took to become sound.
   DateTime? _spokenAt;
 
+  /// When the engine actually started making noise, so [_noteSpeechFinished]
+  /// can say how long the sentence took to speak.
+  DateTime? _voiceStartedAt;
+
+  /// Whether the current utterance's 20 s wait already gave up.
+  ///
+  /// THE BENCH THIS EXISTS FOR, 16 Aug 2026: the welcome timed out at exactly
+  /// 20.0 s on the 3T with clips off, and the log could not say whether the
+  /// engine was still speaking or the completion event was lost. Those need
+  /// opposite fixes (a longer wait, or not waiting on that event at all), and
+  /// the difference was invisible because a late completion is dropped in
+  /// silence. Now it is not.
+  bool _utteranceTimedOut = false;
+
   /// The engine has started making noise. Logs decision-to-voice latency,
   /// which is the number section 4.2 sets a one second budget for and the one
   /// no ride has ever reported.
@@ -1123,10 +1141,25 @@ class GeofenceChainService {
     final at = _spokenAt;
     if (at == null) return;
     _spokenAt = null;
-    _log(
-      'VOICE started ${DateTime.now().difference(at).inMilliseconds}ms '
-      'after the call',
-    );
+    final now = DateTime.now();
+    _voiceStartedAt = now;
+    _log('VOICE started ${now.difference(at).inMilliseconds}ms after the call');
+  }
+
+  /// The engine reached the end of the sentence. Logs how long it spoke, and
+  /// says so explicitly when the 20 s wait had already given up on it.
+  void _noteSpeechFinished() {
+    final at = _voiceStartedAt;
+    _voiceStartedAt = null;
+    final lateBy = _utteranceTimedOut ? ', after the wait gave up' : '';
+    _utteranceTimedOut = false;
+    if (at != null) {
+      _log(
+        'VOICE finished after '
+        '${DateTime.now().difference(at).inMilliseconds}ms of speech$lateBy',
+      );
+    }
+    _finishUtterance();
   }
 
   Future<void> _speak(String text) {
@@ -1155,11 +1188,13 @@ class GeofenceChainService {
           final done = Completer<void>();
           _utteranceDone = done;
           _spokenAt = DateTime.now();
+          _utteranceTimedOut = false;
           await _tts.speak(text);
           await done.future.timeout(
             const Duration(seconds: 20),
             onTimeout: () {
               _log('Announcement completion never arrived, continuing.');
+              _utteranceTimedOut = true;
               if (identical(_utteranceDone, done)) _utteranceDone = null;
             },
           );
