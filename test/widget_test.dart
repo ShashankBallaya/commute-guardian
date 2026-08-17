@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -942,4 +943,101 @@ void main() {
     expect(find.byType(WakeAlertScreen), findsNothing);
     expect(service.commands, isNot(contains('setMediaSession:true')));
   });
+
+  testWidgets('RESUMING A KILLED RIDE PUTS THE RIDER BACK ON SCREEN 4', (
+    tester,
+  ) async {
+    // THE WHOLE FEATURE, END TO END, on the product host. The 16 Aug exit ride
+    // was jetsammed by iOS mid-journey and nothing anywhere noticed.
+    //
+    // The half this test exists for is the LAST one, and it is the half that
+    // was missing when the logic was first written: a service is not a screen.
+    // Starting the ride and leaving the rider on Home would give them no chain,
+    // no next station and no End journey, on a ride that is running, which is
+    // the same complaint the 11 Aug swipe produced.
+    final service = FakeRideServiceClient(
+      running: false,
+      rideInFlight: true,
+      originId: 'shahad',
+      destinationId: 'thane',
+      startedAt: DateTime.now().subtract(const Duration(minutes: 20)),
+    );
+    // The resume path asks for permissions like every start does, and
+    // permission_handler's channel has no implementation under this binding.
+    // Answering "granted" is the state a rider who has ridden before is in.
+    _grantPermissions(tester);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          stationRepositoryProvider.overrideWith(
+            (ref) async => StationRepository.parse(
+              File(StationRepository.assetPath).readAsStringSync(),
+            ),
+          ),
+          fixAcquirerProvider.overrideWithValue(
+            () async => throw StateError('no GPS'),
+          ),
+          appDatabaseProvider.overrideWith((ref) {
+            final db = AppDatabase.inMemory();
+            ref.onDispose(db.close);
+            return db;
+          }),
+          onboardingSeenProvider.overrideWith((ref) async => true),
+          rideServiceClientProvider.overrideWithValue(service),
+        ],
+        child: const CommuteGuardianDebugApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // The offer is on Home, and no ride is running yet.
+    expect(find.byKey(const Key('resume_ride_card')), findsOneWidget);
+    expect(find.text('Still going to Thane?'), findsOneWidget);
+    expect(service.running, isFalse);
+
+    await tester.tap(find.byKey(const Key('resume_ride_card')));
+    await tester.pumpAndSettle();
+
+    // The ORIGINAL journey was restarted, not a new one planned from wherever
+    // the rider is standing now. That replan is the 9 Aug stale-origin bug.
+    expect(service.commands, contains('startRide:shahad->thane'));
+    expect(service.running, isTrue);
+
+    // AND THE RIDER IS ON THE RIDE. Screen 4, with the ride's own controls.
+    expect(find.text('End journey'), findsOneWidget);
+    // The offer is gone, because a ride is running rather than because
+    // anything cleared the flag underneath it.
+    expect(find.byKey(const Key('resume_ride_card')), findsNothing);
+    expect(service.commands, isNot(contains('clearRideInFlight')));
+  });
+}
+
+/// Answers permission_handler's channel as a phone whose rider has already
+/// granted everything. Without it the resume path throws on a channel that has
+/// no implementation under the test binding.
+void _grantPermissions(WidgetTester tester) {
+  const channel = MethodChannel('flutter.baseflow.com/permissions/methods');
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+    call,
+  ) async {
+    switch (call.method) {
+      case 'requestPermissions':
+        // PermissionStatus.granted is 1. The argument is the list of
+        // permission ints being asked for.
+        return {for (final p in call.arguments as List) p as int: 1};
+      case 'checkPermissionStatus':
+        return 1;
+      case 'checkServiceStatus':
+        return 1;
+      default:
+        return null;
+    }
+  });
+  addTearDown(
+    () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      channel,
+      null,
+    ),
+  );
 }

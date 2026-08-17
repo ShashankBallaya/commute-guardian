@@ -507,6 +507,18 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       // flag true for itself, so the offer goes away here because a ride is
       // RUNNING, which is the only reason it should ever go away by itself.
       await ref.read(interruptedRideProvider.notifier).refresh();
+      // AND PUT THE RIDER BACK ON THE RIDE, which is the whole point of
+      // pressing resume. A service is not a screen: without this the rider
+      // presses Resume, the ride starts, and they are left on Screen 1 with no
+      // chain, no next station and no End journey, which is the same complaint
+      // the 11 Aug swipe produced.
+      //
+      // The SAME path a reopened app takes, on purpose, because a resumed ride
+      // and a reopened one leave the UI in exactly the same state: a running
+      // service the screens have never seen. It fills the journey draft (Screen
+      // 4 is pushed from the planned journey, so an unset draft would silently
+      // decline to open it) and pushes Screen 4 only on the product host.
+      await _restoreRunningRide();
     }
     // A resume that failed (permission refused, service refused to start)
     // leaves the offer exactly where it was, on purpose. The rider still has an

@@ -99,6 +99,7 @@ class HomeScreen extends ConsumerStatefulWidget {
     super.key,
     required this.onStartTo,
     required this.onNew,
+    this.onResumeRide,
     this.onHistory,
     this.onSettings,
   });
@@ -109,6 +110,15 @@ class HomeScreen extends ConsumerStatefulWidget {
 
   /// Open the destination picker (Screen 2).
   final VoidCallback onNew;
+
+  /// Pick a ride the OS killed back up, or null where there is nothing behind
+  /// it (this screen pumped on its own in a test).
+  ///
+  /// A CALLBACK RATHER THAN A PROVIDER CALL, like every other action here:
+  /// Screen 1 knows nothing about the service isolate, and resuming needs the
+  /// orchestration that owns navigation. Declining does NOT need one, so it is
+  /// not here: the notifier answers that by itself.
+  final VoidCallback? onResumeRide;
 
   /// Screen 7 and Screen 6, from the header row.
   ///
@@ -144,6 +154,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     await ref.read(nearestStationProvider.notifier).locate();
   }
 
+  /// The station's name, or its id if the repository is not loaded yet.
+  ///
+  /// The id is a poor label and it is still better than an empty one: this
+  /// card names the stop a sleeping rider is heading for, so it may degrade
+  /// but it may never go blank.
+  String _stationName(String stationId) {
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
+    return repo?.stationsById[stationId]?.name ?? stationId;
+  }
+
   @override
   Widget build(BuildContext context) {
     final nearest = ref.watch(nearestStationProvider);
@@ -152,6 +172,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // list, so a database that will not answer this query must cost the rider
     // their saved cards and nothing else. The screen still works.
     final saved = ref.watch(savedRoutesProvider);
+    // valueOrNull for the same reason as the two above: an offer to resume is
+    // an addition to this screen, and a store that will not answer must cost
+    // the rider the offer and never the screen.
+    final interrupted = ref.watch(interruptedRideProvider).valueOrNull;
 
     return Scaffold(
       body: SafeArea(
@@ -212,6 +236,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ],
                 ),
                 const Spacer(),
+                // ABOVE EVERYTHING, and it is the only thing on this screen
+                // allowed to be. A ride the OS killed is already happening: the
+                // rider is on the train, and every card under this one offers
+                // to start a journey they are in the middle of.
+                if (interrupted != null && widget.onResumeRide != null)
+                  _ResumeOffer(
+                    destinationName: _stationName(interrupted.destinationId),
+                    onResume: widget.onResumeRide!,
+                    // Answered here rather than handed up. Declining touches
+                    // nothing a screen cannot reach, and routing it through the
+                    // shell would only give the shell a method that forwards.
+                    onDecline: () => unawaited(
+                      ref.read(interruptedRideProvider.notifier).dismiss(),
+                    ),
+                  ),
                 destinations.when(
                   loading: () => const SizedBox.shrink(),
                   // History is a convenience, never the product. If the database
@@ -485,6 +524,133 @@ class _Cards extends StatelessWidget {
           onTap: onNew,
         ),
       ],
+    );
+  }
+}
+
+/// The offer to pick up a ride the OS killed mid-journey.
+///
+/// THE 16 AUG EXIT RIDE PUT THIS ON THE SCREEN. iOS jetsammed the app on a
+/// moving train and told nobody: the announcements simply stopped, and the
+/// phone in the rider's pocket looked exactly like a phone doing its job. This
+/// is the only place the app can ever say so, because no OS region is
+/// registered on either platform and nothing will relaunch us. It makes the
+/// failure VISIBLE. It does not make the ride safe.
+///
+/// A GLASS CARD, not a new colour and not a banner. Crimson means end a ride
+/// and white means the primary action of the screen, and this is neither: it is
+/// a card that starts a ride, which is what every other card here is. The
+/// eyebrow carries the meaning in words. Giving "unfinished" its own colour
+/// would have meant either stealing crimson or giving amber (acquiring) a
+/// second job, and a palette with two meanings for one colour is not a palette.
+///
+/// TWO ACTIONS, ONE CARD, and the split matters. The card itself resumes,
+/// exactly like every card above it, so the rule that a card is one tap target
+/// survives. Declining is a separate, quiet control underneath, at its own full
+/// touch height. It is quiet because saying no is the answer we expect less
+/// often, not because it should be hard to hit.
+///
+/// THE RIDER CHOOSES. It never resumes by itself: they may have finished the
+/// trip another way, and an alarm for a journey already over is what teaches
+/// riders to ignore the voice.
+class _ResumeOffer extends StatelessWidget {
+  const _ResumeOffer({
+    required this.destinationName,
+    required this.onResume,
+    required this.onDecline,
+  });
+
+  final String destinationName;
+  final VoidCallback onResume;
+  final VoidCallback onDecline;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Enters like the cards do, and for the same reason: the store read
+        // lands a frame or two after the screen opens, so without this the
+        // most important thing on the screen would POP IN under the rider's
+        // thumb. Index 0, because it arrives before anything else.
+        _EnterOnce(
+          key: const ValueKey('enter_resume_offer'),
+          index: 0,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const _Eyebrow('Unfinished ride'),
+              const SizedBox(height: 10),
+              _DestinationCard(
+                cardKey: const Key('resume_ride_card'),
+                // ASKS, like the suggestion card, because the app is not sure:
+                // it knows the ride never ended, and it cannot know whether the
+                // rider is still on the train. A card that asked nothing would
+                // be claiming to know.
+                title: 'Still going to $destinationName?',
+                // SAYS WHAT HAPPENED, in the rider's terms and not ours. Not
+                // "the app was killed", which is our problem described to
+                // somebody holding a phone on a train, and not a stop time,
+                // which we genuinely do not know: the process that would have
+                // recorded it is the one that died.
+                detail: 'Travel Mode stopped before you got there',
+                onTap: onResume,
+              ),
+              const SizedBox(height: 4),
+              _QuietAction(
+                buttonKey: const Key('decline_resume_ride'),
+                label: 'No, I finished this ride',
+                onTap: onDecline,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+}
+
+/// A low-emphasis text action, sized like everything else a thumb hits.
+///
+/// Quiet is a COLOUR decision and never a licence to go under the touch floor,
+/// which is the rule the header icons crossed on 12 Aug 2026 at 42 dp.
+///
+/// MEASURED, NOT INFERRED, and the first guess was wrong: 15 of padding gave
+/// 46.0 dp, under the floor, because [TypeScale.label] at height 1.2 lays out
+/// at 16.0 and not the 20 the guess assumed. 17 gives 50.0, which clears the
+/// floor with 2 dp in hand. `home_screen_test` holds it, and it is the test
+/// that caught it.
+class _QuietAction extends StatelessWidget {
+  const _QuietAction({
+    required this.buttonKey,
+    required this.label,
+    required this.onTap,
+  });
+
+  final Key buttonKey;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      key: buttonKey,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 17),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: TypeScale.label,
+              height: 1.2,
+              fontWeight: FontWeight.w600,
+              color: Palette.textDim(0.55),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

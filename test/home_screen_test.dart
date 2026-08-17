@@ -12,6 +12,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/fake_ride_service_client.dart';
+
 /// Screen 1, Home.
 ///
 /// The states are keyed to journeys COMPLETED, never to routes saved. That
@@ -54,6 +56,12 @@ void main() {
     AppDatabase? history,
     bool header = true,
     JourneySuggestion? suggestion,
+    // The service store, present only for the tests about a ride the OS
+    // killed. Left out everywhere else so the offer cannot appear in a test
+    // that is about something other than it: with no client override the real
+    // one throws under this binding, the notifier catches it, and the screen is
+    // exactly the screen it was before this feature existed.
+    FakeRideServiceClient? service,
   }) async {
     taps.clear();
     final started = <String>[];
@@ -76,11 +84,14 @@ void main() {
           // does, and JourneySuggester's own rules are proved in
           // journey_suggestion_test.dart against the engine directly.
           journeySuggestionProvider.overrideWith((ref) async => suggestion),
+          if (service != null)
+            rideServiceClientProvider.overrideWithValue(service),
         ],
         child: MaterialApp(
           home: HomeScreen(
             onStartTo: started.add,
             onNew: () {},
+            onResumeRide: () => taps.add('resume'),
             onHistory: header ? () => taps.add('history') : null,
             onSettings: header ? () => taps.add('settings') : null,
           ),
@@ -305,6 +316,115 @@ void main() {
         1.0,
         reason: 'a rebuild must not restart the entrance',
       );
+    });
+  });
+
+  group('the ride the OS killed', () {
+    /// The store as a jetsammed process left it: a ride in flight, no service.
+    FakeRideServiceClient killed({
+      bool rideInFlight = true,
+      bool running = false,
+      Duration ago = const Duration(minutes: 20),
+    }) => FakeRideServiceClient(
+      running: running,
+      rideInFlight: rideInFlight,
+      originId: 'shahad',
+      destinationId: 'thane',
+      startedAt: DateTime.now().subtract(ago),
+    );
+
+    testWidgets('is offered back by name, above everything else', (
+      tester,
+    ) async {
+      await pumpHome(
+        tester,
+        history: await historyWith([('kalyan', 'Kalyan')]),
+        service: killed(),
+      );
+
+      expect(find.text('Unfinished ride'), findsOneWidget);
+      expect(find.text('Still going to Thane?'), findsOneWidget);
+      expect(
+        find.text('Travel Mode stopped before you got there'),
+        findsOneWidget,
+      );
+
+      // ABOVE the ordinary cards, which is the whole placement rule: a ride
+      // that is already happening outranks an offer to start a new one.
+      final offer = tester.getTopLeft(find.byKey(const Key('resume_ride_card')));
+      final recent = tester.getTopLeft(
+        find.byKey(const Key('destination_card_kalyan')),
+      );
+      expect(offer.dy, lessThan(recent.dy));
+    });
+
+    testWidgets('an ordinary launch is offered nothing', (tester) async {
+      // The healthy state, and it is nearly every launch. A ride the rider
+      // ended leaves the flag false.
+      await pumpHome(tester, service: killed(rideInFlight: false));
+
+      expect(find.text('Unfinished ride'), findsNothing);
+      expect(find.byKey(const Key('resume_ride_card')), findsNothing);
+    });
+
+    testWidgets('a ride still running is not offered back', (tester) async {
+      // It is not interrupted, it is happening. The shell puts this rider on
+      // Screen 4 instead, and offering to resume it would start a second
+      // service beside the first.
+      await pumpHome(tester, service: killed(running: true));
+
+      expect(find.byKey(const Key('resume_ride_card')), findsNothing);
+    });
+
+    testWidgets('a ride too old to trust is not offered back', (tester) async {
+      await pumpHome(tester, service: killed(ago: const Duration(hours: 4)));
+
+      expect(find.byKey(const Key('resume_ride_card')), findsNothing);
+    });
+
+    testWidgets('tapping the card asks to resume', (tester) async {
+      await pumpHome(tester, service: killed());
+
+      await tester.tap(find.byKey(const Key('resume_ride_card')));
+      await tester.pumpAndSettle();
+
+      expect(taps, ['resume']);
+    });
+
+    testWidgets('declining takes the offer away and forgets the ride', (
+      tester,
+    ) async {
+      // THE RIDER CHOOSES, and choosing no has to stick: they may have
+      // finished the trip another way, and being asked again at every launch
+      // for the next three hours is how a rider learns to ignore this screen.
+      final service = killed();
+      await pumpHome(tester, service: service);
+      expect(find.byKey(const Key('resume_ride_card')), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('decline_resume_ride')));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('resume_ride_card')), findsNothing);
+      // The STORE, not just this screen: the next launch reads the store.
+      expect(service.commands, contains('clearRideInFlight'));
+      expect(service.rideInFlight, isFalse);
+      // And it did NOT start a ride on the way out.
+      expect(taps, isEmpty);
+    });
+
+    testWidgets('neither of its controls goes under the touch floor', (
+      tester,
+    ) async {
+      await pumpHome(tester, service: killed());
+
+      for (final key in ['resume_ride_card', 'decline_resume_ride']) {
+        final height = tester.getSize(find.byKey(Key(key))).height;
+        expect(
+          height,
+          greaterThanOrEqualTo(48.0),
+          reason: '$key is $height dp tall, under the 48 dp touch minimum',
+        );
+      }
     });
   });
 

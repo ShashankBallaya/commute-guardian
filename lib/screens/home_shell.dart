@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/journey_providers.dart';
+import '../state/ride_providers.dart';
 import 'home_screen.dart';
 import 'ride_orchestration.dart';
 
@@ -58,6 +59,15 @@ class _HomeShellState extends ConsumerState<HomeShell> with RideOrchestration {
         unawaited(prepareAndStart(destinationId));
       },
       onNew: pickDestination,
+      // The ride the OS killed. Read at the moment of the tap rather than
+      // captured in the build, so a rider who presses this while the store is
+      // still being re-read cannot resume a ride that has since been declined
+      // or has come back to life.
+      onResumeRide: () {
+        final ride = ref.read(interruptedRideProvider).valueOrNull;
+        if (ride == null) return;
+        unawaited(resumeInterrupted(ride));
+      },
       onHistory: showHistory,
       onSettings: openSettings,
     );
