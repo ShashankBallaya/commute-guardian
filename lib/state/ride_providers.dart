@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/app_database.dart';
+import '../services/ride_resume.dart';
 import '../services/ride_service_client.dart';
 import '../services/wind_down.dart';
 
@@ -190,6 +191,60 @@ final liveRideProvider = AsyncNotifierProvider<LiveRideNotifier, LiveRide?>(
 final isRideRunningProvider = Provider<bool>(
   (ref) => ref.watch(liveRideProvider).valueOrNull != null,
 );
+
+// ---------------------------------------------------------------------------
+// The ride that was killed
+// ---------------------------------------------------------------------------
+
+/// A journey the store still believes is in progress, with no service running
+/// it. Null in every healthy state, which is nearly always.
+///
+/// DELIBERATELY NOT PART OF [LiveRide], and this is the load-bearing choice
+/// here. [isRideRunningProvider] is read all over the app to mean "Travel Mode
+/// is on", and it hangs off liveRideProvider. Folding a dead ride into that
+/// would light Screen 4, the ride notification and the alert routing for a
+/// journey nothing is watching, which is the exact failure this was built to
+/// make visible. An interrupted ride is an OFFER, and until the rider accepts
+/// it the app is not on a ride.
+class InterruptedRideNotifier extends AsyncNotifier<InterruptedRide?> {
+  @override
+  Future<InterruptedRide?> build() => _read();
+
+  Future<InterruptedRide?> _read() async {
+    try {
+      // Read INSIDE the try, unlike the older notifiers above. Building the
+      // real client registers a native method-call handler, which throws under
+      // a bare test binding, and this provider is read at LAUNCH where an
+      // exception is a white screen rather than a missing offer.
+      final client = ref.read(rideServiceClientProvider);
+      return interruptedRideFrom(
+        await client.readPersistedRide(),
+        serviceRunning: await client.isRunning(),
+        // Read once and handed in, so the whole decision stays pure and
+        // testable at the desk. See interruptedRideFrom.
+        now: DateTime.now(),
+      );
+    } catch (_) {
+      // No service plumbing (widget tests) or a store race. Offering nothing is
+      // the safe answer: the rider keeps the app they had before this existed.
+      return null;
+    }
+  }
+
+  Future<void> refresh() async => state = AsyncData(await _read());
+
+  /// The rider said no, or a resume has taken the ride over. Forgets the ride
+  /// so the question is asked once. See [RideServiceClient.clearRideInFlight].
+  Future<void> dismiss() async {
+    state = const AsyncData(null);
+    await ref.read(rideServiceClientProvider).clearRideInFlight();
+  }
+}
+
+final interruptedRideProvider =
+    AsyncNotifierProvider<InterruptedRideNotifier, InterruptedRide?>(
+      InterruptedRideNotifier.new,
+    );
 
 // ---------------------------------------------------------------------------
 // Alerts: deliberately NOT store-backed

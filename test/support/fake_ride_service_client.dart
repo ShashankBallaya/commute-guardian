@@ -27,6 +27,7 @@ class FakeRideServiceClient implements RideServiceClient {
     this.destinationReached = false,
     this.startedAt,
     this.startBatteryPct,
+    this.rideInFlight = false,
     this.wakeLadderLive = false,
     this.windDownLive = false,
     this.alightStationId,
@@ -41,6 +42,11 @@ class FakeRideServiceClient implements RideServiceClient {
   /// of recents keeps its record.
   DateTime? startedAt;
   int? startBatteryPct;
+
+  /// The service's own "a ride is in flight" flag. TRUE WITH [running] FALSE is
+  /// how a test says "the OS killed the app mid-ride", which is the one state
+  /// no other field here can express.
+  bool rideInFlight;
 
   /// Alerts the service says are live. Persisted since 30 Jul, so a screen born
   /// mid-alarm can find out it has an alarm to answer.
@@ -107,10 +113,17 @@ class FakeRideServiceClient implements RideServiceClient {
     destinationReached: destinationReached,
     startedAt: startedAt,
     startBatteryPct: startBatteryPct,
+    rideInFlight: rideInFlight,
     wakeLadderLive: wakeLadderLive,
     windDownLive: windDownLive,
     alightStationId: alightStationId,
   );
+
+  @override
+  Future<void> clearRideInFlight() async {
+    commands.add('clearRideInFlight');
+    rideInFlight = false;
+  }
 
   @override
   Future<void> clearRideRecordSeed() async {
@@ -151,6 +164,11 @@ class FakeRideServiceClient implements RideServiceClient {
       commands.add('startPulse:$pulseIntervalSeconds');
     }
     running = true;
+    // The real flag is written by the SERVICE isolate at onStart, and this fake
+    // stands in for the whole boundary, so it has to do the same: a fake that
+    // started rides without it would let a test prove a resume works while the
+    // resumed ride was, on a real phone, unresumable.
+    rideInFlight = true;
     originId = originStationId;
     destinationId = destinationStationId;
     this.startedAt = startedAt;
@@ -162,6 +180,9 @@ class FakeRideServiceClient implements RideServiceClient {
   Future<void> stopRide() async {
     commands.add('stopRide');
     running = false;
+    // onDestroy's write. Stopping is an ending we were present for, so there is
+    // nothing left to offer back.
+    rideInFlight = false;
   }
 
   @override

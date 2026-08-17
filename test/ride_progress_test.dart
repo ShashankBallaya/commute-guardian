@@ -581,4 +581,45 @@ void main() {
     // Kalyan, which the train did pass but which no fix ever evidenced.
     expect(atShahad.map((a) => a.stationId), ['shahad']);
   });
+
+  group('a resumed ride picks the chain up where the train is', () {
+    // THE PROOF THAT RESUME NEEDS NO SEEDED INDEX. A ride the OS killed is
+    // resumed by starting the ORIGINAL journey again, which builds a fresh
+    // engine with reachedIndex at -1. The worry was that the fresh engine would
+    // replay every station already behind the rider, into an earphone, on a
+    // moving train. It cannot: the first fix only localises. Written down as a
+    // test because the resume path depends on it and nothing else states it.
+
+    test('a fresh engine joined mid-chain announces no station it missed', () {
+      final ride = _newRide();
+
+      // The rider is at Mumbra, five stations into a nine-station chain, which
+      // is where the app was killed.
+      final spoken = ride.onFix(lat: 19.18979, lng: 73.02325, accuracyM: 20);
+
+      expect(
+        spoken.map((a) => a.stationId),
+        ['mumbra'],
+        reason: 'the station they are AT, and none of the four behind it',
+      );
+      expect(ride.reachedIndex, 5);
+      expect(ride.atReachedStation, isTrue);
+    });
+
+    test('and it still announces everything still ahead', () {
+      // The other half, and the one that matters to a sleeping rider: joining
+      // late must not cost them the rest of the journey.
+      final ride = _newRide();
+      ride.onFix(lat: 19.18979, lng: 73.02325, accuracyM: 20); // Mumbra
+
+      final atThane = ride.onFix(
+        lat: 19.1864830,
+        lng: 72.9757664,
+        accuracyM: 20,
+      );
+
+      expect(atThane.map((a) => a.stationId), contains('thane'));
+      expect(ride.reachedIndex, 7);
+    });
+  });
 }

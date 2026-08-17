@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/app_settings.dart';
 import '../models/journey.dart';
 import '../services/permissions_gateway.dart';
+import '../services/ride_resume.dart';
 import '../services/ride_service_client.dart';
 import '../state/journey_providers.dart';
 import '../state/readiness_providers.dart';
@@ -458,6 +459,60 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       // Liveness comes from the store, never from an assumption here.
       await ref.read(liveRideProvider.notifier).refresh();
     }
+  }
+
+  /// Puts a rider back on a ride the OS killed under them.
+  ///
+  /// THE SAME START PATH, with two differences and no third. It plans from the
+  /// ids the DEAD ride was planned from, never from where the rider is standing
+  /// now: replanning from the current position is the 9 Aug stale-origin bug,
+  /// which fired the wake ladder thirty seconds into a journey. And it carries
+  /// the ORIGINAL [InterruptedRide.startedAt], so the history row records the
+  /// journey the rider took rather than the fragment after the kill, and so a
+  /// second kill cannot hand the same ride a fresh staleness window.
+  ///
+  /// NOTHING SEEDS THE PROGRESS, and that is deliberate rather than missing.
+  /// `RideProgress` announces nothing on its first fix, it only localizes ("
+  /// boarding mid-chain must not replay every station already behind the
+  /// rider"), so a resumed ride picks the chain up where the train actually is
+  /// and speaks the stations still ahead. A seeded index would buy the same
+  /// behaviour and one more thing to be wrong about.
+  ///
+  /// Returns whether the service actually started.
+  Future<bool> resumeInterrupted(InterruptedRide ride) async {
+    await _requestPermissions();
+
+    final pulseSettings = await ref.read(appSettingsProvider.future);
+
+    final started = await service.startRide(
+      originStationId: ride.originId,
+      destinationStationId: ride.destinationId,
+      notificationText:
+          '${stationName(ride.originId)} to ${stationName(ride.destinationId)}',
+      sarvamGreeting: sarvamGreeting,
+      sarvamClips: sarvamClips,
+      startedAt: ride.startedAt,
+      startBatteryPct: ride.startBatteryPct,
+      pulseIntervalSeconds: pulseSettings.pulseIntervalSeconds,
+      pulseVibrate: pulseSettings.vibrateWithPulse,
+      shareAnonymousUsage: pulseSettings.shareAnonymousUsage,
+      announceEveryStation: pulseSettings.announceEveryStation,
+      language: pulseSettings.language,
+    );
+
+    if (started) {
+      _arrivalShown = false;
+      await ref.read(liveRideProvider.notifier).refresh();
+      // Re-read rather than dismissed. The new service writes the in-flight
+      // flag true for itself, so the offer goes away here because a ride is
+      // RUNNING, which is the only reason it should ever go away by itself.
+      await ref.read(interruptedRideProvider.notifier).refresh();
+    }
+    // A resume that failed (permission refused, service refused to start)
+    // leaves the offer exactly where it was, on purpose. The rider still has an
+    // interrupted journey and nothing has changed about it; taking the offer
+    // away would turn a retryable failure into a lost ride.
+    return started;
   }
 
   Future<void> stop() async {

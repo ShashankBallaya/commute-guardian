@@ -54,6 +54,21 @@ const atStationKey = 'at_station';
 const rideStartedAtKey = 'ride_started_at';
 const rideStartBatteryKey = 'ride_start_battery';
 
+/// Whether a ride is in flight, written by the SERVICE and by nobody else.
+///
+/// THE KILL DISCRIMINATOR. `isRunningService` answers about right now, and a
+/// process iOS jetsammed answers the same "no" as a journey the rider finished
+/// on purpose. This flag separates them: it goes true as the service starts and
+/// false in [GeofenceTaskHandler.onDestroy], which runs on End, on the OS
+/// reclaiming the service and on a timeout, and did NOT run on the 16 Aug kill.
+/// True with no service running therefore means the ride was interrupted.
+///
+/// Written HERE rather than in the UI's startRide for the same reason the
+/// farewell is spoken here: only this isolate knows the ride really began, and
+/// only this isolate is present for both ends of it. See
+/// lib/services/ride_resume.dart for what the flag is allowed to buy.
+const rideInFlightKey = 'ride_in_flight';
+
 /// Wind-down action ids, shared by the notification buttons and the debug
 /// screen's sendDataToTask messages.
 const windDownEndNowId = 'wind_down_end_now';
@@ -278,6 +293,10 @@ class GeofenceTaskHandler extends TaskHandler {
     if (originId == null || destinationId == null) {
       return;
     }
+    // Set AFTER the ids are proved present, so a service started with an empty
+    // store cannot leave a flag behind that outlives it and offers to resume a
+    // ride that never had a route. See [rideInFlightKey].
+    await FlutterForegroundTask.saveData(key: rideInFlightKey, value: true);
     final sarvamGreeting =
         await FlutterForegroundTask.getData<bool>(key: sarvamGreetingKey) ??
         false;
@@ -474,6 +493,11 @@ class GeofenceTaskHandler extends TaskHandler {
     // that rather than guessing.
     await _chain?.stop(reason: 'service destroyed (End pressed, or the OS)');
     _chain = null;
+    // THE RIDE ENDED IN A WAY WE WERE PRESENT FOR, which is the whole meaning
+    // of this flag. Written first, before the awaits below, because everything
+    // after it is tidying and this is the one line that decides whether the
+    // next launch offers the rider a ride back.
+    await FlutterForegroundTask.saveData(key: rideInFlightKey, value: false);
     // The clip flags are per-Start choices, but saveData persists across
     // app restarts. Cleared here so a service start that bypasses the UI
     // (OS recreation, reboot restart) cannot replay a stale opt-in.

@@ -140,6 +140,7 @@ class PersistedRide {
     this.atStation = false,
     this.startedAt,
     this.startBatteryPct,
+    this.rideInFlight = false,
     this.wakeLadderLive = false,
     this.wakeRung = 0,
     this.wakeClimbing = true,
@@ -156,6 +157,11 @@ class PersistedRide {
 
   /// Battery at ride start, or null when the platform would not say.
   final int? startBatteryPct;
+
+  /// The service believes a ride is in flight. TRUE WITH NO SERVICE RUNNING
+  /// MEANS THE RIDE WAS KILLED: see [rideInFlightKey] for the discriminator and
+  /// lib/services/ride_resume.dart for what may be done about it.
+  final bool rideInFlight;
 
   final String? originId;
   final String? destinationId;
@@ -643,6 +649,8 @@ class RideServiceClient {
     startBatteryPct: _batteryFromStore(
       await FlutterForegroundTask.getData<int>(key: rideStartBatteryKey),
     ),
+    rideInFlight:
+        await FlutterForegroundTask.getData<bool>(key: rideInFlightKey) ?? false,
     wakeLadderLive:
         await FlutterForegroundTask.getData<bool>(key: wakeLadderLiveKey) ??
         false,
@@ -685,6 +693,19 @@ class RideServiceClient {
     await FlutterForegroundTask.saveData(key: rideStartedAtKey, value: 0);
     await FlutterForegroundTask.saveData(key: rideStartBatteryKey, value: -1);
   }
+
+  /// Forgets the interrupted ride, so the offer to resume it is made ONCE.
+  ///
+  /// The DECLINE path only, and the one write to [rideInFlightKey] that does
+  /// not happen in the service isolate: the service that would have cleared it
+  /// is dead, and a rider who says no must not be asked the same question at
+  /// every launch until the window runs out.
+  ///
+  /// A RESUME MUST NOT CALL THIS. The new service writes the flag true again as
+  /// it starts, so clearing it from here would be a race against the ride we
+  /// just began, and the loser is a ride nobody offers back the second time.
+  Future<void> clearRideInFlight() =>
+      FlutterForegroundTask.saveData(key: rideInFlightKey, value: false);
 
   Future<void> requestBatteryOptimizationExemption() async {
     if (Platform.isAndroid &&
