@@ -235,6 +235,39 @@ void main() {
       expect(c.read(interruptedRideProvider).valueOrNull, isNull);
     });
 
+    test('ending the ride is what forgets it, not the service dying', () async {
+      // THE 17 AUG 2026 BENCH MOVED THIS RULE. The flag used to be cleared in
+      // the service's onDestroy, and both killed rides in that bench proved
+      // onDestroy is the wrong place twice over: iOS runs it on a swipe-away,
+      // which is not a rider ending anything, and it killed the process inside
+      // the 2.5 s farewell that the write sat behind. The offer appeared
+      // because the write was unreachable. That is luck, and a shorter farewell
+      // would have turned the feature off with nothing to show for it.
+      //
+      // So the clearing moved to the endings somebody CHOOSES, and End journey
+      // is the one a rider presses.
+      final service = FakeRideServiceClient(
+        running: true,
+        rideInFlight: true,
+        originId: 'shahad',
+        destinationId: 'titwala',
+        startedAt: DateTime.now().subtract(const Duration(minutes: 2)),
+      );
+      final c = makeContainer(service);
+      // Running, so nothing is offered yet whatever the flag says.
+      expect(await c.read(interruptedRideProvider.future), isNull);
+
+      await service.stopRide();
+
+      expect(service.rideInFlight, isFalse);
+      await c.read(interruptedRideProvider.notifier).refresh();
+      expect(
+        c.read(interruptedRideProvider).valueOrNull,
+        isNull,
+        reason: 'a ride the rider ended must never be offered back',
+      );
+    });
+
     test('no service plumbing means no offer, never a crash', () async {
       // Widget tests and the real client with no plugin both land here.
       final c = ProviderContainer();

@@ -696,10 +696,11 @@ class RideServiceClient {
 
   /// Forgets the interrupted ride, so the offer to resume it is made ONCE.
   ///
-  /// The DECLINE path only, and the one write to [rideInFlightKey] that does
-  /// not happen in the service isolate: the service that would have cleared it
-  /// is dead, and a rider who says no must not be asked the same question at
-  /// every launch until the window runs out.
+  /// Forgets the interrupted ride. Two callers, both of them an ending the
+  /// rider chose: [stopRide] and the decline on Screen 1.
+  ///
+  /// A rider who says no must not be asked the same question at every launch
+  /// until the three-hour window runs out.
   ///
   /// A RESUME MUST NOT CALL THIS. The new service writes the flag true again as
   /// it starts, so clearing it from here would be a race against the ride we
@@ -814,5 +815,19 @@ class RideServiceClient {
     return result is ServiceRequestSuccess;
   }
 
-  Future<void> stopRide() => FlutterForegroundTask.stopService();
+  /// The rider pressed End journey.
+  ///
+  /// CLEARS THE IN-FLIGHT FLAG, and this is now the only place a rider-chosen
+  /// end does. The service's onDestroy used to, and the 17 Aug 2026 bench
+  /// proved it cannot be trusted with the job: iOS runs onDestroy on a
+  /// swipe-away too, and kills the process partway through it. Here the ride is
+  /// unambiguously over because somebody said so, and this isolate is not the
+  /// one being torn down.
+  ///
+  /// Cleared BEFORE the service is asked to stop, so the write cannot lose a
+  /// race with its teardown.
+  Future<void> stopRide() async {
+    await clearRideInFlight();
+    await FlutterForegroundTask.stopService();
+  }
 }

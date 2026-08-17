@@ -458,6 +458,12 @@ class GeofenceTaskHandler extends TaskHandler {
     if (chain == null) return;
     _chain = null;
     FlutterForegroundTask.sendDataToMain({'rideEnded': true});
+    // AN ENDING THE APP CHOSE, so the ride is finished and must not be offered
+    // back. Written BEFORE the farewell, unlike the line this replaced, because
+    // anything sitting behind a 2.5 s spoken farewell is a line that may never
+    // run. This path covers the wind-down auto-off and the four-hour timeout,
+    // which ends down the same route. See [rideInFlightKey].
+    await FlutterForegroundTask.saveData(key: rideInFlightKey, value: false);
     await chain.stop(reason: 'wind-down auto-off');
     await FlutterForegroundTask.stopService();
   }
@@ -493,11 +499,22 @@ class GeofenceTaskHandler extends TaskHandler {
     // that rather than guessing.
     await _chain?.stop(reason: 'service destroyed (End pressed, or the OS)');
     _chain = null;
-    // THE RIDE ENDED IN A WAY WE WERE PRESENT FOR, which is the whole meaning
-    // of this flag. Written first, before the awaits below, because everything
-    // after it is tidying and this is the one line that decides whether the
-    // next launch offers the rider a ride back.
-    await FlutterForegroundTask.saveData(key: rideInFlightKey, value: false);
+    // [rideInFlightKey] IS DELIBERATELY NOT CLEARED HERE, and the 17 Aug 2026
+    // bench is why. It used to be, on the reasoning that onDestroy means "an
+    // ending we were present for". The logs killed that reasoning twice over.
+    //
+    // iOS DOES call this on a swipe-away, through applicationWillTerminate,
+    // and a swipe is not the rider ending a ride: on iOS it kills Travel Mode
+    // silently, with no notification, which is exactly the case worth offering
+    // back. And it DID NOT FINISH: both killed rides logged "Journey ending"
+    // and then stopped dead, because the process died inside the 2.5 s
+    // farewell that this line used to sit behind. The offer appeared because
+    // the write was unreachable, which is luck, not a design. A shorter
+    // farewell would have silently turned the feature off.
+    //
+    // The flag is cleared where an ending is actually CHOSEN instead: in
+    // [_autoOff] for the wind-down and the four-hour timeout, and in
+    // RideServiceClient.stopRide for the rider pressing End journey.
     // The clip flags are per-Start choices, but saveData persists across
     // app restarts. Cleared here so a service start that bypasses the UI
     // (OS recreation, reboot restart) cannot replay a stale opt-in.

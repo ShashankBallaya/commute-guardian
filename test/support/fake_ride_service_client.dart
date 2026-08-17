@@ -180,8 +180,11 @@ class FakeRideServiceClient implements RideServiceClient {
   Future<void> stopRide() async {
     commands.add('stopRide');
     running = false;
-    // onDestroy's write. Stopping is an ending we were present for, so there is
-    // nothing left to offer back.
+    // THE RIDER CHOSE THIS ENDING, so there is nothing to offer back. The real
+    // client clears the flag here rather than in the service's onDestroy, which
+    // the 17 Aug 2026 bench proved runs on an iOS swipe-away too and is killed
+    // partway through. Modelled here so a test cannot pass against a rule the
+    // phone does not follow.
     rideInFlight = false;
   }
 
