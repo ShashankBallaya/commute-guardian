@@ -2,6 +2,9 @@ import 'package:commute_guardian/services/ride_resume.dart';
 import 'package:commute_guardian/services/ride_service_client.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:io';
+import 'package:commute_guardian/data/station_repository.dart';
+import 'package:commute_guardian/models/station.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_ride_service_client.dart';
@@ -273,6 +276,159 @@ void main() {
       final c = ProviderContainer();
       addTearDown(c.dispose);
       expect(await c.read(interruptedRideProvider.future), isNull);
+    });
+  });
+
+  group('STILL ON THIS JOURNEY, OR NOT', () {
+    // The evidence test for an UNATTENDED resume. Given iOS relaunching the app
+    // because the phone moved, this is what decides whether the ride restarts
+    // without asking. Measured against the real generated station data, because
+    // a corridor test built on invented coordinates proves only arithmetic.
+    late StationRepository repo;
+
+    setUpAll(() {
+      repo = StationRepository.parse(
+        File(StationRepository.assetPath).readAsStringSync(),
+      );
+    });
+
+    List<Station> chain(List<String> ids) =>
+        [for (final id in ids) repo.stationsById[id]!];
+
+    // THE RIDE THAT DIED ON 16 AUG 2026, and EVERY station on it.
+    //
+    // Density matters, and the first draft of this test proved it by being
+    // wrong. With a sparse chain (CSMT, Dadar, Kurla, Thane, Dombivli, Kalyan)
+    // the segments are long straight lines that cut across geography, and Powai
+    // came out 1.26 km from the "corridor" while being nowhere near a railway.
+    // A planned chain always holds every station, so the segments hug the
+    // track. A test that skips them measures a corridor the app never uses.
+    final homeward = [
+      'csmt', 'masjid', 'sandhurst_road', 'byculla', 'chinchpokli',
+      'currey_road', 'parel', 'dadar', 'matunga', 'sion', 'kurla',
+      'vidyavihar', 'ghatkopar', 'vikhroli', 'kanjurmarg', 'bhandup', 'nahur',
+      'mulund', 'thane', 'mumbra', 'diva', 'kopar', 'dombivli', 'thakurli',
+      'kalyan', 'shahad',
+    ];
+
+    test('a train BETWEEN two stations is on the corridor, not lost', () {
+      // THE REASON THIS MEASURES SEGMENTS AND NOT STATIONS. Thane to Mumbra is
+      // the longest hop on this chain at 4983 m, so its midpoint is 2492 m from
+      // either station, well past the tolerance, while being exactly where a
+      // rider is supposed to be. Measuring to stations would call that rider
+      // lost and refuse to give them their ride back.
+      final stations = chain(homeward);
+      final thane = repo.stationsById['thane']!;
+      final mumbra = repo.stationsById['mumbra']!;
+      final midLat = (thane.lat + mumbra.lat) / 2;
+      final midLng = (thane.lng + mumbra.lng) / 2;
+
+      expect(
+        thane.distanceM(midLat, midLng),
+        greaterThan(corridorToleranceM),
+        reason: 'the nearest STATION is far away, which is the whole point',
+      );
+      expect(distanceToCorridorM(stations, midLat, midLng), lessThan(500));
+      expect(
+        mayResumeUnattended(
+          chain: stations,
+          lat: midLat,
+          lng: midLng,
+          accuracyM: 0,
+        ),
+        isTrue,
+      );
+    });
+
+    test('a rider standing IN a station on the chain is on the corridor', () {
+      final stations = chain(homeward);
+      final kurla = repo.stationsById['kurla']!;
+      expect(distanceToCorridorM(stations, kurla.lat, kurla.lng), lessThan(1));
+    });
+
+    test('A RIDER WHO WENT HOME ANOTHER WAY GETS NOTHING', () {
+      // The failure this exists to prevent: announcing stations, and eventually
+      // an alarm, to somebody who left the railway and took a rickshaw.
+      // Andheri is on the Western line, 6 km off this chain, and is a real
+      // place a Mumbai commuter ends up.
+      final stations = chain(homeward);
+      final andheri = repo.stationsById['andheri']!;
+      expect(
+        distanceToCorridorM(stations, andheri.lat, andheri.lng),
+        greaterThan(corridorToleranceM),
+      );
+      expect(
+        mayResumeUnattended(
+          chain: stations,
+          lat: andheri.lat,
+          lng: andheri.lng,
+          accuracyM: 0,
+        ),
+        isFalse,
+      );
+    });
+
+    test('A COARSE FIX WIDENS THE QUESTION, it does not answer it', () {
+      // The fix that relaunches the app comes from cell and wifi positioning,
+      // where several hundred metres of error is normal. That must not read as
+      // "this rider is lost", so accuracy is ADDED to the tolerance.
+      final stations = chain(homeward);
+      final andheri = repo.stationsById['andheri']!;
+      final off = distanceToCorridorM(stations, andheri.lat, andheri.lng)!;
+
+      expect(
+        mayResumeUnattended(
+          chain: stations,
+          lat: andheri.lat,
+          lng: andheri.lng,
+          accuracyM: off,
+        ),
+        isTrue,
+        reason: 'a fix this uncertain cannot prove the rider left the line',
+      );
+      // And it is not unbounded: a fix must still be roughly where it claims.
+      expect(
+        mayResumeUnattended(
+          chain: stations,
+          lat: andheri.lat,
+          lng: andheri.lng,
+          accuracyM: 100,
+        ),
+        isFalse,
+      );
+    });
+
+    test('a chain too short to have a corridor refuses, it does not guess', () {
+      expect(distanceToCorridorM(chain(['kalyan']), 19.24, 73.15), isNull);
+      expect(
+        mayResumeUnattended(
+          chain: chain(['kalyan']),
+          lat: 19.24,
+          lng: 73.15,
+          accuracyM: 0,
+        ),
+        isFalse,
+        reason: 'no corridor means no evidence, and no evidence means ask',
+      );
+    });
+
+    test('a station on the chain but ALREADY PASSED is still on it', () {
+      // Deliberate. This test answers "is the rider still on this journey",
+      // never "are they where they should be". A train held at Mumbra on the
+      // way to Kalyan is on the corridor, and so is one that overshot. Where
+      // they are along the chain is RideProgress's job, and it localizes
+      // itself on the first fix.
+      final stations = chain(homeward);
+      final mumbra = repo.stationsById['mumbra']!;
+      expect(
+        mayResumeUnattended(
+          chain: stations,
+          lat: mumbra.lat,
+          lng: mumbra.lng,
+          accuracyM: 0,
+        ),
+        isTrue,
+      );
     });
   });
 }
