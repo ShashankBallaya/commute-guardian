@@ -635,6 +635,69 @@ import flutter_foreground_task
     keepAliveEngine?.stop()
     keepAliveEngine = nil
   }
+
+  // MARK: - State preservation, deliberately OFF
+
+  /// iOS ASKED US TO ARCHIVE STATE AND IT COST A RIDE. 16 Aug 2026, 20:23:43,
+  /// on the way back from CSMT: iOS killed Travel Mode with 0x8BADF00D, a
+  /// "scene-update watchdog transgression", for exhausting a ten second wall
+  /// clock allowance while going into the background. The report names the
+  /// exact work:
+  ///
+  ///   -[UIApplication _applicationDidEnterBackground]
+  ///     -[UIApplication _saveApplicationPreservationStateIfSupported]
+  ///       -[UIApplication _saveApplicationPreservationState:viewController:...]
+  ///         _encodeObject
+  ///           -[_UIStateRestorationKeyedArchiverDelegate archiver:willEncodeObject:]
+  ///
+  /// The ride simply stopped. No announcement was ever spoken again, nothing
+  /// was written to History, and the phone in the rider's pocket looked exactly
+  /// like a phone doing its job. That is the failure the resume offer exists to
+  /// make visible; this is the attempt to stop causing it.
+  ///
+  /// WE ARCHIVE STATE WE NEVER READ. FlutterAppDelegate answers YES to both
+  /// save questions unconditionally, without asking whether the app uses
+  /// restoration (engine source, FlutterAppDelegate.mm, "State Restoration").
+  /// This app uses none: no `restorationScopeId`, no `RestorationMixin`, and
+  /// nothing anywhere in lib/ reads restoration data back. So every trip to the
+  /// background paid for an archive that no launch has ever opened.
+  ///
+  /// WHAT THIS DOES NOT FIX, said plainly. The same report shows Thermal Level
+  /// 7, state "serious", the system at 67% CPU and THIS APP at 0.084 seconds,
+  /// 0%. We were not spinning, we were blocked on a phone that was already hot
+  /// and slow. Deleting this archive removes a real cost we were paying for
+  /// nothing. It cannot promise the main thread will never stall again.
+  ///
+  /// The secure variants are the ones iOS 13 and later actually call; the older
+  /// pair is overridden too so a future deployment target change cannot quietly
+  /// switch the behaviour back on.
+  override func application(
+    _ application: UIApplication,
+    shouldSaveSecureApplicationState coder: NSCoder
+  ) -> Bool {
+    false
+  }
+
+  override func application(
+    _ application: UIApplication,
+    shouldRestoreSecureApplicationState coder: NSCoder
+  ) -> Bool {
+    false
+  }
+
+  override func application(
+    _ application: UIApplication,
+    shouldSaveApplicationState coder: NSCoder
+  ) -> Bool {
+    false
+  }
+
+  override func application(
+    _ application: UIApplication,
+    shouldRestoreApplicationState coder: NSCoder
+  ) -> Bool {
+    false
+  }
 }
 
 extension AppDelegate: CXCallObserverDelegate {
