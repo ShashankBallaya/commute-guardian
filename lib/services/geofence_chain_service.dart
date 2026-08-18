@@ -25,6 +25,7 @@ import 'pocket_pulse.dart';
 import 'pulse_output.dart';
 import 'ride_health.dart';
 import 'ride_progress.dart';
+import 'thermal_gateway.dart';
 import 'ride_timeout.dart';
 import 'self_audio_interruption.dart';
 import 'spoken_copy.dart';
@@ -63,7 +64,25 @@ class GeofenceChainService {
     this.sarvamGreeting = false,
     this.sarvamClips = false,
     Analytics? analytics,
-  }) : _analytics = analytics ?? Analytics(enabled: false);
+    ThermalGateway? thermal,
+  }) : _analytics = analytics ?? Analytics(enabled: false),
+       _thermal = thermal ?? const ThermalGateway();
+
+  /// How hot the phone says it is. Injected like [_analytics], so a replay or a
+  /// desk test can hand in a fake instead of a method channel that no test
+  /// binding answers.
+  final ThermalGateway _thermal;
+
+  /// The last state written to the ride log, so only CHANGES are recorded. A
+  /// line a minute saying "nominal" would bury the moment it stopped being
+  /// nominal, which is the only moment anyone will ever look for.
+  ThermalState? _lastThermal;
+
+  /// When the phone was last asked. Every 60 s: thermal state moves over
+  /// minutes of sustained load, not seconds, and this rides the same tick as
+  /// the pulse and the wind-down.
+  DateTime? _thermalAskedAt;
+  static const _thermalInterval = Duration(seconds: 60);
 
   /// The two analytics events this app has, and the rider's opt-out.
   ///
@@ -2036,7 +2055,35 @@ class GeofenceChainService {
 
   /// The service's fixed 5 second repeat tick, forwarded by the task
   /// handler. Drives the wind-down countdown and the wake ladder's clock.
+  /// Writes the phone's thermal state into the ride log, on change only.
+  ///
+  /// FIRE AND FORGET, never awaited: the tick drives the wake ladder, the
+  /// pulse and the wind-down, and an instrument may not stand in front of any
+  /// of them. A reading that arrives late is still a reading; a tick that
+  /// waits for one is a ride that stutters.
+  ///
+  /// See ThermalGateway for why this number is worth a line in the log at all.
+  void _noteThermalState(DateTime now) {
+    final askedAt = _thermalAskedAt;
+    if (askedAt != null && now.difference(askedAt) < _thermalInterval) return;
+    _thermalAskedAt = now;
+    unawaited(
+      _thermal.read().then((state) {
+        if (state == null || state == _lastThermal) return;
+        final from = _lastThermal;
+        _lastThermal = state;
+        _log(
+          from == null
+              ? 'THERMAL ${state.name}'
+              : 'THERMAL ${from.name} -> ${state.name}',
+        );
+      }),
+    );
+  }
+
   void onTick(DateTime now) {
+    _noteThermalState(now);
+
     _handleWindDownActions(_windDown?.onTick(now) ?? const []);
 
     _handleHealthActions(_rideHealth?.onTick(now) ?? const []);
