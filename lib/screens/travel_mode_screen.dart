@@ -49,7 +49,17 @@ class TravelModeScreen extends StatelessWidget {
     required this.onCrowdMode,
     required this.onEndJourney,
     this.etaLine,
+    this.onOpenSpeed,
   });
+
+  /// Opens the speed screen. NULL HIDES THE ROW, which is how this screen stays
+  /// pumpable on its own in a test and how the debug host opts out.
+  ///
+  /// A callback rather than a `Navigator.push` in here, because Screen 4 has
+  /// never known what a route is: it takes callbacks and knows nothing about
+  /// the service isolate or the navigator, and that is why two hosts can share
+  /// it without drifting.
+  final VoidCallback? onOpenSpeed;
 
   final Journey journey;
 
@@ -161,6 +171,10 @@ class TravelModeScreen extends StatelessWidget {
                 pulseIntervalSeconds: pulseIntervalSeconds,
                 onCrowdMode: onCrowdMode,
               ),
+              if (onOpenSpeed != null) ...[
+                const SizedBox(height: 16),
+                _SpeedEntry(onTap: onOpenSpeed!),
+              ],
               const SizedBox(height: 16),
               _EndJourneyButton(onConfirmed: onEndJourney),
             ],
@@ -790,6 +804,48 @@ class _WakeCard extends StatelessWidget {
             onTap: () => onCrowdMode(!crowdMode),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The way into the speed screen, and the only new thing on Screen 4.
+///
+/// IT SHOWS NO NUMBER, deliberately. A live reading here would rebuild Screen 4
+/// on every fix, about once a second, for the whole ride. This screen is held
+/// in a pocket for 45 minutes and the rule about motion on it exists for that
+/// reason. So the row is a door, and the number lives behind it, on a surface
+/// that is only ever drawn while somebody is looking at it.
+class _SpeedEntry extends StatelessWidget {
+  const _SpeedEntry({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return PressableRow(
+      key: const Key('open_speed'),
+      onTap: onTap,
+      child: Container(
+        decoration: Palette.glassCard(radius: 20),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Row(
+          children: [
+            Icon(Icons.speed, size: 20, color: Palette.textDim(0.75)),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Speed',
+                style: TextStyle(
+                  fontSize: TypeScale.bodyLarge,
+                  fontWeight: FontWeight.w600,
+                  color: Palette.text,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 20, color: Palette.textDim(0.4)),
+          ],
+        ),
       ),
     );
   }

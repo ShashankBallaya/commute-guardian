@@ -375,6 +375,12 @@ class GeofenceTaskHandler extends TaskHandler {
           'fixLat': location.latitude,
           'fixLng': location.longitude,
           'fixAccuracyM': location.accuracy,
+          // Sent raw, sentinel and all. Both platforms use a negative number to
+          // mean "no reading", and parseServiceData turns that into null once,
+          // at the boundary, so nothing downstream carries the knowledge. It
+          // was already on every fix the service saw and was simply dropped
+          // here until 18 Aug 2026.
+          'fixSpeedMs': location.speed,
         });
       },
       onWindDownLive: (live, endsAt, window) {

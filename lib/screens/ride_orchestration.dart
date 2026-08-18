@@ -14,6 +14,7 @@ import '../services/ride_service_client.dart';
 import '../state/journey_providers.dart';
 import '../state/readiness_providers.dart';
 import '../state/ride_providers.dart';
+import '../state/ride_speed.dart';
 import '../state/settings_providers.dart';
 import 'arrival_screen.dart';
 import 'destination_picker_screen.dart';
@@ -21,6 +22,7 @@ import 'history_screen.dart';
 import 'onboarding_screen.dart' show permissionsGatewayProvider;
 import 'preparing_flow.dart';
 import 'settings_screen.dart';
+import 'speed_screen.dart';
 import 'travel_mode_screen.dart';
 import 'wake_alert_screen.dart';
 
@@ -385,7 +387,10 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         break;
       case RideEndedByService():
         unawaited(onRideEndedByService());
-      case ServiceFix(:final lat, :final lng, :final accuracyM):
+      case ServiceFix(:final lat, :final lng, :final accuracyM, :final speedKmh):
+        // Its own provider, not liveRideProvider: this changes on every fix and
+        // Screen 4 must not rebuild at 1 Hz for a number it does not show.
+        ref.read(rideSpeedProvider.notifier).applyFix(speedKmh, DateTime.now());
         _lastServiceFix = (
           lat: lat,
           lng: lng,
@@ -457,6 +462,9 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     if (started) {
       // A new ride gets a new arrival screen.
       _arrivalShown = false;
+      // And a new fastest speed. Carrying the last ride's maximum into this one
+      // is the same class of bug as inheriting its progress index.
+      ref.read(rideSpeedProvider.notifier).reset();
       // Liveness comes from the store, never from an assumption here.
       await ref.read(liveRideProvider.notifier).refresh();
     }
@@ -974,6 +982,17 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
               await ref.read(appSettingsProvider.notifier).setCrowdMode(on);
               await pushPulseSettings();
             },
+            // Pushed from here, not from Screen 4, for the same reason every
+            // other route is: Screen 4 takes callbacks and knows nothing about
+            // the navigator. Product host only, so the debug screen keeps the
+            // ride surface it has always had.
+            onOpenSpeed: resumesTravelModeScreen
+                ? () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SpeedScreen(),
+                    ),
+                  )
+                : null,
             onEndJourney: () async {
               // CLOSE FIRST, TIDY AFTER. The rider pressed a button that means
               // "I am done"; making them watch a battery read and a database

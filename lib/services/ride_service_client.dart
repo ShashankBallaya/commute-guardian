@@ -119,10 +119,27 @@ class ServiceFix extends ServiceEvent {
     required this.lat,
     required this.lng,
     required this.accuracyM,
+    this.speedMs,
   });
   final double lat;
   final double lng;
   final double accuracyM;
+
+  /// Ground speed in metres per second, or NULL when the platform will not say.
+  ///
+  /// NULL AND NEVER -1, and this is the whole reason it is nullable. Both
+  /// platforms report a negative speed to mean "no reading", and every desk log
+  /// this project has is full of `speed -1.0m/s`. A screen that renders that
+  /// number shows a train doing minus one, and a screen that clamps it to zero
+  /// tells a rider standing on a moving train that they are stopped. Neither is
+  /// acceptable, so the sentinel dies HERE, at the boundary, once.
+  ///
+  /// Carried since 18 Aug 2026 for the speed screen. It was on every fix the
+  /// service ever saw and was thrown away at this line.
+  final double? speedMs;
+
+  /// The same reading in km/h, which is the only unit a rider thinks in.
+  double? get speedKmh => speedMs == null ? null : speedMs! * 3.6;
 }
 
 /// What the service isolate persisted about the ride it is running.
@@ -287,7 +304,20 @@ List<ServiceEvent> parseServiceData(Object data) {
   final lng = (data['fixLng'] as num?)?.toDouble();
   final accuracyM = (data['fixAccuracyM'] as num?)?.toDouble();
   if (lat != null && lng != null && accuracyM != null) {
-    events.add(ServiceFix(lat: lat, lng: lng, accuracyM: accuracyM));
+    // Speed is OPTIONAL on the wire, unlike the three above. A fix without it
+    // is still a fix and must still move the chip, so an older service or a
+    // platform that stays silent costs the rider a speed reading and nothing
+    // else. Negative means "no reading" on both platforms, and it is converted
+    // to null here so no screen downstream ever has to know that.
+    final rawSpeed = (data['fixSpeedMs'] as num?)?.toDouble();
+    events.add(
+      ServiceFix(
+        lat: lat,
+        lng: lng,
+        accuracyM: accuracyM,
+        speedMs: rawSpeed == null || rawSpeed < 0 ? null : rawSpeed,
+      ),
+    );
   }
 
   return events;

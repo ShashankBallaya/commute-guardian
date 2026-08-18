@@ -145,6 +145,66 @@ void main() {
       expect(parseServiceData({'rideEnded': false}), isEmpty);
     });
 
+    test('A FIX CARRIES SPEED, and -1 is not a speed', () {
+      // Both platforms report a negative speed to mean "no reading", and every
+      // desk log this project has is full of `speed -1.0m/s`. A screen that
+      // renders that shows a train doing minus one; a screen that clamps it to
+      // zero tells a rider on a moving train they are stopped. The sentinel
+      // dies at this boundary, once.
+      final moving =
+          parseServiceData({
+                'fixLat': 19.24,
+                'fixLng': 73.15,
+                'fixAccuracyM': 8.0,
+                'fixSpeedMs': 29.9,
+              }).single
+              as ServiceFix;
+      expect(moving.speedMs, 29.9);
+      // 107.6 km/h is the fastest this project has measured on a real ride.
+      expect(moving.speedKmh, closeTo(107.6, 0.1));
+
+      final unknown =
+          parseServiceData({
+                'fixLat': 19.24,
+                'fixLng': 73.15,
+                'fixAccuracyM': 8.0,
+                'fixSpeedMs': -1.0,
+              }).single
+              as ServiceFix;
+      expect(unknown.speedMs, isNull);
+      expect(unknown.speedKmh, isNull);
+    });
+
+    test('and a fix WITHOUT speed is still a fix', () {
+      // Speed is optional on the wire, unlike lat, lng and accuracy. An older
+      // service or a silent platform must cost the rider a speed reading and
+      // nothing else: the chip still has to move.
+      final fix =
+          parseServiceData({
+                'fixLat': 19.24,
+                'fixLng': 73.15,
+                'fixAccuracyM': 8.0,
+              }).single
+              as ServiceFix;
+      expect(fix.lat, 19.24);
+      expect(fix.speedMs, isNull);
+    });
+
+    test('A REAL ZERO IS A READING, and it means stopped', () {
+      // The one case the null sentinel must not swallow: a train standing at a
+      // platform reports 0.0, which is true and is not the same as "unknown".
+      final stopped =
+          parseServiceData({
+                'fixLat': 19.24,
+                'fixLng': 73.15,
+                'fixAccuracyM': 8.0,
+                'fixSpeedMs': 0.0,
+              }).single
+              as ServiceFix;
+      expect(stopped.speedMs, 0.0);
+      expect(stopped.speedKmh, 0.0);
+    });
+
     test('a fix needs all three parts, or it is not a fix', () {
       final fix =
           parseServiceData({
