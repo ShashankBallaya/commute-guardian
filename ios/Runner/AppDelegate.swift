@@ -70,12 +70,17 @@ import flutter_foreground_task
   ) -> Bool {
     // Required so plugins (TTS, location) are registered on the engine that
     // flutter_foreground_task spawns for the background TaskHandler on iOS.
-    SwiftFlutterForegroundTaskPlugin.setPluginRegistrantCallback {
-      [weak self] registry in
+    // NO CAPTURES IN HERE. This takes a C FUNCTION POINTER, so a closure that
+    // captures anything, `self` included, fails to compile with "a C function
+    // pointer cannot be formed from a closure that captures context". That is
+    // why the thermal channel is registered by a file-scope function rather
+    // than by a method on this class. Found by CI on 18 Aug 2026, because Swift
+    // does not compile on the machine this was written on.
+    SwiftFlutterForegroundTaskPlugin.setPluginRegistrantCallback { registry in
       GeneratedPluginRegistrant.register(with: registry)
       // The ride runs in THIS engine, so the thermal channel has to exist here
       // as well as on the implicit one. See registerThermalChannel.
-      self?.registerThermalChannel(with: registry)
+      registerThermalChannel(with: registry)
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -642,43 +647,6 @@ import flutter_foreground_task
   }
 
 
-  // MARK: - Thermal state, the instrument the 16 Aug kill needed
-
-  /// Registers `commute_guardian/thermal` on [registry]'s engine.
-  ///
-  /// REGISTERED ON BOTH ENGINES, and that is the whole reason this is a
-  /// separate channel instead of another case in the media ack one. The media
-  /// ack channel lives on the implicit engine only, which is why the alarm
-  /// volume is read at Start and carried across the store: the service isolate
-  /// cannot reach it. A thermal reading taken once at Start would be worth
-  /// almost nothing. The number we need is how hot the phone gets over ninety
-  /// minutes, and only the isolate running the ride is there to ask.
-  ///
-  /// WHY IT MATTERS AT ALL. The 16 Aug 2026 crash report shows Thermal Level 7,
-  /// state "serious", the system at 67% CPU and this app at 0.084 s, 0%. We
-  /// were blocked on a phone that was already slow, and that is how a ten
-  /// second watchdog deadline became reachable. That is the ONLY thermal
-  /// reading this project has ever had, taken at the moment of death, with
-  /// nothing to compare it against.
-  ///
-  /// Costs nothing to read: `thermalState` is a cached property, not a sensor
-  /// poll.
-  private func registerThermalChannel(with registry: FlutterPluginRegistry) {
-    guard let registrar = registry.registrar(forPlugin: "thermal") else { return }
-    let channel = FlutterMethodChannel(
-      name: "commute_guardian/thermal",
-      binaryMessenger: registrar.messenger()
-    )
-    channel.setMethodCallHandler { call, result in
-      guard call.method == "getThermalState" else {
-        result(FlutterMethodNotImplemented)
-        return
-      }
-      // The raw value, not a word, because the enum is ordered and the ride log
-      // wants to be able to say "it climbed". Dart names it.
-      result(ProcessInfo.processInfo.thermalState.rawValue)
-    }
-  }
 
   // MARK: - State preservation, deliberately OFF
 
@@ -768,5 +736,52 @@ extension AppDelegate: CXCallObserverDelegate {
     let isOnCall = !engagedCalls.isEmpty
     guard isOnCall != wasOnCall else { return }
     mediaAckChannel?.invokeMethod("callState", arguments: isOnCall)
+  }
+}
+
+// MARK: - Thermal state, the instrument the 16 Aug kill needed
+
+/// Registers `commute_guardian/thermal` on [registry]'s engine.
+///
+/// REGISTERED ON BOTH ENGINES, and that is the whole reason this is a
+/// separate channel instead of another case in the media ack one. The media
+/// ack channel lives on the implicit engine only, which is why the alarm
+/// volume is read at Start and carried across the store: the service isolate
+/// cannot reach it. A thermal reading taken once at Start would be worth
+/// almost nothing. The number we need is how hot the phone gets over ninety
+/// minutes, and only the isolate running the ride is there to ask.
+///
+/// WHY IT MATTERS AT ALL. The 16 Aug 2026 crash report shows Thermal Level 7,
+/// state "serious", the system at 67% CPU and this app at 0.084 s, 0%. We
+/// were blocked on a phone that was already slow, and that is how a ten
+/// second watchdog deadline became reachable. That is the ONLY thermal
+/// reading this project has ever had, taken at the moment of death, with
+/// nothing to compare it against.
+///
+/// Costs nothing to read: `thermalState` is a cached property, not a sensor
+/// poll.
+///
+/// FILE SCOPE, NOT A METHOD, and that is forced rather than chosen.
+/// `setPluginRegistrantCallback` takes a C FUNCTION POINTER, so the closure
+/// that calls this may capture nothing at all, `self` included. Written as a
+/// method first, and CI answered with "a C function pointer cannot be formed
+/// from a closure that captures context" six minutes later. Swift does not
+/// compile on the machine this project is written on, so that round trip costs
+/// a macOS runner every time: `ios_state_preservation_test.dart` now guards it
+/// at the desk instead.
+private func registerThermalChannel(with registry: FlutterPluginRegistry) {
+  guard let registrar = registry.registrar(forPlugin: "thermal") else { return }
+  let channel = FlutterMethodChannel(
+    name: "commute_guardian/thermal",
+    binaryMessenger: registrar.messenger()
+  )
+  channel.setMethodCallHandler { call, result in
+    guard call.method == "getThermalState" else {
+      result(FlutterMethodNotImplemented)
+      return
+    }
+    // The raw value, not a word, because the enum is ordered and the ride log
+    // wants to be able to say "it climbed". Dart names it.
+    result(ProcessInfo.processInfo.thermalState.rawValue)
   }
 }
