@@ -84,6 +84,35 @@ class GeofenceChainService {
   DateTime? _thermalAskedAt;
   static const _thermalInterval = Duration(seconds: 60);
 
+  /// BENCH ONLY, and it exists because of what the 18 Aug 2026 battery bench
+  /// exposed: THIS APP OPENS TWO LOCATION STREAMS FOR EVERY RIDE.
+  ///
+  /// Ours is `FlLocation.getLocationStream(accuracy: navigation,
+  /// interval: 1000)` and it feeds RideProgress, which is the single source of
+  /// every spoken announcement. `geofencing_api` then opens a SECOND one, also
+  /// at navigation accuracy, at its default 5000 ms: `Geofencing.start` is pure
+  /// Dart (`_checkPermissions` then `_subscribeStreams`) and calls no native
+  /// geofencing code on either platform, so this happens on iOS too, where the
+  /// plugin's whole native side is a 20-line stub.
+  ///
+  /// AND ITS ONLY SURVIVING OUTPUT IS A LOG LINE. The native ENTER stopped
+  /// speaking when RideProgress became the single source; what is left is the
+  /// `ENTER ... (native)` line kept for native-versus-backstop comparison.
+  ///
+  /// So this flag turns that second stream off, to measure what it costs. It is
+  /// a `dart-define` rather than a setting because a bench flag that a rider
+  /// can reach is a bench flag that will one day be on during a real ride:
+  ///
+  ///     flutter build apk --release --dart-define=NATIVE_GEOFENCE_OFF=true
+  ///
+  /// Default false, so every ordinary build behaves exactly as it does today.
+  /// DO NOT make this a product decision on a bench number alone: the ENTER
+  /// lines are the only independent check that the Dart chain agrees with the
+  /// OS about where the train is.
+  static const nativeGeofenceEngineOff = bool.fromEnvironment(
+    'NATIVE_GEOFENCE_OFF',
+  );
+
   /// The two analytics events this app has, and the rider's opt-out.
   ///
   /// Injected rather than reached for, so a test can watch what a ride would
@@ -584,9 +613,11 @@ class GeofenceChainService {
     // chain every announcement uses, so the welcome simply follows it.
     unawaited(_preWarmTts());
 
-    Geofencing.instance.setup(printsDebugLog: true);
-    Geofencing.instance.addGeofenceStatusChangedListener(_onStatusChanged);
-    Geofencing.instance.addGeofenceErrorCallbackListener(_onGeofenceError);
+    if (!nativeGeofenceEngineOff) {
+      Geofencing.instance.setup(printsDebugLog: true);
+      Geofencing.instance.addGeofenceStatusChangedListener(_onStatusChanged);
+      Geofencing.instance.addGeofenceErrorCallbackListener(_onGeofenceError);
+    }
 
     final approachRadiusM = journey.approachRadiusM;
     final regions = <GeofenceRegion>{};
@@ -642,7 +673,14 @@ class GeofenceChainService {
         interval: 1000,
       ).listen(_onRawLocation, onError: _onRawLocationError);
 
-      await Geofencing.instance.start(regions: regions);
+      if (nativeGeofenceEngineOff) {
+        _log(
+          'NATIVE GEOFENCE ENGINE OFF (bench). RideProgress is unaffected: it '
+          'is fed by the raw stream and is already the only thing that speaks.',
+        );
+      } else {
+        await Geofencing.instance.start(regions: regions);
+      }
     } catch (error) {
       _log('Geofencing chain failed to start: $error');
     }
@@ -1828,9 +1866,11 @@ class GeofenceChainService {
       farewell,
     ).timeout(const Duration(seconds: 8), onTimeout: () {});
 
-    Geofencing.instance.removeGeofenceStatusChangedListener(_onStatusChanged);
-    Geofencing.instance.removeGeofenceErrorCallbackListener(_onGeofenceError);
-    await Geofencing.instance.stop();
+    if (!nativeGeofenceEngineOff) {
+      Geofencing.instance.removeGeofenceStatusChangedListener(_onStatusChanged);
+      Geofencing.instance.removeGeofenceErrorCallbackListener(_onGeofenceError);
+      await Geofencing.instance.stop();
+    }
     await _rawLocationSub?.cancel();
     _rawLocationSub = null;
     await _interruptionSub?.cancel();
