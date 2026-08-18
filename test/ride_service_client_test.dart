@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:commute_guardian/services/ride_service_client.dart';
 import 'package:commute_guardian/services/wind_down.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -183,6 +184,69 @@ void main() {
         parseServiceData({'somethingNewer': 'from a future service'}),
         isEmpty,
       );
+    });
+  });
+
+  group('A NEW RIDE STARTS WITH NO PROGRESS', () {
+    // FOUND 17 AUG 2026, while building the resume, and deliberately left out
+    // of those commits because it changes ordinary rides.
+    //
+    // Progress is ride-scoped state written by the SERVICE and read back by a
+    // UI the OS recreated. Nothing cleared it at Start, so it outlived the ride
+    // that wrote it: the next journey read the PREVIOUS one's index until its
+    // own first station passed, and Screen 4 drew a rider partway down a chain
+    // they had only just started. The plugin cannot run under a test binding,
+    // so this reads the source, like the isolate-boundary guard next door.
+    final source = File(
+      'lib/services/ride_service_client.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+
+    /// Whether [code] really WRITES both keys, comments discounted.
+    ///
+    /// COMMENTS ARE STRIPPED ON PURPOSE. Five guards in this project have
+    /// passed on prose that merely mentioned the thing they were meant to
+    /// find, and both keys below are named in the comment beside them.
+    bool clearsProgress(String code) {
+      final stripped = code
+          .split('\n')
+          .where((line) => !line.trimLeft().startsWith('//'))
+          .join('\n')
+          .replaceAll(RegExp(r'\s+'), ' ');
+      return stripped.contains('saveData(key: reachedIndexKey, value: -1)') &&
+          stripped.contains('saveData(key: atStationKey, value: false)');
+    }
+
+    String startRideBody() {
+      final start = source.indexOf('Future<bool> startRide({');
+      expect(start, greaterThan(-1), reason: 'startRide is gone');
+      final end = source.indexOf(
+        '/// The rider pressed End journey.',
+        start,
+      );
+      expect(end, greaterThan(start), reason: 'startRide has no end');
+      return source.substring(start, end);
+    }
+
+    test('it clears the progress the LAST ride left in the store', () {
+      expect(
+        clearsProgress(startRideBody()),
+        isTrue,
+        reason:
+            'without this a new ride reads the previous ride index until its '
+            'own first station passes, and the at-station flag with it',
+      );
+    });
+
+    test('AND THAT GUARD CAN STILL FAIL', () {
+      // The rule this project keeps relearning: a guard nobody has watched
+      // fail is not a guard.
+      const mentionedOnly =
+          'Future<bool> startRide({}) async {\n'
+          '  // Clears saveData(key: reachedIndexKey, value: -1) and\n'
+          '  // saveData(key: atStationKey, value: false) at the top.\n'
+          '  await FlutterForegroundTask.saveData(key: originIdKey, value: 1);\n'
+          '}';
+      expect(clearsProgress(mentionedOnly), isFalse);
     });
   });
 }

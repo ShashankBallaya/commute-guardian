@@ -761,6 +761,21 @@ class RideServiceClient {
       key: destinationReachedKey,
       value: false,
     );
+    // CLEARED FOR THE SAME REASON, and it never was until 18 Aug 2026. Progress
+    // is written by the service and read back by a UI the OS recreated, so it
+    // outlived the ride that wrote it: a new journey read the PREVIOUS one's
+    // index until its own first station passed, and Screen 4 drew a rider
+    // partway down a chain they had not started. -1 and false are what the
+    // reader already treats as "no progress yet", so this only makes the store
+    // say at Start what every reader already assumes.
+    //
+    // A RESUME CLEARS IT TOO, on purpose. `resumeInterrupted` documents that
+    // nothing seeds the progress of a resumed ride, because RideProgress
+    // localizes on its first fix and announces nothing; until now that claim
+    // was only true by accident of this key being stale. It is true by
+    // construction now.
+    await FlutterForegroundTask.saveData(key: reachedIndexKey, value: -1);
+    await FlutterForegroundTask.saveData(key: atStationKey, value: false);
     // The history row's seed, stored beside the ride rather than held in a
     // widget, so a journey survives the app being swiped out of recents with
     // its record intact. -1 means "the platform would not say".

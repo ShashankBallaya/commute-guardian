@@ -28,6 +28,8 @@ class FakeRideServiceClient implements RideServiceClient {
     this.startedAt,
     this.startBatteryPct,
     this.rideInFlight = false,
+    this.reachedIndex = -1,
+    this.atStation = false,
     this.wakeLadderLive = false,
     this.windDownLive = false,
     this.alightStationId,
@@ -47,6 +49,14 @@ class FakeRideServiceClient implements RideServiceClient {
   /// how a test says "the OS killed the app mid-ride", which is the one state
   /// no other field here can express.
   bool rideInFlight;
+
+  /// How far along the chain the store thinks the ride has got, and whether the
+  /// train is standing in that station. WRITTEN BY THE SERVICE, read back by a
+  /// UI the OS recreated, and therefore able to outlive the ride that wrote it:
+  /// modelled here since 18 Aug 2026 so a test can prove [startRide] clears
+  /// them. -1 and false are the store's "nothing yet".
+  int reachedIndex;
+  bool atStation;
 
   /// Alerts the service says are live. Persisted since 30 Jul, so a screen born
   /// mid-alarm can find out it has an alarm to answer.
@@ -111,6 +121,8 @@ class FakeRideServiceClient implements RideServiceClient {
     originId: originId,
     destinationId: destinationId,
     destinationReached: destinationReached,
+    reachedIndex: reachedIndex,
+    atStation: atStation,
     startedAt: startedAt,
     startBatteryPct: startBatteryPct,
     rideInFlight: rideInFlight,
@@ -164,6 +176,10 @@ class FakeRideServiceClient implements RideServiceClient {
       commands.add('startPulse:$pulseIntervalSeconds');
     }
     running = true;
+    // Cleared exactly as the real client clears them, so a fake ride cannot
+    // start further down the chain than a real one does.
+    reachedIndex = -1;
+    atStation = false;
     // The real flag is written by the SERVICE isolate at onStart, and this fake
     // stands in for the whole boundary, so it has to do the same: a fake that
     // started rides without it would let a test prove a resume works while the
