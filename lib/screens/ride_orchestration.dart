@@ -527,6 +527,35 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     return started;
   }
 
+  /// The rider said "No, I finished this ride" to the offer on Screen 1.
+  ///
+  /// WRITES THE HISTORY ROW, and until 18 Aug 2026 nothing did. The row is
+  /// written by [recordRide], which hangs off the UI's [finishRide] path, and a
+  /// declined ride never reaches it: the journey simply vanished. That is the
+  /// wrong answer to the question the button asks. The rider is not telling us
+  /// the ride never happened, they are telling us it FINISHED, and a finished
+  /// journey belongs in History like every other one.
+  ///
+  /// DISMISSED FIRST, RECORDED AFTER, which is the 13 Aug rule again: nobody
+  /// may watch the tidying. [recordRide] reads the battery, and that read is
+  /// allowed two whole seconds, so recording first leaves the offer sitting
+  /// under the rider's thumb after they have answered it. The order is safe
+  /// because [InterruptedRideNotifier.dismiss] clears only the in-flight flag,
+  /// and the history row is seeded by different keys, which recordRide clears
+  /// itself once the row is written.
+  ///
+  /// TWO FIELDS ARE THE BEST WE HAVE RATHER THAN THE TRUTH, and that is worth
+  /// saying out loud. `endedAt` is now, and the ride ended whenever the OS
+  /// killed us, which the dead process took with it. The end battery is read
+  /// now too, and so is a reading of a phone that may have been in a pocket for
+  /// an hour since. `reachedDestination` is false, which IS true: nothing ever
+  /// announced the destination. A row with two soft fields beats a journey the
+  /// rider took and cannot find.
+  Future<void> declineInterrupted() async {
+    await ref.read(interruptedRideProvider.notifier).dismiss();
+    await recordRide();
+  }
+
   Future<void> stop() async {
     await endRide();
     await finishRide();

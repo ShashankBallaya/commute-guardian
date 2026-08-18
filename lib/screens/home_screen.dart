@@ -100,6 +100,7 @@ class HomeScreen extends ConsumerStatefulWidget {
     required this.onStartTo,
     required this.onNew,
     this.onResumeRide,
+    this.onDeclineRide,
     this.onHistory,
     this.onSettings,
   });
@@ -119,6 +120,16 @@ class HomeScreen extends ConsumerStatefulWidget {
   /// orchestration that owns navigation. Declining does NOT need one, so it is
   /// not here: the notifier answers that by itself.
   final VoidCallback? onResumeRide;
+
+  /// The rider declining that offer.
+  ///
+  /// HANDED UP SINCE 18 AUG 2026, and it used to be answered here. Declining
+  /// stopped being something a screen can finish the moment it had to write a
+  /// history row: the row is replanned from the store and written through the
+  /// database, which is orchestration's work and not Screen 1's. Null keeps the
+  /// old behaviour, forgetting the ride and nothing else, so this screen can
+  /// still be pumped on its own without a database behind it.
+  final VoidCallback? onDeclineRide;
 
   /// Screen 7 and Screen 6, from the header row.
   ///
@@ -244,12 +255,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   _ResumeOffer(
                     destinationName: _stationName(interrupted.destinationId),
                     onResume: widget.onResumeRide!,
-                    // Answered here rather than handed up. Declining touches
-                    // nothing a screen cannot reach, and routing it through the
-                    // shell would only give the shell a method that forwards.
-                    onDecline: () => unawaited(
-                      ref.read(interruptedRideProvider.notifier).dismiss(),
-                    ),
+                    // HANDED UP WHEN THERE IS SOMEBODY TO HAND IT TO. This
+                    // was answered here while declining only had to forget the
+                    // ride, which is something a screen can reach. Writing the
+                    // history row is not, so the shell owns it now and this
+                    // fallback is what a screen pumped alone still does.
+                    onDecline: () => widget.onDeclineRide == null
+                        ? unawaited(
+                            ref.read(interruptedRideProvider.notifier).dismiss(),
+                          )
+                        : widget.onDeclineRide!(),
                   ),
                 destinations.when(
                   loading: () => const SizedBox.shrink(),

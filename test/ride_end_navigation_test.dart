@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -27,7 +28,8 @@ import 'support/fake_ride_service_client.dart';
 /// press End journey a second time. `ride_orchestration.dart` carried a comment
 /// asserting the opposite ("Screen 5 over Screen 4 lands on Screen 1 either
 /// way"), reasoned rather than measured, and it survived four months.
-Future<void> _pumpProductStack(
+/// Returns the in-memory database, so a test can ask what the ride recorded.
+Future<AppDatabase> _pumpProductStack(
   WidgetTester tester,
   FakeRideServiceClient service,
 ) async {
@@ -51,6 +53,7 @@ Future<void> _pumpProductStack(
     ),
   );
   await tester.pumpAndSettle();
+  return db;
 }
 
 void main() {
@@ -150,6 +153,77 @@ void main() {
       body,
       isNot(contains('recordRide()')),
       reason: 'a second copy of the tidying is how one path loses a step',
+    );
+  });
+
+  testWidgets('A DECLINED RIDE STILL GETS ITS HISTORY ROW', (tester) async {
+    // FOUND 17 AUG 2026, one day after the resume shipped. The row is written
+    // by recordRide, which hangs off the UI's finishRide path, and a rider who
+    // declines the offer on Screen 1 never reaches it. So a journey the OS
+    // killed vanished twice: once from the ride, and again from History.
+    //
+    // The button says "No, I finished this ride". The rider is not telling us
+    // the journey never happened.
+    final service = FakeRideServiceClient(
+      // The kill: a ride in flight with no service running it.
+      running: false,
+      rideInFlight: true,
+      originId: 'shahad',
+      destinationId: 'dombivli',
+      startedAt: DateTime.now().subtract(const Duration(minutes: 25)),
+      startBatteryPct: 88,
+    );
+    final db = await _pumpProductStack(tester, service);
+    expect(find.byKey(const Key('resume_ride_card')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('decline_resume_ride')));
+    // Settled AND advanced. The row is written after the dismissal, on purpose,
+    // and writing it reads the battery behind a two-second timeout that this
+    // binding never answers. pumpAndSettle alone stops before that timer fires.
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    final rides = await db.recent();
+    expect(rides, hasLength(1), reason: 'the journey the rider took is gone');
+    expect(rides.single.originId, 'shahad');
+    expect(rides.single.destinationId, 'dombivli');
+    expect(
+      rides.single.reachedDestination,
+      isFalse,
+      reason: 'nothing ever announced the destination, and the row must say so',
+    );
+    // The seed goes with it, so a later teardown cannot write the row twice.
+    expect(service.commands, contains('clearRideRecordSeed'));
+  });
+
+  testWidgets('and declining still takes the offer away', (tester) async {
+    // The behaviour the button already had. Writing a row must not cost the
+    // rider the dismissal, which is the half they can actually see.
+    final service = FakeRideServiceClient(
+      running: false,
+      rideInFlight: true,
+      originId: 'shahad',
+      destinationId: 'dombivli',
+      startedAt: DateTime.now().subtract(const Duration(minutes: 25)),
+    );
+    await _pumpProductStack(tester, service);
+
+    await tester.tap(find.byKey(const Key('decline_resume_ride')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('resume_ride_card')), findsNothing);
+    // ASSERTED BEFORE THE CLOCK MOVES, and that is the point of doing it here:
+    // the offer is gone on the frame after the tap, without waiting for the
+    // battery read the history row needs. Advanced afterwards only so the
+    // row's timer does not outlive the widget tree.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(service.rideInFlight, isFalse);
+    expect(
+      service.commands,
+      isNot(contains('startRide:shahad->dombivli')),
+      reason: 'declining must never start the ride it is declining',
     );
   });
 }

@@ -68,6 +68,10 @@ class _HomeShellState extends ConsumerState<HomeShell> with RideOrchestration {
         if (ride == null) return;
         unawaited(resumeInterrupted(ride));
       },
+      // Declining that offer. Routed through the orchestration rather than
+      // answered on Screen 1, because a declined ride still owes History a row:
+      // the rider is saying the journey finished, not that it never happened.
+      onDeclineRide: () => unawaited(declineInterrupted()),
       onHistory: showHistory,
       onSettings: openSettings,
     );
