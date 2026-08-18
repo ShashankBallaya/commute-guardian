@@ -16,7 +16,7 @@ enum AnalyticsIsolate {
 
 /// How a ride finished. The only thing analytics ever learns about a journey.
 ///
-/// Deliberately a closed set of four words. Anything richer (which station,
+/// Deliberately a closed set of five words. Anything richer (which station,
 /// which line, how long) would describe a person's commute, and this file's
 /// whole job is that it cannot.
 enum RideOutcome {
@@ -31,15 +31,38 @@ enum RideOutcome {
   /// The four hour backstop ended a ride nobody ended.
   timeout,
 
-  /// Ended before arriving: the rider pressed End, or the OS took the service.
-  /// The two are indistinguishable from in here and are not worth separating.
-  endedEarly;
+  /// Ended before arriving, because the rider pressed End.
+  ///
+  /// THIS COMMENT USED TO SAY the rider and the OS were "indistinguishable from
+  /// in here and not worth separating". Both halves were wrong, and 16 Aug 2026
+  /// is what proved it: iOS killed a ride on the way home from CSMT and the
+  /// journey simply vanished, counted here as nothing at all. Since `74f5e75`
+  /// the store CAN tell the two apart, and [interrupted] is the difference.
+  endedEarly,
+
+  /// THE APP DIED MID-RIDE AND THE RIDER CAME BACK TO FIND OUT.
+  ///
+  /// Reported from the UI isolate at the moment the rider answers the offer on
+  /// Screen 1, resume or decline, which is the only moment this can be known:
+  /// the process that was riding is dead, and a dead process reports nothing.
+  ///
+  /// WHAT IT COUNTS, exactly. Kills where the rider reopened the app inside
+  /// `resumeWindow` and answered. A rider whose phone stays in their pocket is
+  /// still invisible, and no event fired from this app can ever see them. So
+  /// this is a FLOOR on how often Travel Mode dies, never the true rate.
+  ///
+  /// WHY IT IS WORTH HAVING ANYWAY. Until 18 Aug 2026 the only trace of a kill
+  /// was a `ride_started` with no `ride_ended`, and that signal is confounded:
+  /// of eight such orphans in the 10 to 18 Aug export, three were desk benches
+  /// and one was an Aptabase session split. Two were real, and nothing said so.
+  interrupted;
 
   String get wireName => switch (this) {
     RideOutcome.arrived => 'arrived',
     RideOutcome.overshot => 'overshot',
     RideOutcome.timeout => 'timeout',
     RideOutcome.endedEarly => 'ended_early',
+    RideOutcome.interrupted => 'interrupted',
   };
 }
 
@@ -205,6 +228,28 @@ class Analytics {
       'wake_armed': wakeArmed,
       'wake_answered': wakeAnswered,
     }),
+  );
+
+  /// A ride the OS killed, reported when the rider answers the offer.
+  ///
+  /// THE ONE RIDE EVENT THE UI ISOLATE IS ALLOWED TO SEND, and the exception
+  /// needs saying because the rule it breaks is load-bearing: ride events come
+  /// from the SERVICE isolate, because the UI can die mid-ride. Here the
+  /// service is the half that died, so there is nobody else left to say so.
+  ///
+  /// FIRED ONCE PER KILL, at resume or decline, never at detection. Detection
+  /// repeats at every launch until the rider answers, so reporting there would
+  /// count one dead ride three times if they opened the app three times.
+  ///
+  /// [wakeArmed] and [wakeAnswered] are false, and that is a measurement
+  /// decision rather than a default: the wake ladder's 95 percent bar is
+  /// computed over rides where the ladder actually ran, so a ride nobody was
+  /// watching must not enter that denominator. It cost the rider their alarm;
+  /// it says nothing about whether the alarm works.
+  Future<void> trackRideInterrupted() => trackRideEnded(
+    outcome: RideOutcome.interrupted,
+    wakeArmed: false,
+    wakeAnswered: false,
   );
 
   /// Sends one event, and CANNOT FAIL INTO THE RIDE.

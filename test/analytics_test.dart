@@ -81,14 +81,20 @@ void main() {
       );
     });
 
-    test('every outcome is one of four fixed words', () {
+    test('every outcome is one of five fixed words', () {
       // A closed set, so a property can never carry free text that happens to
       // contain a place name.
+      //
+      // WAS FOUR UNTIL 18 AUG 2026, and this test is how the fifth word was
+      // reviewed rather than slipped in: adding an outcome has to fail here
+      // first. 'interrupted' means the OS killed a ride and the rider came
+      // back to find out. It carries no more information than the other four.
       expect(RideOutcome.values.map((o) => o.wireName).toSet(), {
         'arrived',
         'overshot',
         'timeout',
         'ended_early',
+        'interrupted',
       });
     });
   });
@@ -311,6 +317,93 @@ void main() {
       expect(order, ['overshot', 'arrived', 'timeout', 'endedEarly']);
     });
   });
+
+  group('A RIDE THE OS KILLED IS COUNTED, and only once', () {
+    // BUILT 18 AUG 2026, after the phone's own crash reports proved iOS had
+    // killed Travel Mode twice mid-ride (0x8BADF00D watchdog terminations, not
+    // jetsams) and NOTHING had reported either one. Sentry cannot: its Cocoa
+    // SDK deliberately drops watchdog terminations that happen in the
+    // background, which both of ours were. Aptabase could only show it by
+    // subtraction, and that signal is confounded: of eight rides in the 10 to
+    // 18 Aug export that started and never ended, three were desk benches and
+    // one was a session split.
+
+    test('it rides the SAME two events, so the event list still holds', () {
+      // The two-event guard at the top of this file is the real enforcement.
+      // This says out loud that the new outcome was deliberately built as an
+      // outcome rather than as a third event.
+      final source = File('lib/services/analytics.dart').readAsStringSync();
+      final events = RegExp(
+        r"trackEvent\(\s*'([a-z_]+)'",
+      ).allMatches(source).map((m) => m.group(1)).toSet();
+      expect(events, {'ride_started', 'ride_ended'});
+    });
+
+    test('its wire name is stable, because a dashboard reads it', () {
+      expect(RideOutcome.interrupted.wireName, 'interrupted');
+    });
+
+    test('IT STAYS OUT OF THE WAKE DENOMINATOR', () async {
+      // The 95 percent bar is computed over rides where the ladder actually
+      // ran. A ride nobody was watching cost the rider their alarm and says
+      // nothing about whether the alarm works, so it must not dilute that bar.
+      final client = _RecordingAptabase();
+      await Analytics.configured(
+        enabled: true,
+        client: client,
+      ).trackRideInterrupted();
+
+      expect(client.events, hasLength(1));
+      final (name, props) = client.events.single;
+      expect(name, 'ride_ended');
+      expect(props?['outcome'], 'interrupted');
+      expect(props?['wake_armed'], isFalse);
+      expect(props?['wake_answered'], isFalse);
+    });
+
+    test('AND IT IS SENT WHERE THE OFFER IS ANSWERED, NOT WHERE IT IS FOUND', () {
+      // The counting bug this ordering prevents: an unanswered offer is
+      // re-detected at EVERY launch, so reporting at detection would count one
+      // dead ride once per app open. Resume and decline each happen once.
+      //
+      // Read from the source with comments stripped, because both call sites
+      // are one line in a file this test cannot otherwise reach.
+      final source = _stripComments(
+        File('lib/screens/ride_orchestration.dart').readAsStringSync(),
+      );
+
+      expect(
+        RegExp(r'_reportInterrupted\(\)').allMatches(source).length,
+        3,
+        reason:
+            'exactly two call sites plus the declaration: resume and decline',
+      );
+
+      final resume = source.indexOf('Future<bool> resumeInterrupted(');
+      final decline = source.indexOf('Future<void> declineInterrupted(');
+      expect(resume, greaterThan(-1));
+      expect(decline, greaterThan(-1));
+      // Each body carries the call. Bounded by the next method so a single
+      // call site cannot satisfy both.
+      for (final start in [resume, decline]) {
+        final body = source.substring(start, source.indexOf('\n  }', start));
+        expect(
+          body,
+          contains('_reportInterrupted()'),
+          reason: 'both ways of answering the offer must report the kill',
+        );
+      }
+
+      // And NOT from the detection path, which is a provider, not this file.
+      expect(
+        _stripComments(
+          File('lib/state/ride_providers.dart').readAsStringSync(),
+        ),
+        isNot(contains('trackRideInterrupted')),
+        reason: 'detection repeats at every launch; reporting there over-counts',
+      );
+    });
+  });
 }
 
 /// Strips Dart comments, so a tripwire on words like "destination" can be
@@ -334,4 +427,16 @@ class _ThrowingAptabase implements Aptabase {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       Future<void>.error(StateError('analytics is broken'));
+}
+
+/// An Aptabase that remembers what it was asked to send.
+class _RecordingAptabase implements Aptabase {
+  final List<(String, Map<String, dynamic>?)> events = [];
+
+  @override
+  Future<void> trackEvent(String name, [Map<String, dynamic>? props]) async =>
+      events.add((name, props));
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => Future<void>.value();
 }

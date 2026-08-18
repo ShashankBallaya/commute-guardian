@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/app_settings.dart';
 import '../models/journey.dart';
+import '../services/analytics.dart';
 import '../services/permissions_gateway.dart';
 import '../services/ride_resume.dart';
 import '../services/ride_service_client.dart';
@@ -480,6 +481,12 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   ///
   /// Returns whether the service actually started.
   Future<bool> resumeInterrupted(InterruptedRide ride) async {
+    // BEFORE the permission prompt and before the service starts, because both
+    // can take a rider several seconds and either can end with them walking
+    // away. The ride was already killed by then; whether they finish resuming
+    // it does not change that, and it is the kill we are counting.
+    unawaited(_reportInterrupted());
+
     await _requestPermissions();
 
     final pulseSettings = await ref.read(appSettingsProvider.future);
@@ -553,7 +560,29 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// rider took and cannot find.
   Future<void> declineInterrupted() async {
     await ref.read(interruptedRideProvider.notifier).dismiss();
+    unawaited(_reportInterrupted());
     await recordRide();
+  }
+
+  /// Tells us, not the rider, that Travel Mode died mid-ride.
+  ///
+  /// SENT FROM HERE BECAUSE THERE IS NOBODY ELSE. Ride events come from the
+  /// service isolate, on the rule that the UI can die mid-ride. This is the
+  /// case where the SERVICE is what died, so the rule has no answer and the UI
+  /// is the only witness left.
+  ///
+  /// Called from resume AND decline, which are the two ways an offer is
+  /// answered, and never from the detection itself: an unanswered offer is
+  /// re-detected at every launch, so reporting there would count one dead ride
+  /// once per app open.
+  ///
+  /// UNAWAITED AND UNGUARDED BY DESIGN. `Analytics` swallows its own failures
+  /// and checks the rider's opt-out at the moment of sending. Nothing about
+  /// counting a lost ride may delay giving one back.
+  Future<void> _reportInterrupted() async {
+    final settings = await ref.read(appSettingsProvider.future);
+    await Analytics(enabled: settings.shareAnonymousUsage)
+        .trackRideInterrupted();
   }
 
   Future<void> stop() async {
