@@ -63,22 +63,54 @@ void main() {
     expect(restored.pulseIntervalSeconds, 45);
   });
 
-  test(
-    'the language survives, because a wrong voice is a silent alarm',
-    () async {
-      final (first, db) = makeContainer();
-      await first.read(appSettingsProvider.future);
-      await first
-          .read(appSettingsProvider.notifier)
-          .setLanguage(AppLanguage.marathi);
+  test('the language survives, because a wrong voice is a silent alarm', () async {
+    // Weak while only one language is selectable, and kept anyway: it is the
+    // round trip that has to keep working when the second pack ships, and a
+    // test deleted for being easy is a test nobody writes again.
+    final (first, db) = makeContainer();
+    await first.read(appSettingsProvider.future);
+    await first
+        .read(appSettingsProvider.notifier)
+        .setLanguage(AppLanguage.selectable.last);
 
-      final (second, _) = makeContainer(db);
-      expect(
-        (await second.read(appSettingsProvider.future)).language,
-        AppLanguage.marathi,
-      );
-    },
-  );
+    final (second, _) = makeContainer(db);
+    expect(
+      (await second.read(appSettingsProvider.future)).language,
+      AppLanguage.selectable.last,
+    );
+  });
+
+  test('A LOCKED LANGUAGE IS COERCED, NOT JUST HIDDEN', () async {
+    // The upgrade case, and it is a real phone: this project's own iPhone and
+    // 3T have had the picker since 12 Aug and could store any of the three.
+    // Locking the PICKER alone would leave such a rider riding in a language
+    // they can no longer see, let alone change back, and Marathi has 9 clips,
+    // so every announcement including the wake ladder would be device TTS.
+    final (first, db) = makeContainer();
+    await db.setFlag(languageKey, AppLanguage.marathi.tag);
+
+    expect(
+      (await first.read(appSettingsProvider.future)).language,
+      AppLanguage.english,
+    );
+  });
+
+  test('a locked language cannot be written even if something asks', () async {
+    final (container, db) = makeContainer();
+    await container.read(appSettingsProvider.future);
+    await container
+        .read(appSettingsProvider.notifier)
+        .setLanguage(AppLanguage.hindi);
+
+    // BOTH HALVES. The in-memory value is what this ride speaks; the stored
+    // tag is what the next launch reads, and a coercion that fixed only one
+    // of them would look correct until the app restarted.
+    expect(
+      container.read(appSettingsProvider).value?.language,
+      AppLanguage.english,
+    );
+    expect(await db.flag(languageKey), AppLanguage.english.tag);
+  });
 
   test('turning the pulse off persists as off, not as unset', () async {
     // The failure this guards: writing 0 and then reading it back through a

@@ -561,11 +561,24 @@ class _Segmented extends StatelessWidget {
     required this.labels,
     required this.selected,
     required this.onChanged,
+    this.enabled,
+    this.keyPrefix = 'settings_interval',
   });
 
   final List<String> labels;
   final int selected;
   final ValueChanged<int> onChanged;
+
+  /// Which segments a press may move, or null when every one of them may.
+  ///
+  /// A DISABLED SEGMENT IS STILL DRAWN, dimmer and not pressable. That is the
+  /// point of it: the language picker uses this to show Hindi and Marathi as
+  /// coming rather than to pretend they do not exist.
+  final List<bool>? enabled;
+
+  /// The widget key stem, because two of these live on this screen and both
+  /// used to answer to `settings_interval_0`.
+  final String keyPrefix;
 
   @override
   Widget build(BuildContext context) {
@@ -578,8 +591,14 @@ class _Segmented extends StatelessWidget {
         children: [
           for (final (i, label) in labels.indexed)
             Expanded(
-              child: Pressable(
-                key: Key('settings_interval_$i'),
+              // IgnorePointer AND NOT A NULL CALLBACK, because Pressable takes
+              // a required one and, more to the point, it animates on press.
+              // A locked segment that still dips under the thumb reads as
+              // broken rather than as not yet.
+              child: IgnorePointer(
+                ignoring: !(enabled?[i] ?? true),
+                child: Pressable(
+                key: Key('${keyPrefix}_$i'),
                 onTap: () => onChanged(i),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
@@ -603,11 +622,14 @@ class _Segmented extends StatelessWidget {
                             : FontWeight.w400,
                         color: i == selected
                             ? Palette.dotGreen
-                            : Palette.textDim(0.75),
+                            : Palette.textDim(
+                                (enabled?[i] ?? true) ? 0.75 : 0.3,
+                              ),
                       ),
                     ),
                   ),
                 ),
+              ),
               ),
             ),
         ],
@@ -618,10 +640,24 @@ class _Segmented extends StatelessWidget {
 
 /// The language picker.
 ///
-/// ONLY OFFERS WHAT THE DEVICE CAN SPEAK, and says so when that is one thing.
-/// A rider who picks a language with no voice behind it does not get an English
-/// fallback, they get silence from the wake alarm, which is the failure this
-/// whole product exists to prevent.
+/// LOCKED TO ENGLISH FOR THE CLOSED BETA (19 Aug 2026) and still showing all
+/// three. The lock is about audio, not strings: only English has a clip pack
+/// bundled in the app, and a Hindi rider would hear the wake ladder in the
+/// device TTS voice the Sarvam work exists to replace. AppLanguage.selectable
+/// carries the full reasoning and is the one place to change it back.
+///
+/// SHOWN, NOT HIDDEN, because "coming soon" is information a commuter deciding
+/// on this app wants and a hidden row cannot give them. Also because these two
+/// languages are most of why this product is for Mumbai at all: a rider who
+/// sees only English may reasonably conclude it was never built for them.
+///
+/// WHAT THIS REPLACED, and why it is not a regression: the picker used to
+/// offer whatever voices TtsLanguageGateway found on the phone, and say
+/// "This phone can only speak English" when it found one. That rule was
+/// right and is now simply not the binding one. The gateway still runs and
+/// [SettingsScreen.availableLanguages] still carries its answer, because it
+/// becomes the binding rule again the moment a second pack ships: a language
+/// with clips but no device voice still cannot speak the dynamic lines.
 class _LanguagePicker extends StatelessWidget {
   const _LanguagePicker({
     required this.available,
@@ -629,14 +665,19 @@ class _LanguagePicker extends StatelessWidget {
     required this.onChanged,
   });
 
+  /// What the device can speak. Not what is offered today: see the class
+  /// comment. Kept plumbed because it is the rule that returns.
   final Set<AppLanguage> available;
+
   final AppLanguage selected;
   final ValueChanged<AppLanguage> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    final offered = AppLanguage.values
-        .where(available.contains)
+    const offered = AppLanguage.values;
+    final locked = offered
+        .where((l) => !l.isSelectable)
+        .map((l) => l.label)
         .toList(growable: false);
 
     return Padding(
@@ -649,22 +690,28 @@ class _LanguagePicker extends StatelessWidget {
             style: TextStyle(fontSize: TypeScale.body, color: Palette.text),
           ),
           const SizedBox(height: 10),
-          if (offered.length < 2)
+          _Segmented(
+            keyPrefix: 'settings_language',
+            labels: [for (final l in offered) l.label],
+            selected: offered.indexOf(selected).clamp(0, offered.length - 1),
+            enabled: [for (final l in offered) l.isSelectable],
+            onChanged: (i) => onChanged(offered[i]),
+          ),
+          if (locked.isNotEmpty) ...[
+            const SizedBox(height: 10),
             Text(
-              'This phone can only speak English. Adding a Hindi or Marathi '
-              'voice in your phone settings will offer it here.',
+              // Names them in their own scripts, which is how they are drawn
+              // in the control right above this line, so the sentence and the
+              // thing it explains cannot be read as two different lists.
+              '${locked.join(' and ')} are coming soon. '
+              'Every announcement is in English for now.',
               style: TextStyle(
                 fontSize: TypeScale.caption,
                 height: 1.4,
                 color: Palette.textDim(0.55),
               ),
-            )
-          else
-            _Segmented(
-              labels: [for (final l in offered) l.label],
-              selected: offered.indexOf(selected).clamp(0, offered.length - 1),
-              onChanged: (i) => onChanged(offered[i]),
             ),
+          ],
         ],
       ),
     );

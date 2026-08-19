@@ -47,7 +47,10 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
         shareAnonymousUsageKey,
         fallback.shareAnonymousUsage,
       ),
-      language: AppLanguage.fromTag(await _db.flag(languageKey)),
+      // COERCED, NOT JUST HIDDEN. A phone that stored hindi before the
+      // picker was locked would otherwise keep riding in a language the
+      // rider can no longer see, let alone change back.
+      language: _selectableOnly(AppLanguage.fromTag(await _db.flag(languageKey))),
     );
   }
 
@@ -93,8 +96,20 @@ class AppSettingsNotifier extends AsyncNotifier<AppSettings> {
     _now.copyWith(shareAnonymousUsage: on),
   );
 
-  Future<void> setLanguage(AppLanguage language) =>
-      _set(languageKey, language.tag, _now.copyWith(language: language));
+  Future<void> setLanguage(AppLanguage language) => _set(
+    languageKey,
+    _selectableOnly(language).tag,
+    _now.copyWith(language: _selectableOnly(language)),
+  );
+
+  /// English unless the language is one a rider may pick today.
+  ///
+  /// Belt and braces: the picker cannot offer a locked language, so nothing
+  /// should reach here holding one. It exists because the cost of being wrong
+  /// is a rider woken in a voice the app has no clips for, and the cost of
+  /// the check is one list lookup.
+  static AppLanguage _selectableOnly(AppLanguage language) =>
+      language.isSelectable ? language : AppLanguage.english;
 
   AppSettings get _now => state.valueOrNull ?? const AppSettings();
 }

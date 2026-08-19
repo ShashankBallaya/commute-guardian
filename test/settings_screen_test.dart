@@ -100,35 +100,48 @@ void main() {
     expect(find.text('The wake alarm always vibrates.'), findsOneWidget);
   });
 
-  testWidgets('A LANGUAGE WITH NO VOICE IS NEVER OFFERED', (tester) async {
-    // The failure mode is not a cosmetic fallback. A rider who selects a
-    // language the device cannot speak gets SILENCE from the wake alarm.
-    await pumpSettings(tester);
-    await scrollTo(tester, find.text('Voice'));
-
-    expect(find.text('हिंदी'), findsNothing);
-    expect(find.text('मराठी'), findsNothing);
-    // And it explains itself rather than showing a picker with one option.
-    expect(find.textContaining('only speak English'), findsOneWidget);
-  });
-
-  testWidgets('a device with the voices offers them in native script', (
+  testWidgets('HINDI AND MARATHI ARE SHOWN, AND CANNOT BE PICKED', (
     tester,
   ) async {
+    // LOCKED 19 Aug 2026 for the closed beta, and shown on purpose. The lock
+    // is about audio: only English has a clip pack bundled in the app, so a
+    // Hindi rider would hear the wake ladder in the device TTS voice the
+    // Sarvam work exists to replace. Hiding them would tell a Mumbai commuter
+    // the app was never built for them.
     final changes = await pumpSettings(
       tester,
       languages: {AppLanguage.english, AppLanguage.hindi, AppLanguage.marathi},
     );
-
     await scrollTo(tester, find.text('मराठी'));
 
     expect(find.text('English'), findsOneWidget);
     expect(find.text('हिंदी'), findsOneWidget);
     expect(find.text('मराठी'), findsOneWidget);
+    expect(find.textContaining('coming soon'), findsOneWidget);
 
-    await tester.tap(find.text('मराठी'));
+    // THE PRESS MUST DO NOTHING. A locked control that still fires its
+    // callback is worse than an absent one: the rider believes they changed
+    // the voice and finds out on a train.
+    await tester.tap(find.text('मराठी'), warnIfMissed: false);
     await tester.pumpAndSettle();
-    expect(changes, contains('language:mr-IN'));
+    await tester.tap(find.text('हिंदी'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(changes, isEmpty);
+  });
+
+  testWidgets('the lock does not depend on which voices the device has', (
+    tester,
+  ) async {
+    // The old rule offered whatever TtsLanguageGateway found, so a phone with
+    // no Hindi voice hid Hindi for a completely different reason. Both phones
+    // must now draw the same three segments, or the test above proves nothing
+    // about a real rider's phone.
+    await pumpSettings(tester);
+    await scrollTo(tester, find.text('Voice'));
+
+    expect(find.text('हिंदी'), findsOneWidget);
+    expect(find.text('मराठी'), findsOneWidget);
+    expect(find.textContaining('only speak English'), findsNothing);
   });
 
   testWidgets('the readiness detail appears only when it is unmet', (

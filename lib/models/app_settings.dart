@@ -18,6 +18,26 @@ enum AppLanguage {
 
   static AppLanguage fromTag(String? tag) =>
       AppLanguage.values.firstWhere((l) => l.tag == tag, orElse: () => english);
+
+  /// What a rider may choose today. Everything else is drawn as coming soon.
+  ///
+  /// LOCKED TO ENGLISH ON 19 AUG 2026, for the closed beta, and the reason is
+  /// the audio and not the strings. English has a full Sarvam pack bundled in
+  /// the app (880 clips). Hindi has 864 clips, NO manifest, and templates that
+  /// moved under `f0ad04a`, so the pack is stale and ClipLibrary refuses it
+  /// whole; Marathi has 9 clips, which is an audition sample and not a pack.
+  /// A rider picking either would fall to device TTS at every station and pay
+  /// the 500 to 900 ms cold start each time, and would hear the wake ladder,
+  /// the sentence this product exists to say, in the voice the Sarvam work
+  /// was done to replace.
+  ///
+  /// The picker still SHOWS all three. A commuter deciding whether this app is
+  /// for them should be able to see that their language is coming, and a
+  /// hidden feature cannot be asked about by a beta tester.
+  static const selectable = [english];
+
+  /// Whether a rider may choose this language today.
+  bool get isSelectable => selectable.contains(this);
 }
 
 /// Everything the rider has chosen on the Settings screen.
