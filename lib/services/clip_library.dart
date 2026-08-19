@@ -47,13 +47,18 @@ ClipKind? announcementClipKind({
   }
 }
 
-/// The on-device Sarvam clip pack: `{stationId}__{kind}.wav` files plus a
+/// The on-device Sarvam clip pack: `{stationId}__{kind}` audio files plus a
 /// `manifest.json` under one language directory.
 ///
-/// Debug delivery is `adb push build/sarvam_clips/en-IN` into the app's
-/// external files dir (`clips/en-IN`, the same adb-reachable spot the ride
-/// logs live in), which keeps 125 MB of audio out of the APK while store
-/// delivery is still an open ADR.
+/// THE PACK SHIPS INSIDE THE APP since 19 Aug 2026, unpacked once at first
+/// launch by BundledClips into the same directory a pushed pack has always
+/// used. Delivery was the open question in docs/adr/0001 and it turned out to
+/// be a FORMAT question: 32 kbps AAC is 9.5x smaller than the wav, so the
+/// pack is 13.5 MB rather than 128.7 MB and simply fits.
+///
+/// `adb push build/sarvam_clips/en-IN` into that directory still works and
+/// still wins, because a pushed file is found under the same key. That is how
+/// a re-cut pack gets tried without a rebuild.
 ///
 /// WHY THE MANIFEST EXISTS: matching on filename alone is not enough to
 /// honour the byte-identical rule. The pack is pushed out of band and the
@@ -101,8 +106,21 @@ class ClipLibrary {
     }
   }
 
+  /// The audio file extensions a pack may hold, in the order they are tried.
+  ///
+  /// M4A IS THE BUNDLED PACK and wav is every pack pushed before 19 Aug 2026.
+  /// The bundled pack is 32 kbps mono AAC because that is 9.5x smaller than
+  /// the wav it was cut from, which is the whole reason a pack fits in the
+  /// APK at all (see tool/build_clip_assets.py and pubspec.yaml).
+  ///
+  /// WAV STAYS SUPPORTED, and not for sentiment: two phones already carry a
+  /// pushed wav pack, the manifest keys never held an extension, and a
+  /// migration that silences a pack is exactly the failure the four fallbacks
+  /// exist to prevent. Trying a second name costs one existsSync on a miss.
+  static const extensions = ['m4a', 'wav'];
+
   /// The clip for a station and kind, or null when the manifest does not
-  /// vouch for [expectedSentence] or the file is not on disk.
+  /// vouch for [expectedSentence] or no file is on disk.
   File? clipFor(
     String stationId,
     ClipKind kind, {
@@ -110,7 +128,12 @@ class ClipLibrary {
   }) {
     final key = '${stationId}__${kind.fileSuffix}';
     if (_sentences[key] != expectedSentence) return null;
-    final file = File('${root.path}${Platform.pathSeparator}$key.wav');
-    return file.existsSync() ? file : null;
+    for (final extension in extensions) {
+      final file = File(
+        '${root.path}${Platform.pathSeparator}$key.$extension',
+      );
+      if (file.existsSync()) return file;
+    }
+    return null;
   }
 }

@@ -16,12 +16,13 @@ Directory _pack(
   Map<String, String> clips, {
   Map<String, String>? manifest,
   bool withManifest = true,
+  String extension = 'wav',
 }) {
   final dir = Directory.systemTemp.createTempSync('clip_pack');
   addTearDown(() => dir.deleteSync(recursive: true));
   for (final key in clips.keys) {
     File(
-      '${dir.path}${Platform.pathSeparator}$key.wav',
+      '${dir.path}${Platform.pathSeparator}$key.$extension',
     ).writeAsBytesSync(const [0]);
   }
   if (withManifest) {
@@ -33,6 +34,57 @@ Directory _pack(
 }
 
 void main() {
+  group('a pack may be m4a or wav', () {
+    // THE BUNDLED PACK IS M4A (32 kbps AAC, 9.5x smaller than the wav it was
+    // cut from, which is the only reason 880 clips fit in an APK). WAV is
+    // every pack pushed by adb before 19 Aug 2026, and two phones carry one.
+    // A migration that silences a pack is exactly the failure the fallbacks
+    // exist to prevent, so both names are tried.
+    const sentence = 'Now approaching Airoli.';
+
+    test('finds the bundled m4a', () {
+      final clips = ClipLibrary.open(
+        _pack({'airoli__approach': sentence}, extension: 'm4a'),
+      );
+      final file = clips!.clipFor(
+        'airoli',
+        ClipKind.approach,
+        expectedSentence: sentence,
+      );
+      expect(file, isNotNull);
+      expect(file!.path, endsWith('.m4a'));
+    });
+
+    test('still finds a pushed wav', () {
+      final clips = ClipLibrary.open(_pack({'airoli__approach': sentence}));
+      final file = clips!.clipFor(
+        'airoli',
+        ClipKind.approach,
+        expectedSentence: sentence,
+      );
+      expect(file, isNotNull);
+      expect(file!.path, endsWith('.wav'));
+    });
+
+    test('a manifest entry with no audio at all is still refused', () {
+      // The manifest is the pack's contract and the file is the pack's
+      // content. A key that has neither name on disk must fall to TTS, not
+      // hand back a File nothing can play.
+      final dir = _pack({'airoli__approach': sentence});
+      File(
+        '${dir.path}${Platform.pathSeparator}airoli__approach.wav',
+      ).deleteSync();
+      expect(
+        ClipLibrary.open(dir)!.clipFor(
+          'airoli',
+          ClipKind.approach,
+          expectedSentence: sentence,
+        ),
+        isNull,
+      );
+    });
+  });
+
   test('template-matching sentences map to their clip kinds', () {
     expect(
       announcementClipKind(

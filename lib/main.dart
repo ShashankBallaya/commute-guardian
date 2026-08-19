@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import 'screens/ride_orchestration.dart';
 import 'screens/preparing_screen.dart';
 import 'screens/travel_mode_screen.dart';
 import 'screens/wake_alert_screen.dart';
+import 'services/bundled_clips.dart';
 import 'services/crash_reporting.dart';
 import 'services/ride_service_client.dart';
 import 'services/wind_down.dart';
@@ -71,6 +73,24 @@ void main() {
   // one, which is the same rule Aptabase's init and the analytics boot already
   // follow.
   unawaited(CrashReporting.startUiIsolate());
+
+  // THE CLIP PACK, WRITTEN OUT OF THE APP ON FIRST LAUNCH. Also after runApp
+  // and also not awaited, for the same reason and one more: this copies
+  // 13.5 MB the first time it runs, and no rider may wait behind a nicer
+  // voice. A ride that starts before it finishes finds no pack and speaks the
+  // identical sentences through device TTS, which is the floor every clip
+  // path already falls back to.
+  //
+  // Logged through dev.log rather than dropped: this is the one place that
+  // can explain why a beta tester's phone is speaking in the wrong voice, and
+  // they cannot be asked to read logcat.
+  unawaited(
+    BundledClips.install().then((lines) {
+      for (final line in lines) {
+        dev.log(line, name: 'clips');
+      }
+    }),
+  );
 }
 
 class CommuteGuardianDebugApp extends StatelessWidget {

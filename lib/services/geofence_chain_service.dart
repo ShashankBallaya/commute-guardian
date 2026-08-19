@@ -18,6 +18,7 @@ import '../models/station.dart';
 import 'analytics.dart';
 import 'announcement_templates.dart';
 import 'audio_session_idle.dart';
+import 'bundled_clips.dart';
 import 'clip_library.dart';
 import 'duck_audio_context.dart';
 import 'player_completion.dart';
@@ -496,28 +497,16 @@ class GeofenceChainService {
     }
 
     if (sarvamClips) {
-      // THE PACK LIVES IN A DIFFERENT PLACE ON EACH PLATFORM, and only
-      // because the platforms offer different adb-and-Finder-reachable spots.
-      // Everything past this line is identical, which is the point: the clip
-      // path was Android-only by ACCIDENT of this one call, not by design.
-      // getExternalStorageDirectory() does not exist on iOS and returns null
-      // there, so the old `&& Platform.isAndroid` guard was really just
-      // guarding a null.
-      //
-      // Android keeps the external files dir it has used since 20 Jul, so
-      // every pack already on a device stays exactly where it is. iOS uses
-      // the app's Documents directory, which is what UIFileSharingEnabled
-      // exposes to Finder and the Apple Devices app: see ios/Runner/Info.plist.
-      final dir = Platform.isAndroid
-          ? await getExternalStorageDirectory()
-          : await getApplicationDocumentsDirectory();
-      // ONE DIRECTORY PER LANGUAGE, named by the same tag FlutterTts is given,
-      // which is what makes a pack physically unable to be played under the
-      // wrong voice: a Hindi ride looks in clips/hi-IN and finds nothing at
-      // all rather than finding English audio that matches no sentence.
+      // ONE RESOLUTION, SHARED WITH THE WRITER. BundledClips unpacks the
+      // in-app pack into this exact directory at launch, so the reader and
+      // the writer must agree on where it is; two copies of a path expression
+      // is a silence waiting to happen. See bundled_clips.dart for why the
+      // two platforms differ (they expose different reachable directories)
+      // and for the per-language subdirectory rule.
+      final dir = await BundledClips.clipsRoot();
       final root = dir == null
           ? null
-          : Directory('${dir.path}/clips/${language.tag}');
+          : Directory('${dir.path}/${language.tag}');
       final clips = root != null && await root.exists()
           ? ClipLibrary.open(root)
           : null;
@@ -527,7 +516,7 @@ class GeofenceChainService {
       } else if (root != null && await root.exists()) {
         _log(
           'CLIPS pack has no readable manifest.json, using device TTS. '
-          'Regenerate with build_clip_pack.py --manifest-only and push it.',
+          'Rebuild it with tool/build_clip_assets.py.',
         );
       } else {
         _log('CLIPS requested but no pack found, using device TTS.');
