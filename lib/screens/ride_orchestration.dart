@@ -79,9 +79,25 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// event log; product screens drop it, because no product screen has one.
   void onOrchestrationLog(String message) {}
 
-  /// Debug bench flags, per Start, handed to the service through the store.
-  /// False here keeps every product Start stock.
-  bool get sarvamGreeting => false;
+  /// TRUE SINCE 19 AUG 2026, and it was the last bench flag left. The Sarvam
+  /// greeting clip has been bundled in the APK since July and had only ever
+  /// played on a ride started from the debug screen, so no rider had heard
+  /// the app's own voice say hello. Turning it on is the same decision that
+  /// was made for the announcements themselves on 13 Aug: the device TTS
+  /// floor is not good enough to be the voice of a product whose job is
+  /// speaking to someone asleep.
+  ///
+  /// Safe unconditionally, for the reason written on sarvamClips below and
+  /// one specific to this clip: `_greetThenSpeak` falls through to the full
+  /// TTS welcome on every failure path, and the route confirmation ("Dadar to
+  /// Kalyan") is spoken by TTS either way, so the clip can only ever replace
+  /// the fixed greeting in front of it. The rider cannot lose the route.
+  ///
+  /// It greets an ENGLISH ANDROID ride only. The clip is English audio, and
+  /// the Android condition is older than the pack work: iOS plays the same
+  /// bundled asset for the alarm and the pulse chime, so lifting it is a
+  /// one-word change that wants its own ride to prove it.
+  bool get sarvamGreeting => true;
 
   /// TRUE SINCE 13 AUG 2026, and no longer a bench flag. The owner asked for
   /// the Sarvam voice on a real ride because the device TTS floor is not good

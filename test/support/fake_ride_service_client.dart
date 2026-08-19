@@ -151,6 +151,12 @@ class FakeRideServiceClient implements RideServiceClient {
   /// read in the UI isolate and has to survive the crossing.
   AppLanguage? languagePassed;
 
+  /// Whether the Sarvam greeting was asked for. Recorded because it was a
+  /// DEBUG BENCH FLAG until 19 Aug 2026: the clip had been bundled in the APK
+  /// since July, was hardcoded false for every product Start, and so had only
+  /// ever been heard on a ride begun from the debug screen.
+  bool? sarvamGreetingPassed;
+
   @override
   Future<bool> startRide({
     required String originStationId,
@@ -168,6 +174,7 @@ class FakeRideServiceClient implements RideServiceClient {
   }) async {
     commands.add('startRide:$originStationId->$destinationStationId');
     languagePassed = language;
+    sarvamGreetingPassed = sarvamGreeting;
     // Recorded so a test can prove the rider's opt-out actually reaches the
     // service isolate, rather than being read in the UI and dropped at the
     // boundary the way the pulse interval once was.

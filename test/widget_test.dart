@@ -1004,6 +1004,14 @@ void main() {
     expect(service.commands, contains('startRide:shahad->thane'));
     expect(service.running, isTrue);
 
+    // THE APP GREETS THE RIDER IN ITS OWN VOICE. False for every product Start
+    // until 19 Aug 2026, which meant the bundled greeting clip had only ever
+    // been heard from the debug screen. Asserted on a real Start rather than
+    // by reading the source, because what matters is that the flag crosses
+    // into the service isolate, which is where the pulse interval was once
+    // silently dropped.
+    expect(service.sarvamGreetingPassed, isTrue);
+
     // AND THE RIDER IS ON THE RIDE. Screen 4, with the ride's own controls.
     expect(find.text('End journey'), findsOneWidget);
     // The offer is gone, because a ride is running rather than because
