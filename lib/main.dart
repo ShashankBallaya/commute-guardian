@@ -148,14 +148,21 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
   /// TTS floor for comparison.
   bool _sarvamGreeting = true;
 
-  /// Debug bench flag, clip slice 2: station announcements play as Sarvam
-  /// clips from the pushed pack (Android only). Same lifecycle as the
-  /// greeting flag: per-Start, default off.
-  bool _sarvamClips = false;
+  /// Station announcements play as Sarvam clips. Defaulted to what a PRODUCT
+  /// Start does, for the same reason as the greeting above.
+  ///
+  /// THIS ONE HAD BEEN WRONG SINCE 13 AUG 2026, longer and more quietly. That
+  /// day `244eefb` made every product ride ask for clips, and this screen kept
+  /// answering false, so a bench started here has been testing the device TTS
+  /// floor while every real ride used the clip path. The two diverged for six
+  /// days and nothing said so, because the log line it changes ("CLIP x.m4a"
+  /// against "SPEAK ...") reads as ordinary either way.
+  bool _sarvamClips = true;
 
-  /// The two bench flags reach the service through [RideOrchestration.start],
-  /// which asks for them rather than knowing about them. A product Start
-  /// answers false to both and stays stock.
+  /// Both flags reach the service through [RideOrchestration.start], which
+  /// asks for them rather than knowing about them. They are no longer bench
+  /// flags: a product Start asks for both, and these switches exist to turn
+  /// them OFF and hear the device TTS floor for comparison.
   @override
   bool get sarvamGreeting => _sarvamGreeting;
   @override

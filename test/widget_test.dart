@@ -184,6 +184,15 @@ void main() {
       find.byKey(const Key('sarvam_greeting_switch')),
     );
     expect(greetingSwitch.value, isTrue);
+
+    // AND THE CLIPS SWITCH, which had been wrong since 13 Aug 2026: that day
+    // every product ride started asking for clips and this screen kept
+    // answering false, so six days of benches exercised the device TTS floor
+    // while every real ride used the clip path.
+    final clipsSwitch = tester.widget<Switch>(
+      find.byKey(const Key('sarvam_clips_switch')),
+    );
+    expect(clipsSwitch.value, isTrue);
   });
 
   testWidgets('picking an origin and destination plans and offers the ride', (
