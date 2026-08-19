@@ -134,9 +134,19 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
   /// a press moves.
   bool _previewWakeEnabled = true;
 
-  /// Debug bench flag: Sarvam clip greets at Start (Android only). Handed to
-  /// the service through the store at Start; default off keeps Start stock.
-  bool _sarvamGreeting = false;
+  /// The Sarvam greeting, defaulted to what a PRODUCT Start now does.
+  ///
+  /// IT USED TO DEFAULT TO FALSE, and that was right while this was a bench
+  /// flag and RideOrchestration.sarvamGreeting was hardcoded false: the switch
+  /// was the only way to turn the clip ON. Since 19 Aug 2026 the product Start
+  /// asks for it, so a false default here made the debug screen the one place
+  /// in the app that does NOT do what a rider gets, on the evening the whole
+  /// point was to bench what a rider gets. Every bench in this project runs
+  /// through this screen.
+  ///
+  /// It stays a switch, now as a way to turn the clip OFF and hear the device
+  /// TTS floor for comparison.
+  bool _sarvamGreeting = true;
 
   /// Debug bench flag, clip slice 2: station announcements play as Sarvam
   /// clips from the pushed pack (Android only). Same lifecycle as the
@@ -880,9 +890,10 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
                         ),
                       ),
                       const SizedBox(width: 8),
-                      // Debug bench flag (Android only): Sarvam clip greets
+                      // The Sarvam greeting (Android only): the clip greets
                       // at Start, TTS still speaks the route line. Applied at
-                      // the next Start; off keeps the Start path stock.
+                      // the next Start. ON by default, matching a product
+                      // Start; switching it off drops to the device TTS floor.
                       // Scaled down because a stock Switch carries a 48px tap
                       // target that does not fit this column.
                       FittedBox(

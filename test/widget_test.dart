@@ -170,17 +170,20 @@ void main() {
     expect(start.enabled, isFalse);
   });
 
-  testWidgets('the Sarvam greeting bench flag exists and defaults OFF', (
+  testWidgets('THE DEBUG SCREEN GREETS THE WAY A PRODUCT START GREETS', (
     tester,
   ) async {
     await _pumpScreen(tester);
 
-    // Off by default is the safety contract: with the switch untouched the
-    // Start path is byte-identical to the proven TTS welcome.
+    // It defaulted to OFF while this was a bench flag and every product Start
+    // was hardcoded false: the switch was the only way to hear the clip. Once
+    // the product Start asked for the greeting (19 Aug 2026), that default
+    // made this screen the ONE place in the app that does not do what a rider
+    // gets, and every bench in this project runs through this screen.
     final greetingSwitch = tester.widget<Switch>(
       find.byKey(const Key('sarvam_greeting_switch')),
     );
-    expect(greetingSwitch.value, isFalse);
+    expect(greetingSwitch.value, isTrue);
   });
 
   testWidgets('picking an origin and destination plans and offers the ride', (
