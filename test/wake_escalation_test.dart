@@ -336,6 +336,155 @@ void main() {
 
       expect(wake.onTick(_t0.add(const Duration(minutes: 30))), isEmpty);
     });
+
+    /// THE 21 AUG 2026 RIDE, which is why the coast is bounded at all.
+    ///
+    /// The 3T lost GPS 15.46 km from Kalyan at 21.9 m/s. That seeded a 706 s
+    /// countdown which then ran, unchecked, for 643 s of blackout and started
+    /// the ladder near Diva: 10.5 km and 12.6 minutes short of the stop. The
+    /// rider woke, acked, and the ack ADVANCED THE CURSOR, so Kalyan was
+    /// resolved and the real alarm could never fire. He reached Kalyan in
+    /// silence.
+    ///
+    /// The journey here is the file's Kalyan -> Digha chain, and the seeding
+    /// fix sits on Kalyan itself: 15.57 km from Digha, within 120 m of the
+    /// real ride's geometry, giving a 711 s seed against the ride's 706 s.
+    group('the coast is bounded, because a stale projection SPENDS the '
+        'alarm', () {
+      WakeEscalation newWake() => WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+
+      void seedFarFix(WakeEscalation wake) => wake.onFix(
+        lat: 19.2358216,
+        lng: 73.1308101,
+        accuracyM: 20,
+        speedMps: 21.9,
+        now: _t0,
+      );
+
+      test('a countdown seeded 711 s out NEVER fires the ladder, however '
+          'long the blackout runs', () {
+        final wake = newWake();
+        seedFarFix(wake);
+
+        // 643 s: the exact coast the 3T ran. The old code computed
+        // 711 - 643 = 68 s remaining, crossed the 90 s window, and woke him.
+        // The tick is not empty (this is the first one past the bound, so it
+        // carries the note), but it makes NO SOUND, which is the claim.
+        final coasted = wake.onTick(_t0.add(const Duration(seconds: 643)));
+        expect(coasted.whereType<Speak>(), isEmpty);
+        expect(coasted.whereType<Tone>(), isEmpty);
+        expect(wake.isLadderLive, isFalse);
+
+        // And it stays dead however long the fixes stay away. The ladder is
+        // not lost, it is WAITING: a station event still arms it, which is
+        // what actually happened at Thakurli on the iPhone the same ride.
+        expect(wake.onTick(_t0.add(const Duration(minutes: 30))), isEmpty);
+        expect(wake.isLadderLive, isFalse);
+
+        final armed = wake.onStationEvent(
+          _arrival('thane'),
+          _t0.add(const Duration(minutes: 30)),
+        );
+        expect(armed.whereType<Speak>(), hasLength(1));
+        expect(wake.isLadderLive, isTrue);
+      });
+
+      test('abandoning the projection says so in the log, ONCE, not once a '
+          'tick', () {
+        final wake = newWake();
+        seedFarFix(wake);
+
+        // Inside the bound: nothing to say yet.
+        expect(wake.onTick(_t0.add(const Duration(seconds: 180))), isEmpty);
+
+        final crossing = wake.onTick(_t0.add(const Duration(seconds: 181)));
+        expect(crossing, hasLength(1));
+        expect(crossing.single, isA<WakeNote>());
+        expect(
+          (crossing.single as WakeNote).message,
+          contains('dead reckoning abandoned'),
+        );
+
+        // Every later tick of the same blackout is silent. This engine ticks
+        // for as long as the fixes stay away, and a line per tick would bury
+        // the ride log the note exists to explain.
+        for (var s = 182; s < 200; s++) {
+          expect(wake.onTick(_t0.add(Duration(seconds: s))), isEmpty);
+        }
+      });
+
+      test('a second blackout is reported again: the note follows the '
+          'FIXES, not the ride', () {
+        final wake = newWake();
+        seedFarFix(wake);
+        expect(
+          wake.onTick(_t0.add(const Duration(seconds: 181))).single,
+          isA<WakeNote>(),
+        );
+
+        // GPS comes back far from the target, then dies again.
+        wake.onFix(
+          lat: 19.2358216,
+          lng: 73.1308101,
+          accuracyM: 20,
+          speedMps: 21.9,
+          now: _t0.add(const Duration(seconds: 300)),
+        );
+        expect(wake.onTick(_t0.add(const Duration(seconds: 480))), isEmpty);
+        expect(
+          wake.onTick(_t0.add(const Duration(seconds: 481))).single,
+          isA<WakeNote>(),
+        );
+      });
+
+      test('THE BOUND CAN STILL FAIL TO WITHHOLD: a blackout in the final '
+          'approach fires exactly as before', () {
+        // The pair that proves the bound is a bound and not an off switch.
+        // Mumbra is 3188 m from Digha. At 12 m/s that is a 266 s seed, which
+        // crosses the 90 s lead window at 176 s of staleness, INSIDE the
+        // 180 s coast. This is what dead reckoning is for.
+        final wake = newWake();
+        wake.onFix(
+          lat: 19.18979,
+          lng: 73.02325,
+          accuracyM: 20,
+          speedMps: 12,
+          now: _t0,
+        );
+
+        expect(wake.onTick(_t0.add(const Duration(seconds: 175))), isEmpty);
+        final fired = wake.onTick(_t0.add(const Duration(seconds: 176)));
+        expect(fired.whereType<Speak>(), hasLength(1));
+        expect(wake.isLadderLive, isTrue);
+      });
+
+      test('and the same approach at 11.5 m/s is withheld, because the '
+          'crossing falls 7 s past the bound', () {
+        // The other half of the pair. Identical position, 0.5 m/s slower: a
+        // 277 s seed crossing at 187 s of staleness, just outside the coast.
+        // Nothing about this test differs except the number the bound tests.
+        final wake = newWake();
+        wake.onFix(
+          lat: 19.18979,
+          lng: 73.02325,
+          accuracyM: 20,
+          speedMps: 11.5,
+          now: _t0,
+        );
+
+        expect(wake.onTick(_t0.add(const Duration(seconds: 180))), isEmpty);
+        expect(
+          wake.onTick(_t0.add(const Duration(seconds: 181))).single,
+          isA<WakeNote>(),
+        );
+        expect(wake.onTick(_t0.add(const Duration(seconds: 188))), isEmpty);
+        expect(wake.isLadderLive, isFalse);
+      });
+    });
   });
 
   group('calls suspend the wake clock', () {

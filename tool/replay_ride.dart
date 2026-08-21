@@ -131,13 +131,16 @@ void main(List<String> args) {
 
   void printWake(List<WakeAction> actions, DateTime at) {
     for (final action in actions) {
-      wakeActions++;
+      // A note makes no sound, so it must not inflate the wake-action count
+      // the summary line reports. Same rule WindDownNote already follows.
+      if (action is! WakeNote) wakeActions++;
       final line = switch (action) {
         Speak(:final text) => 'speak     $text',
         Tone(:final volume) => 'tone      ${volume.toStringAsFixed(1)}',
         StopTone() => 'stop-tone',
         Vibrate() => 'vibrate',
         HardStop() => 'HARD STOP (ceiling)',
+        WakeNote(:final message) => 'note      $message',
       };
       stdout.writeln('${stamp(at)}  WAKE      $line');
     }

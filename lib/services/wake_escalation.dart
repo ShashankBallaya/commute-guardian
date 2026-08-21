@@ -39,6 +39,18 @@ class HardStop extends WakeAction {
   const HardStop();
 }
 
+/// Something the ride log should record, with no sound attached.
+///
+/// Patterned on `PulseNote`. The engine is platform-free and owns no logger,
+/// but a decision NOT to alarm is exactly the kind of silence that looks
+/// identical to a working ride unless something writes it down. See
+/// [WakeEscalation.maxDeadReckonCoast], whose whole purpose is to withhold a
+/// ladder, and which would otherwise withhold it invisibly.
+class WakeNote extends WakeAction {
+  const WakeNote(this.message);
+  final String message;
+}
+
 /// Buzz insistently. Honoured on BOTH platforms since 12 Aug 2026
 /// (`docs/adr/0003`); the iOS shell used to ignore it.
 ///
@@ -127,6 +139,30 @@ class WakeEscalation {
   /// such fixes are skipped rather than misread.
   static const minSpeedMps = 0.5;
 
+  /// How long the dead-reckoning countdown in [onTick] may coast on a single
+  /// fix before it stops being evidence.
+  ///
+  /// THE ETA IS A STRAIGHT LINE OVER ONE INSTANT'S SPEED, and both terms decay
+  /// the moment fixes stop. Rail distance exceeds the straight line, and a
+  /// train sheds that speed at every station in between. Neither error is
+  /// visible to a countdown that just subtracts wall-clock seconds, so the
+  /// longer it coasts the more confidently wrong it gets.
+  ///
+  /// SIZED FROM THE 21 AUG 2026 RIDE, where it ran unbounded. The 3T lost GPS
+  /// 15.46 km from Kalyan while doing 21.9 m/s, which seeded a 706 s
+  /// countdown. It then coasted 643 s through a 10.7 minute blackout and
+  /// started the ladder 10.5 km and 12.6 minutes short of the stop. The rider
+  /// was woken near Diva, acked, and THAT ACK RESOLVED KALYAN: the cursor
+  /// advanced, so the real alarm could never fire. An early ladder does not
+  /// merely annoy, it SPENDS the alarm. That is why this bound is safety, not
+  /// polish.
+  ///
+  /// 180 s still covers what dead reckoning is for, a blackout in the final
+  /// approach: it admits any last fix whose own ETA was under 270 s, which is
+  /// [leadTimeS] plus the coast. Beyond that the ladder waits for a real
+  /// station event, and [WakeNote] says in the log that it did.
+  static const maxDeadReckonCoast = Duration(seconds: 180);
+
   /// The critical stations (locked decision 6: the rider's destination plus
   /// the interchanges THEIR route requires, nothing else), one ladder each,
   /// armed in chain order. [interchangeStationIds] comes from the planner
@@ -143,6 +179,10 @@ class WakeEscalation {
   bool _ladderLive = false;
   int _rung = 0;
   DateTime? _nextTransitionAt;
+
+  /// Whether the current blackout has already had its [WakeNote]. Cleared by
+  /// the next usable fix, so a ride that blacks out twice says so twice.
+  bool _deadReckonAbandoned = false;
 
   /// Seed for the dead-reckoning timer (decision 5's blackout leg): the ETA
   /// computed at the last usable fix and when that fix landed, so [onTick]
@@ -302,6 +342,8 @@ class WakeEscalation {
     final etaS = _distanceM(lat, lng, _target.lat, _target.lng) / speedMps;
     _lastFixAt = now;
     _lastEtaS = etaS;
+    // A usable fix ends the blackout, so the next one may be reported.
+    _deadReckonAbandoned = false;
     // Mid-call the seed still updates (silent, not deaf, so hang-up
     // re-syncs against the freshest position), but no ladder starts into
     // the rider's conversation.
@@ -497,8 +539,30 @@ class WakeEscalation {
     // Dead-reckoning: no ladder yet, but the countdown seeded by the last
     // usable fix keeps running through a blackout. A train that was 200
     // seconds from the stop when GPS died is still arriving.
+    //
+    // BOUNDED SINCE 21 AUG 2026. The seed is only evidence while it is fresh;
+    // see [maxDeadReckonCoast] for the ride that proved what happens when it
+    // is not. Past the bound the ladder waits for a real station event, which
+    // is what the other two legs of the trigger are for.
     if (!_ladderLive && _hasTarget && _lastFixAt != null) {
-      final remainingS = _lastEtaS! - now.difference(_lastFixAt!).inSeconds;
+      final staleness = now.difference(_lastFixAt!);
+      if (staleness > maxDeadReckonCoast) {
+        // Once per blackout, on the crossing, not on every tick: this path
+        // runs at tick cadence for as long as the fixes stay away, and a line
+        // per tick would bury the ride log it is meant to explain.
+        if (!_deadReckonAbandoned) {
+          _deadReckonAbandoned = true;
+          return [
+            WakeNote(
+              'WAKE dead reckoning abandoned: last usable fix '
+              '${staleness.inSeconds}s old, projection no longer trusted. '
+              'The ladder now waits for a station event.',
+            ),
+          ];
+        }
+        return const [];
+      }
+      final remainingS = _lastEtaS! - staleness.inSeconds;
       if (remainingS <= leadTimeS) {
         return _startLadder(now);
       }
