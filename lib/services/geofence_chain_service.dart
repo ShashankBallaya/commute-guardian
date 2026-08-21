@@ -548,7 +548,18 @@ class GeofenceChainService {
     // error also release the waiter, and logging a duration for either would
     // report speech that did not happen.
     _tts.setCompletionHandler(_noteSpeechFinished);
-    _tts.setCancelHandler(_finishUtterance);
+    // LOGGED, added 21 Aug 2026, and it is an instrument rather than a fix.
+    // The whole Kalyan silence rests on iOS firing NEITHER didFinish nor
+    // didCancel when the session moves under a live utterance, and nothing in
+    // the log could tell "no callback came" from "a cancel came and we ignored
+    // it". The stand-down now calls _tts.stop() first, and this line is how the
+    // next bench says whether that produced a real cancel or whether the
+    // identical() guard in _releaseLadderAudio did the releasing. One line, on
+    // a path that fires at most once per ladder.
+    _tts.setCancelHandler(() {
+      _log('VOICE cancelled by us.');
+      _finishUtterance();
+    });
     _tts.setErrorHandler((dynamic message) {
       _log('Announcement error: $message');
       _finishUtterance();
