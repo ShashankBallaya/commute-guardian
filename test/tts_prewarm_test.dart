@@ -81,9 +81,31 @@ void main() {
     // evidence there was none.
     expect(source, contains('_tts.setStartHandler(_noteSpeechStarted)'));
     expect(source, contains('VOICE started'));
-    // Stamped on BOTH platform branches of _speak, or the number is missing on
-    // exactly the platform nobody is looking at. String implements Pattern, so
-    // this is the built-in allMatches.
-    expect('_spokenAt = DateTime.now();'.allMatches(source).length, 2);
+
+    // ONE STAMP, ABOVE THE PLATFORM BRANCH.
+    //
+    // This used to assert TWO, because `_spokenAt` was set separately inside
+    // the Android arm and the iOS arm, and the risk being guarded was that a
+    // later edit would drop one and leave the number missing on exactly the
+    // platform nobody was looking at. The 21 Aug 2026 fix for the Kalyan
+    // announcer wedge hoisted the stamp (and the completer, and the bounded
+    // wait) out of the branch entirely, which removes that risk by
+    // construction rather than by counting. The property is now the stronger
+    // one: it is stamped once, unconditionally, on every path.
+    //
+    // String implements Pattern, so this is the built-in allMatches.
+    expect('_spokenAt = DateTime.now();'.allMatches(source).length, 1);
+
+    final speakNow = source.substring(
+      source.indexOf('Future<void> _speakNow(String text) async {'),
+    );
+    final stamp = speakNow.indexOf('_spokenAt = DateTime.now();');
+    final branch = speakNow.indexOf('if (Platform.isAndroid)');
+    expect(stamp, greaterThan(-1));
+    expect(
+      stamp,
+      lessThan(branch),
+      reason: 'a stamp inside one arm reports the latency of one platform',
+    );
   });
 }

@@ -1186,34 +1186,62 @@ class GeofenceChainService {
         // window opens here rather than after the utterance starts.
         _selfInterruption.noteOwnAudioStarted(DateTime.now());
         await _session?.setActive(true);
+        // Wait for the ENGINE to say it has finished, not for speak() to
+        // return, because under QUEUE_ADD those are not the same moment and
+        // the difference is the whole ducking bug. Bounded: the longest
+        // interchange script runs about 8 s at rate 0.45 and the welcome about
+        // 14 s, and a TTS engine that never reports completion must not wedge
+        // every later announcement of the ride behind it.
+        //
+        // BOTH PLATFORMS SINCE 21 AUG 2026, and iOS is the one that needed it.
+        // The wait used to be Android-only, on the reasoning that iOS honours
+        // awaitSpeakCompletion and could simply be awaited. It does, until the
+        // utterance is killed rather than finished: on the 21 Aug ride the
+        // rider acked the Kalyan ladder MID-SENTENCE, standing it down
+        // reconfigured the audio session under a live AVSpeechSynthesizer, and
+        // iOS fired neither didFinish nor didCancel. The speak() future never
+        // completed, so `_audioChain` wedged and `_pendingSpeaks` stuck at 1.
+        // Every announcement for the remaining nine minutes of the ride was
+        // queued and never spoken: the arrival at the destination, the
+        // wind-down, and the farewell. The log's only trace was one line,
+        // `PULSE slot abandoned: announcer busy 60s`.
+        final done = Completer<void>();
+        _utteranceDone = done;
+        _spokenAt = DateTime.now();
+        _utteranceTimedOut = false;
         if (Platform.isAndroid) {
-          // Wait for the ENGINE to say it has finished, not for speak() to
-          // return, because under QUEUE_ADD those are not the same moment and
-          // the difference is the whole ducking bug. Bounded: the longest
-          // interchange script runs about 8 s at rate 0.45, and a TTS engine
-          // that never reports completion must not wedge every later
-          // announcement of the ride behind it.
-          final done = Completer<void>();
-          _utteranceDone = done;
-          _spokenAt = DateTime.now();
-          _utteranceTimedOut = false;
           await _tts.speak(text);
-          await done.future.timeout(
-            const Duration(seconds: 20),
-            onTimeout: () {
-              _log('Announcement completion never arrived, continuing.');
-              _utteranceTimedOut = true;
-              if (identical(_utteranceDone, done)) _utteranceDone = null;
-            },
-          );
         } else {
-          _spokenAt = DateTime.now();
-          await _tts.speak(text);
+          // NOT AWAITED ON iOS, and that is the fix rather than an oversight.
+          // With awaitSpeakCompletion(true) this future resolves from the same
+          // didFinish/didCancel that feed `done`, so awaiting it adds nothing
+          // the completer does not already give us, and it is precisely what
+          // hangs when neither callback fires. The timeout below can only
+          // rescue the chain if nothing upstream of it can block forever.
+          unawaited(
+            _tts.speak(text).catchError((Object error) {
+              _log('Announcement failed: $error');
+              _finishUtterance();
+              return 0;
+            }),
+          );
         }
+        await done.future.timeout(
+          const Duration(seconds: 20),
+          onTimeout: () {
+            _log('Announcement completion never arrived, continuing.');
+            _utteranceTimedOut = true;
+            if (identical(_utteranceDone, done)) _utteranceDone = null;
+          },
+        );
       } catch (error) {
         // Swallowed so one failed announcement cannot poison the chain and
         // silence every announcement after it for the rest of the ride.
         _log('Announcement failed: $error');
+        // Release the waiter too. Swallowing the error kept the CHAIN alive
+        // but left a completer that no callback will ever complete, which is
+        // the same wedge by a slower route.
+        _finishUtterance();
       } finally {
         _pendingSpeaks--;
         await _releaseAudioSessionIfIdle();
@@ -1592,6 +1620,10 @@ class GeofenceChainService {
   void _handleWakeActions(List<WakeAction> actions) {
     for (final action in actions) {
       switch (action) {
+        case WakeNote(:final message):
+          // Log only. The engine uses this to record a decision that makes NO
+          // sound, which is the only kind a ride log cannot otherwise show.
+          _log(message);
         case Speak(:final text):
           _log('WAKE speak: $text');
           unawaited(_speak(text));
