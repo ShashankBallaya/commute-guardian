@@ -126,18 +126,83 @@ void main() {
     );
   });
 
-  test('the timeout still fits the longest real announcement', () {
-    // The welcome ran 14046 ms on the 21 Aug ride and the Dadar interchange
-    // script 10471 ms. A bound below either would cut the sentence the rider
-    // most needs. This pins the headroom, not the number.
+  test('the timeout still clears the longest real announcement', () {
+    // MEASURED, NOT GUESSED. The welcome ran 14046 ms on the 21 Aug iPhone
+    // ride, 17380 ms on the 3T for Shahad to Kalyan, and 19186 ms on the 3T
+    // for Titwala to Kalyan, where it tripped the old 20 s bound 400 ms before
+    // the engine's own completion landed. A wait that gives up on a HEALTHY
+    // utterance releases the audio session mid-sentence, so the bound must sit
+    // clear of the longest real line, not just above it.
     final match = RegExp(
-      r'done\.future\.timeout\(\s*const Duration\(seconds: (\d+)\)',
+      r'done\.future\.timeout\(\s*(?://[^\n]*\n\s*)*const Duration\(seconds: (\d+)\)',
     ).firstMatch(speakNow);
     expect(match, isNotNull, reason: 'the bound is no longer a plain Duration');
     expect(
       int.parse(match!.group(1)!),
-      greaterThanOrEqualTo(20),
-      reason: 'the welcome alone speaks for 14.0 s',
+      greaterThanOrEqualTo(25),
+      reason: 'the longest measured welcome is 19.2 s, and 20 s already fired '
+          'on a healthy utterance',
     );
+  });
+
+  group('standing the ladder down', () {
+    late String release;
+
+    setUpAll(() {
+      final start = source.indexOf('Future<void> _releaseLadderAudio() async {');
+      expect(start, greaterThan(-1), reason: '_releaseLadderAudio is gone');
+      final end = source.indexOf('\n  }', start);
+      release = source.substring(start, end);
+      expect(
+        release,
+        contains('_finishUtterance()'),
+        reason: 'the window no longer reaches the end of the method',
+      );
+    });
+
+    test('THE WORDS STOP BEFORE THE SESSION MOVES', () {
+      // The 21 Aug evening bench in one property. Reconfiguring the session
+      // under a live utterance kills the iOS synthesizer: the ack landed 3.9 s
+      // into the check-in, the bounded wait gave up on schedule at 20.0 s, and
+      // the NEXT line produced no `VOICE started` at all. A queue that
+      // advances in silence is not a working announcer.
+      final stop = release.indexOf('_tts.stop()');
+      final configure = release.indexOf('_session?.configure(');
+      expect(stop, greaterThan(-1), reason: 'the ladder line is never stopped');
+      expect(configure, greaterThan(-1), reason: 'the profile is never restored');
+      expect(
+        stop,
+        lessThan(configure),
+        reason: 'reconfiguring under a live utterance is the defect itself',
+      );
+    });
+
+    test('the waiter is released LAST, after the profile is back', () {
+      // Completing the waiter lets the queue advance. If that happens before
+      // the duck profile is restored, the next line starts speaking into the
+      // very reconfigure that just killed this one, and the bug simply moves
+      // one announcement down the queue.
+      final configure = release.indexOf('_session?.configure(');
+      final finish = release.indexOf('_finishUtterance()');
+      expect(finish, greaterThan(-1));
+      expect(
+        finish,
+        greaterThan(configure),
+        reason: 'releasing the queue before the profile is back just moves '
+            'the failure to the next announcement',
+      );
+    });
+
+    test('the release is guarded by identical, not by a null check', () {
+      // `_tts.stop()` fires the cancel handler on some platforms, which
+      // already released this waiter and let the queue move on to a NEW
+      // utterance. Completing blindly would cut that innocent next line off
+      // before it had spoken a word: the fix causing the bug it fixes.
+      expect(
+        release,
+        contains('identical(_utteranceDone, waiter)'),
+        reason: 'a bare null check here can cut off the next announcement',
+      );
+    });
   });
 }

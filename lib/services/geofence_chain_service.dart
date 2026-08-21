@@ -903,7 +903,34 @@ class GeofenceChainService {
   /// announcement ducks the rider's music instead of interrupting it, then
   /// release the session so the music comes back at all.
   Future<void> _releaseLadderAudio() async {
+    // THE ORDER OF THESE FOUR STEPS IS THE WHOLE FIX, 21 Aug 2026 (evening).
+    //
+    // Reconfiguring the session UNDER A LIVE UTTERANCE is what kills the iOS
+    // synthesizer. The 21 Aug morning ride showed the symptom (an ack
+    // mid-sentence silenced the rest of the journey) and the bounded wait
+    // added that afternoon rescued the QUEUE but not the SOUND: the bench that
+    // evening acked 3.9 s into the check-in, the wait gave up on schedule at
+    // 20.0 s, and the very next line, "Good, you are awake", produced no
+    // `VOICE started` either. A queue that advances every 20 s in silence is
+    // not a working announcer.
+    //
+    // So: stop the words, THEN move the session, THEN release the waiter.
+    // The waiter goes last on purpose. Completing it lets the queue advance,
+    // and the next line must not start speaking until the duck profile is back
+    // in place, or it walks straight into the reconfigure that just killed
+    // this one.
+    final waiter = _utteranceDone;
     try {
+      if (waiter != null) {
+        // Stopping is also the right PRODUCT behaviour, not only the fix. The
+        // rider pressed the button. Finishing the sentence that asks them to
+        // press the button is nagging someone who already answered.
+        try {
+          await _tts.stop();
+        } catch (error) {
+          _log('Could not stop the ladder line: $error');
+        }
+      }
       await _session?.configure(_duckProfile);
       // Through the shared idle test, which also counts clips. This used to
       // check _pendingSpeaks alone, so a clip playing as the ladder stood down
@@ -912,6 +939,15 @@ class GeofenceChainService {
       _log('WAKE audio: session handed back.');
     } catch (error) {
       _log('Could not restore the announcement audio profile: $error');
+    } finally {
+      // `identical`, NOT a null check. `_tts.stop()` fires the cancel handler
+      // on some platforms, which already released this waiter and let the
+      // queue move on to a NEW utterance. Completing blindly here would then
+      // cut that innocent next line off before it had spoken a word.
+      if (waiter != null && identical(_utteranceDone, waiter)) {
+        _log('WAKE audio: ladder line cut short by the ack.');
+        _finishUtterance();
+      }
     }
   }
 
@@ -1227,7 +1263,15 @@ class GeofenceChainService {
           );
         }
         await done.future.timeout(
-          const Duration(seconds: 20),
+          // 30, NOT 20, RAISED 21 Aug 2026 BY A FALSE POSITIVE ON THE 3T.
+          // The Titwala welcome spoke for 19186 ms and the 20 s bound fired
+          // 400 ms before the engine's own completion arrived. Nothing was
+          // wrong: the sentence is simply that long at rate 0.45. A wait that
+          // gives up on a HEALTHY utterance releases the audio session while
+          // the words are still coming out, which is the 30 Jul 2026 duck bug
+          // wearing a new hat. The bound exists for an engine that has died,
+          // and 30 s clears the longest real line by a comfortable margin.
+          const Duration(seconds: 30),
           onTimeout: () {
             _log('Announcement completion never arrived, continuing.');
             _utteranceTimedOut = true;
