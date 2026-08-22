@@ -16,18 +16,26 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-# THE BUILD NUMBER IS 2003 AND IT ONLY EVER GOES UP.
+# THE BUILD NUMBER IS THE versionCode ANDROID INSTALLS, AND IT ONLY GOES UP.
 #
-# It was `+1` until 22 Aug 2026, while the phone in this room ran an APK with
-# versionCode 2002 from a one-off `--build-number 2002` on somebody's command
-# line. Android refuses a lower versionCode as a downgrade, so a plain build
-# from this tree could not be installed over it at all, and the app reported a
-# version it was not.
+# It was `+1` for a year while the phone in this room ran versionCode 2002, and
+# the reason is NOT a stray `--build-number` on somebody's command line. Flutter
+# rewrites the versionCode when an APK is split per ABI:
+# `abiVersionCode * 1000 + versionCode`, arm64 being 2 (FlutterPlugin.kt). So
+# `+2` built with `--split-per-abi` installed as 2002.
 #
-# Bump this line for every build a tester is given. `tool/build_apk.ps1` reads
-# it, gradle reads it (`versionCode = flutter.versionCode`), and the app reads
-# it back through BuildInfo, so all three agree by construction.
-version: 1.0.0+2003
+# That offset is exactly the lie this project has just spent a day removing: the
+# app can only print the number in this line, and Android would install a
+# different one. So `tool/build_apk.ps1` builds ONE ABI with --target-platform
+# and never splits, and then the two numbers are the same number.
+#
+# 4004 because the 3T already carries 4003, from the one split build made while
+# this was being worked out. Android refuses anything lower as a downgrade.
+#
+# Bump this line for every build a tester is given. The script reads it, gradle
+# reads it (`versionCode = flutter.versionCode`), and the app reads it back
+# through BuildInfo, so all three agree by construction.
+version: 1.0.0+4004
 
 environment:
   sdk: ^3.12.2

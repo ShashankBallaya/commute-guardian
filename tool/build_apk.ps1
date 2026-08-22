@@ -19,14 +19,27 @@
 # sha that names a commit the build does not match is worse than no sha: it
 # invites reading a diff that was never in the binary.
 #
+# ONE ABI PER BUILD, AND NEVER --split-per-abi. Splitting makes Flutter rewrite
+# the versionCode as `abiVersionCode * 1000 + versionCode` (arm64 is 2), so a
+# pubspec saying 2003 installs as 4003 and the version line inside the app is
+# wrong again in a new way. This is where the 3T's mysterious "2002" came from:
+# `+2`, split, arm64. Building one ABI leaves the number alone.
+#
+# When Play delivery arrives it wants an app bundle, which solves the same
+# problem its own way. Revisit this then, not before.
+#
 # Signing is unchanged and still the DEBUG KEY (android/app/build.gradle.kts).
 # So every rebuild a tester gets must come from THIS machine, and uninstalling
 # wipes their ride history.
 
 param(
+  [ValidateSet("arm64-v8a", "armeabi-v7a")]
   [string]$Abi = "arm64-v8a",
   [string]$OutDir = "$env:USERPROFILE\Downloads"
 )
+
+# What --target-platform calls the same two things.
+$targets = @{ "arm64-v8a" = "android-arm64"; "armeabi-v7a" = "android-arm" }
 
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)
@@ -60,11 +73,12 @@ if (Test-Path secrets.json) {
 }
 
 Write-Host "Building $version+$buildNumber ($sha) for $Abi ..." -ForegroundColor Cyan
-& flutter build apk --release --split-per-abi @defines
+$target = $targets[$Abi]
+& flutter build apk --release --target-platform $target @defines
 if ($LASTEXITCODE -ne 0) { throw "flutter build apk failed with $LASTEXITCODE." }
 
-$built = "build\app\outputs\flutter-apk\app-$Abi-release.apk"
-if (-not (Test-Path $built)) { throw "No APK at $built. Was $Abi built?" }
+$built = "build\app\outputs\flutter-apk\app-release.apk"
+if (-not (Test-Path $built)) { throw "No APK at $built." }
 
 $target = Join-Path $OutDir "commute_guardian-$Abi-$sha.apk"
 Copy-Item $built $target -Force
@@ -80,3 +94,5 @@ Write-Host "  $target" -ForegroundColor Green
 Write-Host "  md5 $hash"
 Write-Host "  $size MB"
 Write-Host "  Settings will read: Commute Guardian $version ($buildNumber) $sha"
+Write-Host "  Android will install versionCode $buildNumber. If those two ever"
+Write-Host "  differ, something split the APK per ABI. See pubspec.yaml."
