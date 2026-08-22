@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../models/app_settings.dart';
 import '../models/journey.dart';
 import '../services/analytics.dart';
+import '../services/build_info.dart';
 import '../services/permissions_gateway.dart';
 import '../services/ride_resume.dart';
 import '../services/ride_service_client.dart';
@@ -1271,7 +1272,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             return SettingsScreen(
               settings: settings,
               availableLanguages: languages,
-              versionLine: 'Commute Guardian 1.0.0 (1)',
+              versionLine: BuildInfo.versionLine,
               readiness: readinessRows(
                 ref.watch(travelReadinessProvider).valueOrNull,
                 // Re-read after the rider comes back from wherever the Fix

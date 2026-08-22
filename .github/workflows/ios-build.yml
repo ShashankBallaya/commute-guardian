@@ -114,11 +114,26 @@ jobs:
       # public. An empty secret still builds, because that is what a fork gets,
       # and the step above is what stops it being a surprise. Both values arrive
       # from GITHUB_ENV, set by that step.
+      # WHICH COMMIT IS IN THIS IPA. CI builds from ORIGIN, so what it built is
+      # whatever was pushed, which on 13 Aug 2026 was the PREVIOUS commit while
+      # the artifact went out under the new commit's name. The sha goes into the
+      # binary (BuildInfo, read on the Settings screen) AND into the file name
+      # below, from this one variable, so the two cannot disagree.
+      - name: Name this build
+        run: |
+          echo "BUILD_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          V=$(sed -n 's/^version: *//p' pubspec.yaml)
+          echo "BUILD_VERSION=${V%%+*}" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=${V##*+}" >> "$GITHUB_ENV"
+
       - name: Build with the Sentry DSN and the Aptabase key
         run: >
           flutter build ios --release --no-codesign
           --dart-define=SENTRY_DSN="$SENTRY_DSN"
           --dart-define=APTABASE_APP_KEY="$APTABASE_APP_KEY"
+          --dart-define=BUILD_SHA="$BUILD_SHA"
+          --dart-define=BUILD_VERSION="$BUILD_VERSION"
+          --dart-define=BUILD_NUMBER="$BUILD_NUMBER"
 
       # Package Runner.app into an unsigned IPA that Sideloadly / AltStore
       # can re-sign with a free Apple ID on Windows.
@@ -127,10 +142,12 @@ jobs:
           mkdir -p build/ios/iphoneos/Payload
           cp -r build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/
           cd build/ios/iphoneos
-          zip -qr commute_guardian_unsigned.ipa Payload
+          zip -qr "commute_guardian_unsigned-$BUILD_SHA.ipa" Payload
+          IPA="commute_guardian_unsigned-$BUILD_SHA.ipa"
+          echo "IPA $IPA, md5 $(md5 -q "$IPA")" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: commute-guardian-unsigned-ipa
-          path: build/ios/iphoneos/commute_guardian_unsigned.ipa
+          name: commute-guardian-unsigned-ipa-${{ env.BUILD_SHA }}
+          path: build/ios/iphoneos/commute_guardian_unsigned-*.ipa
           retention-days: 14
