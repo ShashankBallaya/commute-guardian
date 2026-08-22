@@ -9,6 +9,7 @@ import '../models/app_settings.dart';
 import '../models/journey.dart';
 import '../services/analytics.dart';
 import '../services/build_info.dart';
+import '../services/ride_log_export.dart';
 import '../services/permissions_gateway.dart';
 import '../services/ride_resume.dart';
 import '../services/ride_service_client.dart';
@@ -1256,6 +1257,27 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// and survives a restart. SO ARE THE READINESS ROWS since 12 Aug 2026; they
   /// were three hardcoded literals before that, on the card this app puts first
   /// because OEM battery kills are its own named top product risk.
+  /// Hands the rider's recent ride logs to the share sheet.
+  ///
+  /// [context] is the SETTINGS route's own context, not the host screen's: the
+  /// message has to land on the screen the rider is looking at, and the iPad
+  /// popover has to be anchored to something that is on screen.
+  Future<void> sendRideLog(BuildContext context) async {
+    // Captured BEFORE the await. The share sheet can sit open for as long as
+    // the rider takes to pick an app, and reading `context` after that is the
+    // lint this project has been bitten by elsewhere.
+    final messenger = ScaffoldMessenger.of(context);
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box == null || !box.hasSize
+        ? null
+        : box.localToGlobal(Offset.zero) & box.size;
+
+    final problem = await const RideLogExport().share(origin: origin);
+    if (problem == null) return;
+    onOrchestrationLog('Ride log share: $problem');
+    messenger.showSnackBar(SnackBar(content: Text(problem)));
+  }
+
   Future<void> openSettings() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -1304,6 +1326,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
               onShareAnonymousUsage: notifier.setShareAnonymousUsage,
               onLanguage: notifier.setLanguage,
               onVersionLongPress: debugDoor,
+              onSendRideLog: () => sendRideLog(context),
             );
           },
         ),

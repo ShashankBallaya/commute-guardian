@@ -72,6 +72,7 @@ class SettingsScreen extends StatelessWidget {
     required this.onLanguage,
     this.onPreviewPulse,
     this.onVersionLongPress,
+    this.onSendRideLog,
   });
 
   final AppSettings settings;
@@ -93,6 +94,10 @@ class SettingsScreen extends StatelessWidget {
   final ValueChanged<bool> onShareAnonymousUsage;
   final ValueChanged<AppLanguage> onLanguage;
   final VoidCallback? onPreviewPulse;
+
+  /// Opens the share sheet on the rider's recent ride logs. Null hides the row
+  /// entirely, which is what a widget test that does not care gets.
+  final VoidCallback? onSendRideLog;
 
   /// The way back to the debug screen, hidden under a long press on the version
   /// line, which is where a dev door has always belonged and where no rider will
@@ -124,6 +129,10 @@ class SettingsScreen extends StatelessWidget {
                   _announcementsCard(),
                   const SizedBox(height: 16),
                   _privacyCard(),
+                  if (onSendRideLog != null) ...[
+                    const SizedBox(height: 16),
+                    _rideLogCard(),
+                  ],
                   const SizedBox(height: 20),
                   Center(
                     child: GestureDetector(
@@ -301,6 +310,51 @@ class SettingsScreen extends StatelessWidget {
         value: settings.shareAnonymousUsage,
         onChanged: onShareAnonymousUsage,
         switchKey: const Key('settings_share_usage'),
+      ),
+    ],
+  );
+
+  /// THE ONLY WAY A RIDE THAT WENT WRONG ON SOMEBODY ELSE'S PHONE CAN REACH US.
+  ///
+  /// It sits next to Privacy and directly above the version line, which is the
+  /// pair a support conversation needs: what the app did, and which build did
+  /// it. See RideLogExport for why a share sheet and not a folder.
+  ///
+  /// THE SUBTITLE SAYS WHAT IS IN THE FILE BEFORE THE RIDER SENDS IT. The log
+  /// names every station they passed and when. That is theirs, this screen
+  /// gives it away in one tap, and the Privacy card one above promises we never
+  /// take where they travel. The promise holds only because THEY choose the
+  /// share, so the sentence that tells them what they are choosing is not
+  /// optional copy.
+  Widget _rideLogCard() => _Card(
+    title: 'Ride log',
+    subtitle:
+        'If a station was missed or the alarm did not wake you, send this '
+        'and we can see what the app did. It lists the stations you passed '
+        'and the times.',
+    children: [
+      Pressable(
+        key: const Key('settings_send_ride_log'),
+        onTap: onSendRideLog!,
+        child: Padding(
+          // 14 rather than the 10 used above it, to clear the 48 dp touch
+          // floor on its own. A guard test in settings_screen_test holds it.
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Send the last ride log',
+                  style: TextStyle(
+                    fontSize: TypeScale.body,
+                    color: Palette.text,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right, size: 18, color: Palette.textDim(0.45)),
+            ],
+          ),
+        ),
       ),
     ],
   );

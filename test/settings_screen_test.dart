@@ -15,6 +15,7 @@ void main() {
     AppSettings settings = const AppSettings(),
     Set<AppLanguage> languages = const {AppLanguage.english},
     List<ReadinessItem>? readiness,
+    bool rideLog = false,
   }) async {
     // THE 3T'S REAL GEOMETRY, 1080x1920 at dpr 3, so 360x640 logical. The
     // default 800x600 test surface is not a phone in any orientation, and this
@@ -51,6 +52,7 @@ void main() {
           onAnnounceEveryStation: (v) => changes.add('announce:$v'),
           onShareAnonymousUsage: (v) => changes.add('usage:$v'),
           onLanguage: (l) => changes.add('language:${l.tag}'),
+          onSendRideLog: rideLog ? () => changes.add('send_ride_log') : null,
         ),
       ),
     );
@@ -220,6 +222,56 @@ void main() {
     await pumpSettings(tester);
     await scrollTo(tester, find.text('Commute Guardian 1.0.0 (1)'));
     expect(find.text('Commute Guardian 1.0.0 (1)'), findsOneWidget);
+  });
+
+  group('the ride log row', () {
+    // THE ONLY WAY A RIDE THAT WENT WRONG ON A VOLUNTEER'S PHONE REACHES US.
+    // Their logs sit behind `Android/data`, which needs a laptop, so before
+    // this row a missed station came back as one sentence of prose.
+    testWidgets('sends, and reports that it did', (tester) async {
+      final changes = await pumpSettings(tester, rideLog: true);
+      await scrollTo(tester, find.byKey(const Key('settings_send_ride_log')));
+
+      expect(find.text('Send the last ride log'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('settings_send_ride_log')));
+      expect(changes, ['send_ride_log']);
+    });
+
+    testWidgets('says what is in the file before it is sent', (tester) async {
+      // The Privacy card one above promises we never take where they travel.
+      // That promise survives this button only because the rider chooses the
+      // share, so the sentence telling them what they are choosing is load
+      // bearing and not decoration.
+      await pumpSettings(tester, rideLog: true);
+      await scrollTo(tester, find.byKey(const Key('settings_send_ride_log')));
+
+      expect(
+        find.textContaining('the stations you passed'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('clears the 48 dp touch floor', (tester) async {
+      await pumpSettings(tester, rideLog: true);
+      await scrollTo(tester, find.byKey(const Key('settings_send_ride_log')));
+
+      final height = tester
+          .getSize(find.byKey(const Key('settings_send_ride_log')))
+          .height;
+      expect(
+        height,
+        greaterThanOrEqualTo(48.0),
+        reason: 'the ride log row is $height dp tall',
+      );
+    });
+
+    testWidgets('is absent when nothing is wired to it', (tester) async {
+      // A row that cannot do anything is worse than no row. Every other test
+      // in this file pumps the screen without it, which is the default.
+      await pumpSettings(tester);
+      expect(find.byKey(const Key('settings_send_ride_log')), findsNothing);
+      expect(find.text('Ride log'), findsNothing);
+    });
   });
 
   testWidgets('NOTHING ON THIS SCREEN IS CRIMSON', (tester) async {
