@@ -11,6 +11,7 @@ import '../state/ride_providers.dart';
 import '../theme/palette.dart';
 import '../theme/type_scale.dart';
 import '../widgets/fill_or_scroll.dart';
+import '../widgets/line_strip.dart';
 import '../widgets/mini_rail.dart';
 import '../widgets/pressable.dart';
 import '../widgets/status_chip.dart';
@@ -187,6 +188,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // an addition to this screen, and a store that will not answer must cost
     // the rider the offer and never the screen.
     final interrupted = ref.watch(interruptedRideProvider).valueOrNull;
+    // TRIAL, 25 Aug 2026. Five stations of the rider's own line in the space
+    // the bottom-anchored layout leaves at the top. valueOrNull like every
+    // other addition on this screen: a repository that will not load costs the
+    // rider the strip and never the screen.
+    final window = LineWindow.around(
+      ref.watch(stationRepositoryProvider).valueOrNull,
+      nearest.stationId,
+    );
+    // First run owns the same space with its promise line and MiniRail, and it
+    // has no fix and no history to put in a strip anyway. Keyed to journeys
+    // COMPLETED, the same rule the cards below use. While the query is still
+    // loading this reads true, which shows nothing rather than flashing it in.
+    final firstRun = (destinations.valueOrNull ?? const []).isEmpty;
 
     return Scaffold(
       body: SafeArea(
@@ -247,6 +261,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ],
                 ),
                 const Spacer(),
+                // THE STRIP LIVES IN THE SLACK, between the two Spacers, so it
+                // is centred in whatever the cards below have not taken and the
+                // cards themselves do not move. Only drawn where there is a
+                // window to draw: first run has no fix and no history, and its
+                // promise line and MiniRail already own that space.
+                if (window != null && !firstRun) ...[
+                  LineStrip(
+                    window: window,
+                    located: nearest.state == GpsState.located,
+                  ),
+                  const Spacer(),
+                ],
                 // ABOVE EVERYTHING, and it is the only thing on this screen
                 // allowed to be. A ride the OS killed is already happening: the
                 // rider is on the train, and every card under this one offers
@@ -262,7 +288,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     // fallback is what a screen pumped alone still does.
                     onDecline: () => widget.onDeclineRide == null
                         ? unawaited(
-                            ref.read(interruptedRideProvider.notifier).dismiss(),
+                            ref
+                                .read(interruptedRideProvider.notifier)
+                                .dismiss(),
                           )
                         : widget.onDeclineRide!(),
                   ),
@@ -471,23 +499,23 @@ class _Cards extends StatelessWidget {
             key: const ValueKey('enter_suggestion'),
             index: 0,
             child: _DestinationCard(
-            cardKey: const Key('suggestion_card'),
-            // "Heading home?" ONLY when the destination is the route the rider
-            // labelled Home. The app does not otherwise know which of a
-            // person's stations is their house, and a confident wrong guess
-            // about that is the kind of small wrongness that makes software
-            // feel stupid.
-            title: suggestion.isHome
-                ? 'Heading home?'
-                : 'Heading to ${suggestion.destinationName}?',
-            // SAYS WHY, and the count is the point. A suggestion a rider can
-            // check is one they can disagree with; one that just appears has
-            // to be trusted, and this screen has not earned that.
-            detail: suggestion.isHome
-                ? '${suggestion.destinationName} - you usually do, around now'
-                : 'You usually do, around now',
-            onTap: () => onStartTo(suggestion.destinationId),
-          ),
+              cardKey: const Key('suggestion_card'),
+              // "Heading home?" ONLY when the destination is the route the rider
+              // labelled Home. The app does not otherwise know which of a
+              // person's stations is their house, and a confident wrong guess
+              // about that is the kind of small wrongness that makes software
+              // feel stupid.
+              title: suggestion.isHome
+                  ? 'Heading home?'
+                  : 'Heading to ${suggestion.destinationName}?',
+              // SAYS WHY, and the count is the point. A suggestion a rider can
+              // check is one they can disagree with; one that just appears has
+              // to be trusted, and this screen has not earned that.
+              detail: suggestion.isHome
+                  ? '${suggestion.destinationName} - you usually do, around now'
+                  : 'You usually do, around now',
+              onTap: () => onStartTo(suggestion.destinationId),
+            ),
           ),
           // 16, as one value. It was `SizedBox(10)` followed by
           // `SizedBox(6)`, which is a slip rather than a decision: every
@@ -502,15 +530,15 @@ class _Cards extends StatelessWidget {
               key: ValueKey('enter_saved_${route.label.toLowerCase()}'),
               index: i + 1,
               child: _DestinationCard(
-              cardKey: Key('saved_route_card_${route.label.toLowerCase()}'),
-              // The LABEL leads, because that is the word the rider chose and
-              // the one they recognise at a glance on a platform. The station
-              // is underneath it, quiet, because it is the fact that has to be
-              // checkable before a tap starts a ride.
-              title: route.label,
-              detail: route.destinationName,
-              onTap: () => onStartTo(route.destinationStationId),
-            ),
+                cardKey: Key('saved_route_card_${route.label.toLowerCase()}'),
+                // The LABEL leads, because that is the word the rider chose and
+                // the one they recognise at a glance on a platform. The station
+                // is underneath it, quiet, because it is the fact that has to be
+                // checkable before a tap starts a ride.
+                title: route.label,
+                detail: route.destinationName,
+                onTap: () => onStartTo(route.destinationStationId),
+              ),
             ),
             const SizedBox(height: 10),
           ],
