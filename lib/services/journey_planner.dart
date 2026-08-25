@@ -19,6 +19,7 @@ class JourneyPlanner {
     required this.linesById,
     this.throughServices = const [],
     this.walkInterchanges = const [],
+    this.endpointOnlyWalkInterchanges = const [],
   });
 
   final Map<String, Station> stationsById;
@@ -38,6 +39,23 @@ class JourneyPlanner {
   /// one change, like any other interchange.
   final List<List<String>> walkInterchanges;
 
+  /// Walk interchanges a rider only uses when they are ALREADY standing at one
+  /// end of them, never as a through interchange on a longer journey.
+  ///
+  /// Parel to Prabhadevi is the only one today, and the reason is a fact about
+  /// Mumbai rather than about geometry: both are slow-only halts, and Dadar is
+  /// where the fast locals stop. Coming from Churchgate or Mumbai Central,
+  /// Prabhadevi arrives one stop BEFORE Dadar Western, so ranking equal-change
+  /// routes by stations travelled picked the Parel bridge and saved a single
+  /// stop on a slow train by changing where no fast train calls. Reported
+  /// 25 Aug 2026 by the owner, who put it plainly: the common thing in Mumbai
+  /// is to go to the biggest station, because there you get both fast and slow.
+  ///
+  /// Standing AT Parel or Prabhadevi is the case this does not touch. Then the
+  /// bridge is exactly what a rider uses, so it stays available whenever one of
+  /// its two stations is the journey's own origin or destination.
+  final List<List<String>> endpointOnlyWalkInterchanges;
+
   late final Set<String> _throughKeys = {
     for (final pair in throughServices) _pairKey(pair[0], pair[1]),
   };
@@ -47,6 +65,11 @@ class JourneyPlanner {
       pair[0]: pair[1],
       pair[1]: pair[0],
     },
+  };
+
+  late final Set<String> _endpointOnlyWalkKeys = {
+    for (final pair in endpointOnlyWalkInterchanges)
+      _pairKey(pair[0], pair[1]),
   };
 
   static String _pairKey(String a, String b) =>
@@ -69,18 +92,65 @@ class JourneyPlanner {
     if (originId == destinationId) {
       throw ArgumentError('Origin and destination are the same: $originId');
     }
+    // STANDING AT ONE END OF A FOOT OVERBRIDGE, THE OTHER END IS A WALK, NOT A
+    // RIDE. A rider at Dadar Central asking for Dadar Western wants to cross
+    // the bridge, and there is no train that does it: the planner would send
+    // them on a loop through Mahim or Kurla to arrive back where they started.
+    // Owner, 25 Aug 2026. The destination picker should not offer it either;
+    // this is the safety net under that, not a replacement for it.
+    if (_walkPartner[originId] == destinationId) {
+      throw ArgumentError(
+        'No ride from $originId to $destinationId: they are two sides of one '
+        'foot overbridge, so this is a walk rather than a journey.',
+      );
+    }
 
-    // An hourly MEMU is not a route anyone would choose, so plan without the
-    // low-frequency lines first and fall back to them only when a station is
-    // unreachable any other way (Kharbao, Nilaje and friends live on them).
-    final legs =
-        _findLegs(originId, destinationId, allowLowFrequency: false) ??
-        _findLegs(originId, destinationId, allowLowFrequency: true);
-    if (legs == null) {
+    // BOTH HALVES OF A WALK INTERCHANGE ARE THE SAME PLACE TO A RIDER.
+    //
+    // "Dadar" is one station in a Mumbai head, and two rows in this data: DR on
+    // Central and DDR on Western. A rider on a Central train who picks the
+    // Western one has asked for a station their train does not call at, and the
+    // planner used to answer literally, sending them past Dadar to change at
+    // Parel. So the SIDE is the planner's to choose, not the rider's: plan to
+    // each half and keep the better route. Reported 25 Aug 2026.
+    //
+    // The origin needs no such resolution. It comes from GPS rather than from a
+    // list, and a rider standing at Dadar Western really is at Dadar Western;
+    // walking across is a real first move, and the search now offers it.
+    final candidates = <String>[
+      destinationId,
+      ?_walkPartner[destinationId],
+    ].where((id) => id != originId).toList();
+
+    List<_Leg>? best;
+    String? bestId;
+    for (final candidate in candidates) {
+      // An hourly MEMU is not a route anyone would choose, so plan without the
+      // low-frequency lines first and fall back to them only when a station is
+      // unreachable any other way (Kharbao, Nilaje and friends live on them).
+      final legs =
+          _findLegs(originId, candidate, allowLowFrequency: false) ??
+          _findLegs(originId, candidate, allowLowFrequency: true);
+      if (legs == null) continue;
+      if (best == null || _isBetter(legs, best)) {
+        best = legs;
+        bestId = candidate;
+      }
+    }
+    if (best == null || bestId == null) {
       throw ArgumentError('No route from $originId to $destinationId');
     }
 
-    return _buildJourney(legs, originId, destinationId);
+    return _buildJourney(best, originId, bestId);
+  }
+
+  /// Fewer changes wins; a tie goes to the shorter ride. The same order the
+  /// search itself uses, applied across the two halves of a walk interchange.
+  bool _isBetter(List<_Leg> candidate, List<_Leg> incumbent) {
+    if (candidate.length != incumbent.length) {
+      return candidate.length < incumbent.length;
+    }
+    return _stationsTravelled(candidate) < _stationsTravelled(incumbent);
   }
 
   /// Breadth-first search over the network, expanded one CHANGE OF TRAIN at a
@@ -102,6 +172,18 @@ class JourneyPlanner {
       for (final lineId in _linesThrough(originId, allowLowFrequency))
         '$originId@$lineId',
     };
+
+    // The rider's FIRST move can be a walk rather than a ride. Standing at
+    // Dadar Western bound for Kalyan, nobody rides a Western train anywhere:
+    // they cross the bridge to Dadar Central and board there.
+    //
+    // `_rideOut` never lets a leg end where it began, so without this the
+    // origin's own bridge is not in the search space at all, and the planner
+    // has to ride at least one station before any walk is offered. From Dadar
+    // Western that made one stop to Prabhadevi and the Parel bridge the
+    // cheapest legal route: the same number of changes, one station longer,
+    // and not what any rider does. Found 25 Aug 2026.
+    var firstRound = true;
 
     while (frontier.isNotEmpty) {
       // Everywhere reachable without getting off the train.
@@ -135,9 +217,23 @@ class JourneyPlanner {
       // the leg ends at, and also its walk partner across the foot overbridge
       // when it has one (get off at Dadar, walk to Dadar Western).
       final next = <List<_Leg>>[];
-      for (final route in reached) {
+      // On the first pass the un-ridden origin legs are change candidates too,
+      // which is what puts "walk across before boarding anything" on the table.
+      for (final route in [if (firstRound) ...frontier, ...reached]) {
         final leg = route.last;
-        final walkTo = _walkPartner[leg.toId];
+        var walkTo = _walkPartner[leg.toId];
+        // An endpoint-only bridge is available only when the rider is actually
+        // at one of its ends, which means one of its two stations has to be
+        // this journey's own origin or destination. Mid-journey it is not a
+        // route anybody takes.
+        if (walkTo != null &&
+            _endpointOnlyWalkKeys.contains(_pairKey(leg.toId, walkTo)) &&
+            leg.toId != originId &&
+            leg.toId != destinationId &&
+            walkTo != originId &&
+            walkTo != destinationId) {
+          walkTo = null;
+        }
         for (final boardAt in [leg.toId, ?walkTo]) {
           for (final lineId in _linesThrough(boardAt, allowLowFrequency)) {
             // Staying on a through service is not a change; but a through
@@ -154,6 +250,7 @@ class JourneyPlanner {
         }
       }
       frontier = next;
+      firstRound = false;
     }
 
     return null;

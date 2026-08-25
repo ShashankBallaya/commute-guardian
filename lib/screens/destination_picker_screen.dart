@@ -58,6 +58,11 @@ class _DestinationPickerScreenState
     // The station the rider is standing at. It is in this list like any other
     // and it is the one row that cannot become a ride.
     final originId = ref.watch(journeyDraftProvider).originId;
+    // The other end of the rider's own foot overbridge. Standing at Dadar
+    // Central, "Dadar Western" is a walk across a bridge, not a train ride, and
+    // JourneyPlanner refuses it outright. Offering it would be offering a ride
+    // that cannot exist, on the one screen where every row starts a journey.
+    final acrossBridgeId = _walkPartnerOf(repo, originId);
 
     return Scaffold(
       body: SafeArea(
@@ -79,11 +84,13 @@ class _DestinationPickerScreenState
                       ? _Results(
                           stations: _matches(repo),
                           originId: originId,
+                          acrossBridgeId: acrossBridgeId,
                           onPicked: widget.onPicked,
                         )
                       : _Resting(
                           repo: repo,
                           originId: originId,
+                          acrossBridgeId: acrossBridgeId,
                           onPicked: widget.onPicked,
                         ),
                 ),
@@ -103,6 +110,20 @@ class _DestinationPickerScreenState
   /// Kalyan above Kalwa, which would imply recency weighting; that is a real
   /// rule nobody has built, and ride history already knows the answer if it
   /// ever proves necessary.
+  /// The station across the foot overbridge from [originId], read out of the
+  /// bundled walk-interchange pairs rather than hardcoded here: the generator
+  /// owns which stations are joined on foot, and today that is Dadar and
+  /// Parel/Prabhadevi.
+  static String? _walkPartnerOf(StationRepository? repo, String? originId) {
+    if (repo == null || originId == null) return null;
+    for (final pair in repo.walkInterchanges) {
+      if (pair.length != 2) continue;
+      if (pair[0] == originId) return pair[1];
+      if (pair[1] == originId) return pair[0];
+    }
+    return null;
+  }
+
   List<Station> _matches(StationRepository repo) {
     return [
       for (final station in repo.stationsById.values)
@@ -206,11 +227,16 @@ class _Resting extends ConsumerWidget {
   const _Resting({
     required this.repo,
     required this.originId,
+    required this.acrossBridgeId,
     required this.onPicked,
   });
 
   final StationRepository repo;
   final String? originId;
+
+  /// The far side of the rider's own foot overbridge, if they are standing at
+  /// one. Shown, but never tappable.
+  final String? acrossBridgeId;
   final void Function(Station) onPicked;
 
   @override
@@ -225,6 +251,7 @@ class _Resting extends ConsumerWidget {
         if (recents.isNotEmpty) ...[
           _StationCard(
             originId: originId,
+            acrossBridgeId: acrossBridgeId,
             eyebrow: 'Recent',
             stations: [
               for (final ride in recents)
@@ -239,6 +266,7 @@ class _Resting extends ConsumerWidget {
         for (final entry in lines.entries) ...[
           _StationCard(
             originId: originId,
+            acrossBridgeId: acrossBridgeId,
             eyebrow: '${entry.key} line',
             stations: _alphabetical(entry.value),
             onPicked: onPicked,
@@ -248,6 +276,7 @@ class _Resting extends ConsumerWidget {
         if (lines.isEmpty)
           _StationCard(
             originId: originId,
+            acrossBridgeId: acrossBridgeId,
             eyebrow: 'All stations',
             stations: _alphabetical(repo.stationsById.keys.toList()),
             onPicked: onPicked,
@@ -291,11 +320,16 @@ class _Results extends StatelessWidget {
   const _Results({
     required this.stations,
     required this.originId,
+    required this.acrossBridgeId,
     required this.onPicked,
   });
 
   final List<Station> stations;
   final String? originId;
+
+  /// The far side of the rider's own foot overbridge, if they are standing at
+  /// one. Shown, but never tappable.
+  final String? acrossBridgeId;
   final void Function(Station) onPicked;
 
   @override
@@ -320,6 +354,7 @@ class _Results extends StatelessWidget {
         _StationCard(
           stations: stations,
           originId: originId,
+          acrossBridgeId: acrossBridgeId,
           onPicked: onPicked,
         ),
       ],
@@ -332,12 +367,17 @@ class _StationCard extends StatelessWidget {
     this.eyebrow,
     required this.stations,
     required this.originId,
+    required this.acrossBridgeId,
     required this.onPicked,
   });
 
   final String? eyebrow;
   final List<Station> stations;
   final String? originId;
+
+  /// The far side of the rider's own foot overbridge, if they are standing at
+  /// one. Shown, but never tappable.
+  final String? acrossBridgeId;
   final void Function(Station) onPicked;
 
   @override
@@ -363,6 +403,8 @@ class _StationCard extends StatelessWidget {
             _StationRow(
               station: station,
               isOrigin: station.id == originId,
+              isAcrossBridge:
+                  acrossBridgeId != null && station.id == acrossBridgeId,
               onPicked: onPicked,
             ),
         ],
@@ -383,16 +425,22 @@ class _StationRow extends StatelessWidget {
   const _StationRow({
     required this.station,
     required this.isOrigin,
+    required this.isAcrossBridge,
     required this.onPicked,
   });
 
   final Station station;
   final bool isOrigin;
+
+  /// The rider is at the other end of this station's foot overbridge. Same
+  /// treatment as [isOrigin] and for the same reason: there is no ride here.
+  final bool isAcrossBridge;
   final void Function(Station) onPicked;
 
   @override
   Widget build(BuildContext context) {
-    if (isOrigin) return _hereRow();
+    if (isOrigin) return _quietRow("You're here");
+    if (isAcrossBridge) return _quietRow('Across the bridge');
     return PressableRow(
       key: Key('station_row_${station.id}'),
       onTap: () => onPicked(station),
@@ -431,7 +479,7 @@ class _StationRow extends StatelessWidget {
   ///
   /// Dimmed rather than hidden: hiding the rider's own station from a list of
   /// their own line would read as missing data, and they would search for it.
-  Widget _hereRow() {
+  Widget _quietRow(String note) {
     return Padding(
       key: Key('station_row_${station.id}'),
       padding: const EdgeInsets.symmetric(vertical: 11),
@@ -449,7 +497,7 @@ class _StationRow extends StatelessWidget {
             ),
           ),
           Text(
-            "You're here",
+            note,
             style: TextStyle(
               fontSize: TypeScale.caption,
               color: Palette.textDim(0.4),

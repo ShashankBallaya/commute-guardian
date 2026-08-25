@@ -198,6 +198,41 @@ void main() {
     expect(picked.map((s) => s.id), ['kalyan']);
   });
 
+  testWidgets("THE FAR SIDE OF THE RIDER'S OWN BRIDGE TAKES NO TAP EITHER", (
+    tester,
+  ) async {
+    // Standing at Dadar Central, "Dadar Western" is a walk across a footbridge,
+    // not a train ride, and JourneyPlanner refuses it. Before 25 Aug 2026 both
+    // halves were even NAMED "Dadar", so a rider could not tell which one they
+    // were tapping, and picking the wrong one sent them round through Parel.
+    final picked = await pumpPicker(tester, originId: 'dadar');
+    await type(tester, 'Dadar');
+
+    expect(find.text('Dadar Central'), findsOneWidget);
+    expect(find.text('Dadar Western'), findsOneWidget);
+    expect(find.text("You're here"), findsOneWidget);
+    expect(find.text('Across the bridge'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('station_row_dadar_western')));
+    await tester.pumpAndSettle();
+    expect(picked, isEmpty);
+  });
+
+  testWidgets('the bridge row is only quiet for the rider standing at it', (
+    tester,
+  ) async {
+    // From anywhere else Dadar Western is an ordinary destination, and the two
+    // halves are two separate ones. This is what stops the rule above from
+    // quietly deleting a station from the list.
+    final picked = await pumpPicker(tester, originId: 'shahad');
+    await type(tester, 'Dadar');
+
+    expect(find.text('Across the bridge'), findsNothing);
+    await tester.tap(find.byKey(const Key('station_row_dadar_western')));
+    await tester.pumpAndSettle();
+    expect(picked.map((s) => s.id), ['dadar_western']);
+  });
+
   testWidgets('the same row is marked in search results too', (tester) async {
     // The rider can reach their own station by typing it, and the answer has to
     // be the same one the resting list gives.

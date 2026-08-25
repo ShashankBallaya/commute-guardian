@@ -74,9 +74,9 @@
     {
       "id": "dadar",
       "code": "DR",
-      "name": "Dadar",
-      "nameHi": "दादर",
-      "nameMr": "दादर",
+      "name": "Dadar Central",
+      "nameHi": "दादर सेंट्रल",
+      "nameMr": "दादर सेंट्रल",
       "lat": 19.0173761,
       "lng": 72.8430265,
       "radiusM": 450
@@ -544,9 +544,9 @@
     {
       "id": "dadar_western",
       "code": "DDR",
-      "name": "Dadar",
-      "nameHi": "दादर",
-      "nameMr": "दादर",
+      "name": "Dadar Western",
+      "nameHi": "दादर वेस्टर्न",
+      "nameMr": "दादर वेस्टर्न",
       "lat": 19.0192269,
       "lng": 72.8428479,
       "radiusM": 450
@@ -1568,6 +1568,12 @@
       "dadar",
       "dadar_western"
     ],
+    [
+      "parel",
+      "prabhadevi"
+    ]
+  ],
+  "endpointOnlyWalkInterchanges": [
     [
       "parel",
       "prabhadevi"

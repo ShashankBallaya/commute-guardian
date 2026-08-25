@@ -71,7 +71,7 @@ STATIONS = {
     "chinchpokli": ("Chinchpokli", "CHG", 300),
     "currey_road": ("Currey Road", "CRD", 300),
     "parel": ("Parel", "PR", 350),
-    "dadar": ("Dadar", "DR", 450),
+    "dadar": ("Dadar Central", "DR", 450),
     "matunga": ("Matunga", "MTN", 350),
     "sion": ("Sion", "SIN", 350),
     "kurla": ("Kurla", "CLA", 450),
@@ -121,7 +121,7 @@ STATIONS = {
     "mahalaxmi": ("Mahalaxmi", "MX", 350),
     "lower_parel": ("Lower Parel", "PL", 350),
     "prabhadevi": ("Prabhadevi", "PBHD", 350),
-    "dadar_western": ("Dadar", "DDR", 450),
+    "dadar_western": ("Dadar Western", "DDR", 450),
     "matunga_road": ("Matunga Road", "MRU", 350),
     "mahim": ("Mahim Junction", "MM", 400),
     "bandra": ("Bandra", "BA", 450),
@@ -212,6 +212,14 @@ DEVANAGARI_OVERRIDE = {
     # OSM's Hindi uses an explicit conjunct that steers TTS to "Dom-bi-vli";
     # the anusvara form matches the Marathi tag and the spoken name.
     "dombivli": ("डोंबिवली", None),
+    # THE TWO HALVES OF DADAR ARE NOT HOMONYMS ANY MORE, 25 Aug 2026.
+    # OSM tags both DR and DDR simply "Dadar"/"दादर", so a picker listing them
+    # showed the same word twice and a rider could not tell which one they were
+    # choosing. Riders say "Dadar Central" and "Dadar Western" in English even
+    # mid-Hindi, which is the same compromise the interchange copy already
+    # makes when it qualifies a walk target with the English line name.
+    "dadar": ("दादर सेंट्रल", "दादर सेंट्रल"),
+    "dadar_western": ("दादर वेस्टर्न", "दादर वेस्टर्न"),
 }
 
 # Fallbacks for stations OSM has not tagged with name:hi / name:mr. Each side is
@@ -408,6 +416,21 @@ THROUGH_SERVICES = [
 # deliberately absent.
 WALK_INTERCHANGES = [
     ("dadar", "dadar_western"),
+    ("parel", "prabhadevi"),
+]
+
+# Walk interchanges a rider uses only when they are ALREADY at one end of them,
+# never as a through interchange on a longer journey. Owner, 25 Aug 2026:
+# "if I am at Parel and I want to go to Western I will walk across to
+# Prabhadevi and vice versa, but the common thing in Mumbai is to go to the
+# biggest station because you get both fast and slow locals."
+#
+# Parel and Prabhadevi are slow-only halts. Dadar is where the fast locals
+# stop. Coming from Churchgate or Mumbai Central, Prabhadevi is one stop
+# BEFORE Dadar Western, so a planner that breaks ties on stations travelled
+# picks the Parel bridge and saves a single stop on a slow train by changing
+# at a station no fast train serves. No Mumbai rider makes that trade.
+ENDPOINT_ONLY_WALK_INTERCHANGES = [
     ("parel", "prabhadevi"),
 ]
 
@@ -629,6 +652,14 @@ def main() -> int:
         print(f"ABORT: WALK_INTERCHANGES references unknown stations: {bad_walks}")
         return 1
 
+    walk_pairs = {frozenset(p) for p in WALK_INTERCHANGES}
+    bad_eo = [p for p in ENDPOINT_ONLY_WALK_INTERCHANGES
+              if frozenset(p) not in walk_pairs]
+    if bad_eo:
+        print(f"ABORT: ENDPOINT_ONLY_WALK_INTERCHANGES names a pair that is not "
+              f"a walk interchange: {bad_eo}")
+        return 1
+
     fatal = [p for p in problems
              if p.startswith(("UNRESOLVED", "DUPLICATE CODE"))]
     if fatal:
@@ -670,6 +701,8 @@ def main() -> int:
                   for lid, name, ids in LINES],
         "throughServices": [list(pair) for pair in THROUGH_SERVICES],
         "walkInterchanges": [list(pair) for pair in WALK_INTERCHANGES],
+        "endpointOnlyWalkInterchanges":
+            [list(pair) for pair in ENDPOINT_ONLY_WALK_INTERCHANGES],
     }
     OUT.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
                    encoding="utf-8")

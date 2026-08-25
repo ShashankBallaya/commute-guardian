@@ -30,11 +30,31 @@ JourneyPlanner _planner() {
       for (final pair in doc['walkInterchanges'] as List)
         (pair as List).cast<String>(),
     ],
+    endpointOnlyWalkInterchanges: [
+      for (final pair
+          in doc['endpointOnlyWalkInterchanges'] as List? ?? const [])
+        (pair as List).cast<String>(),
+    ],
   );
 }
 
 List<String> _ids(Iterable<Station> stations) =>
     stations.map((s) => s.id).toList();
+
+/// The station across the foot overbridge, straight out of the bundled data so
+/// the tests never carry their own copy of a pairing the generator owns.
+String? _walkPartnerOf(String id) {
+  final doc =
+      jsonDecode(
+            File('assets/stations/mumbai_suburban.json').readAsStringSync(),
+          )
+          as Map<String, dynamic>;
+  for (final pair in (doc['walkInterchanges'] as List).cast<List<dynamic>>()) {
+    if (pair[0] == id) return pair[1] as String;
+    if (pair[1] == id) return pair[0] as String;
+  }
+  return null;
+}
 
 void main() {
   test(
@@ -279,12 +299,15 @@ void main() {
       final change = journey.interchanges.single;
       expect(change.stationId, 'dadar');
       expect(change.walkToStationName?.en, 'Dadar Western');
-      // The line qualifier stays English in every language, because the line
-      // data has no Devanagari name to qualify it with.
-      expect(change.walkToStationName?.hi, 'दादर Western');
+      // NO LINE QUALIFIER ANY MORE. The two halves used to share the name
+      // "Dadar", so "walk across to Dadar" said nothing and the copy borrowed
+      // the English line name to tell them apart. Since 25 Aug 2026 the data
+      // names them Dadar Central and Dadar Western, so the station speaks for
+      // itself, in every language.
+      expect(change.walkToStationName?.hi, 'दादर वेस्टर्न');
       expect(
         journey.arrivalAnnouncementsIn()['dadar'],
-        'You have reached Dadar. Get off the train and walk across to '
+        'You have reached Dadar Central. Get off the train and walk across to '
         'Dadar Western, then board the Western train towards Dahanu Road to '
         'continue to your destination.',
       );
@@ -331,6 +354,10 @@ void main() {
       final destinationId = ids[rng.nextInt(ids.length)];
       if (originId == destinationId) continue;
 
+      // Two sides of one foot overbridge is a walk, not a journey, and the
+      // planner refuses it by design. See the Dadar tests below.
+      if (_walkPartnerOf(destinationId) == originId) continue;
+
       final journey = planner.plan(
         originId: originId,
         destinationId: destinationId,
@@ -339,7 +366,18 @@ void main() {
       final label = '$originId -> $destinationId';
 
       expect(chainIds.first, originId, reason: label);
-      expect(chainIds, contains(destinationId), reason: label);
+      // THE RIDE MAY END AT THE OTHER HALF OF A WALK INTERCHANGE, on purpose.
+      // Dadar Central and Dadar Western are one station to a rider, so the
+      // planner picks the side that suits the route rather than obeying the
+      // half the rider happened to tap. Everywhere else this is an exact match.
+      expect(
+        chainIds,
+        anyOf(
+          contains(destinationId),
+          contains(_walkPartnerOf(destinationId) ?? '__none__'),
+        ),
+        reason: label,
+      );
       expect(
         chainIds.toSet(),
         hasLength(chainIds.length),
@@ -438,4 +476,108 @@ void main() {
       }
     });
   });
+
+  group('THE DADAR BRIDGE, three bugs reported 25 Aug 2026', () {
+    // All three were found by the owner reading routes the app offered him,
+    // and all three had the same shape: the planner was right about the graph
+    // and wrong about Mumbai.
+
+    test('A JOURNEY THAT STARTS AT A BRIDGE WALKS ACROSS IT FIRST', () {
+      // `_rideOut` never lets a leg end where it began, so the origin's own
+      // bridge was not in the search space: the planner had to ride at least
+      // one station before any walk was offered. From Dadar Western that made
+      // one stop to Prabhadevi and the Parel bridge the cheapest legal route.
+      final journey = _planner().plan(
+        originId: 'dadar_western',
+        destinationId: 'kalyan',
+      );
+
+      expect(journey.interchanges, hasLength(1));
+      final change = journey.interchanges.single;
+      expect(change.stationId, 'dadar_western');
+      expect(change.walkToStationName?.en, 'Dadar Central');
+      expect(_ids(journey.chain).first, 'dadar_western');
+      expect(_ids(journey.chain), isNot(contains('prabhadevi')));
+      expect(_ids(journey.chain), isNot(contains('parel')));
+    });
+
+    test('PAREL IS NOT A THROUGH INTERCHANGE, EVEN WHEN IT IS ONE STOP NEARER', () {
+      // Parel and Prabhadevi are slow-only halts; Dadar is where the fast
+      // locals stop. Coming from the south, Prabhadevi arrives one station
+      // before Dadar Western, so ranking equal-change routes by stations
+      // travelled picked the Parel bridge and saved one stop on a slow train
+      // by changing where no fast train calls.
+      for (final originId in ['mumbai_central', 'churchgate', 'grant_road']) {
+        final journey = _planner().plan(
+          originId: originId,
+          destinationId: 'kalyan',
+        );
+        expect(journey.interchanges, hasLength(1), reason: originId);
+        expect(
+          journey.interchanges.single.stationId,
+          'dadar_western',
+          reason: '$originId should change at Dadar, not Parel',
+        );
+      }
+    });
+
+    test('STANDING AT PAREL, THE PAREL BRIDGE IS EXACTLY RIGHT', () {
+      // The rule is about through journeys, not about the bridge being bad. A
+      // rider already at one end of it uses it, and this is what stops the fix
+      // above from deleting a real move.
+      final journey = _planner().plan(
+        originId: 'parel',
+        destinationId: 'borivali',
+      );
+
+      expect(journey.interchanges, hasLength(1));
+      expect(journey.interchanges.single.stationId, 'parel');
+      expect(journey.interchanges.single.walkToStationName?.en, 'Prabhadevi');
+    });
+
+    test('THE PLANNER PICKS THE SIDE OF DADAR, NOT THE RIDER', () {
+      // "Dadar" is one station in a Mumbai head and two rows in the data. A
+      // rider on a Central train who taps the Western one has asked for a stop
+      // their train does not call at, and the planner used to answer literally.
+      final fromCentral = _planner().plan(
+        originId: 'kalyan',
+        destinationId: 'dadar_western',
+      );
+      expect(fromCentral.destinationStationId, 'dadar');
+      expect(fromCentral.interchanges, isEmpty);
+
+      final fromWestern = _planner().plan(
+        originId: 'borivali',
+        destinationId: 'dadar',
+      );
+      expect(fromWestern.destinationStationId, 'dadar_western');
+      expect(fromWestern.interchanges, isEmpty);
+    });
+
+    test('THE OTHER SIDE OF THE BRIDGE IS A WALK, NOT A JOURNEY', () {
+      final planner = _planner();
+      expect(
+        () => planner.plan(
+          originId: 'dadar',
+          destinationId: 'dadar_western',
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        () => planner.plan(
+          originId: 'prabhadevi',
+          destinationId: 'parel',
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test('THE TWO HALVES NO LONGER SHARE A NAME', () {
+      final planner = _planner();
+      expect(planner.stationsById['dadar']!.name, 'Dadar Central');
+      expect(planner.stationsById['dadar_western']!.name, 'Dadar Western');
+    });
+  });
+
+
 }

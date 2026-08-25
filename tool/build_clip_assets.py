@@ -48,6 +48,26 @@ MAX_EXCESS_S = 1.0
 # cuts, and it should stop the build rather than quietly ship as a stub.
 MAX_DROPPED = 25
 
+# Clips whose AUDIO no longer matches the sentence the app says. A duration
+# sweep cannot see this: the cut is clean, it just says the wrong words now.
+#
+# 25 Aug 2026: the two halves of Dadar were both named "Dadar" in the station
+# data, which made them indistinguishable in the destination picker, so they
+# were renamed Dadar Central and Dadar Western. Every Dadar clip was cut before
+# that and says "Dadar". `ClipLibrary.clipFor` already refuses a clip whose
+# recorded sentence differs from the line about to be spoken, so these were
+# falling back to TTS at runtime anyway; dropping them makes the pack say so.
+#
+# TO CLEAR THIS: re-cut these 14 through the Sarvam factory with the new names
+# and delete the entry. Until then Dadar speaks in TTS, like the nine clips the
+# 19 Aug duration sweep dropped.
+STALE_SENTENCE_CLIPS = {
+    f"{station}__{kind}"
+    for station in ("dadar", "dadar_western")
+    for kind in ("approach", "destination", "overshoot", "passed",
+                 "wake_checkin", "wake_up_change", "wake_up_stop")
+}
+
 
 def durations(src_dir: Path, manifest: dict) -> dict:
     """Seconds of audio per key, straight out of the wav header."""
@@ -127,7 +147,15 @@ def main(tag: str) -> int:
         (k for k, e in excess.items() if e > MAX_EXCESS_S),
         key=lambda k: -excess[k],
     )
-    kept = {k: v for k, v in manifest.items() if k not in set(dropped)}
+    kept = {
+        k: v
+        for k, v in manifest.items()
+        if k not in set(dropped) and k not in STALE_SENTENCE_CLIPS
+    }
+    stale = sorted(k for k in manifest if k in STALE_SENTENCE_CLIPS)
+    if stale:
+        print(f"dropped {len(stale)} clip(s) whose audio no longer matches the "
+              f"app's copy: {', '.join(stale)}")
 
     if len(dropped) > MAX_DROPPED:
         print(f"{len(dropped)} clips measure too long, over the {MAX_DROPPED} "
