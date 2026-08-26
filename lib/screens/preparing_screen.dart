@@ -454,6 +454,130 @@ class PreflightScreen extends StatelessWidget {
 /// left, actions in the thumb zone. The bottom-anchored rule is about where
 /// ACTIONS go, which is why state A's Cancel and state B's buttons both sit
 /// here while the reading matter floats.
+/// Screen 3 state E. The commit window: three seconds in which the ride has
+/// not started yet and the rider can take it back for nothing.
+///
+/// WHY IT EXISTS. Every other state of this flow is a PROBLEM. This one is the
+/// ordinary path, and until 26 Aug 2026 the ordinary path had no screen at all:
+/// the gate checked, everything passed, and the ride simply began. That was
+/// right while the only argument for a screen was progress (there is none to
+/// show: the fix is already held and the rest is milliseconds against bundled
+/// JSON). It is wrong once the argument is a MIS-TAP.
+///
+/// Kalyan and Kalwa are one fat-finger apart in the picker and the failure mode
+/// is waking up in the wrong town. Screen 4 and the spoken welcome already
+/// confirm the route, but by then the ride is REAL: undoing it costs a junk
+/// History row and a false `ride_started`, which during the closed beta is the
+/// only install signal this project has. Here, a mis-tap never becomes a ride
+/// at all.
+///
+/// IT SPEAKS, and that is the half that matters most. A rider who taps and
+/// pockets the phone never sees this ring, so the catch arrives through the
+/// earphones: "Starting Travel Mode, from Dadar to Kalyan". Audio is this app's
+/// primary channel and this is the one screen where the eyes-free rider is the
+/// likely rider. See [CommitAnnouncer], and note the invariant it documents:
+/// the utterance always finishes before the service starts.
+///
+/// THE RING DEPLETES LINEARLY, which is not a style choice. It represents time
+/// remaining, and any easing would misstate how long the rider has left to
+/// cancel. It is also the one piece of motion here that survives reduced
+/// motion, because it is the control rather than decoration.
+///
+/// NO NUMERALS IN THE CENTRE, and no destination there either. The Fitness app
+/// counts 3-2-1 because the number IS the information; here the destination is,
+/// and [_PreparingScaffold] already draws the route promise across the top of
+/// every state of this flow. Repeating it inside the ring would be the same
+/// two words twice on a three second screen.
+class StartingScreen extends StatelessWidget {
+  const StartingScreen({
+    super.key,
+    required this.originName,
+    required this.destinationName,
+    required this.remaining,
+    required this.onCancel,
+  });
+
+  final String? originName;
+  final String destinationName;
+
+  /// Runs 1.0 to 0.0 over the window. Owned by the flow, not by this widget,
+  /// so the thing that commits the ride and the thing the rider watches are
+  /// driven by one clock and cannot disagree.
+  final Animation<double> remaining;
+
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PreparingScaffold(
+      originName: originName,
+      destinationName: destinationName,
+      middle: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _CountdownRing(remaining: remaining),
+          const SizedBox(height: 26),
+          const Text(
+            'Starting Travel Mode',
+            style: TextStyle(
+              fontSize: TypeScale.heading,
+              fontWeight: FontWeight.w600,
+              color: Palette.text,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            // SAYS WHAT HAPPENS IF THEY DO NOTHING. A countdown with no stated
+            // outcome is a screen a rider has to guess at, and this one lasts
+            // three seconds, which is not long enough to guess in.
+            'Your ride begins in a moment. Cancel if this is not your journey.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: TypeScale.label,
+              height: 1.45,
+              color: Palette.textDim(0.6),
+            ),
+          ),
+        ],
+      ),
+      bottom: _PlainButton(
+        key: const Key('starting_cancel'),
+        label: 'Cancel',
+        onTap: onCancel,
+      ),
+    );
+  }
+}
+
+/// The ring that empties while the rider still has a choice.
+class _CountdownRing extends StatelessWidget {
+  const _CountdownRing({required this.remaining});
+
+  final Animation<double> remaining;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 110,
+      height: 110,
+      child: AnimatedBuilder(
+        animation: remaining,
+        builder: (context, _) => CircularProgressIndicator(
+          value: remaining.value,
+          strokeWidth: 7,
+          strokeCap: StrokeCap.round,
+          backgroundColor: Palette.textDim(0.09),
+          // GREEN, like the ring next door in state A, and NOT crimson. Crimson
+          // means END A RIDE and nothing else may wear it: a crimson ring on
+          // the screen that STARTS one would teach the opposite of the rule the
+          // rest of the app spends its whole palette on.
+          valueColor: const AlwaysStoppedAnimation(Palette.dotGreen),
+        ),
+      ),
+    );
+  }
+}
+
 class _PreparingScaffold extends StatelessWidget {
   const _PreparingScaffold({
     required this.originName,

@@ -43,10 +43,59 @@ class SpokenCopy {
     AppLanguage.marathi => 'कम्यूट गार्जियनमध्ये आपले स्वागत आहे.',
   };
 
+  /// The route, spoken while the rider can still take it back.
+  ///
+  /// THE EYES-FREE HALF OF THE COMMIT WINDOW. Screen 3's window exists so a
+  /// mis-tap never becomes a ride, and Kalyan and Kalwa are one fat-finger
+  /// apart in the picker. A rider who taps and pockets the phone never sees
+  /// the ring, so the catch has to arrive through the earphones, which is this
+  /// app's primary channel anyway.
+  ///
+  /// "STARTING", NOT "IS ON", and the tense is the whole point. This is spoken
+  /// while Cancel is still live and the ride may never happen. `welcomeBody`
+  /// is allowed to claim the ride is running because by then it is.
+  ///
+  /// NO SARVAM CLIP EXISTS FOR THIS LINE, so it speaks in device TTS until one
+  /// is cut, and it is the first thing a rider hears on every journey.
+  String startingRoute({required String origin, required String destination}) =>
+      switch (language) {
+        AppLanguage.english =>
+          'Starting Travel Mode, from $origin to $destination.',
+        AppLanguage.hindi =>
+          'ट्रैवल मोड शुरू हो रहा है, $origin से $destination तक।',
+        AppLanguage.marathi =>
+          'ट्रॅव्हल मोड सुरू होत आहे, $origin ते $destination पर्यंत.',
+      };
+
   /// The route confirmation, and the app's proof through the earphones that
   /// the whole audio path works before the rider needs it.
-  String welcomeBody({required String origin, required String destination}) =>
-      switch (language) {
+  ///
+  /// [routeAlreadySpoken] shortens it to drop the origin and destination,
+  /// because [startingRoute] has just said them and a rider does not need the
+  /// same two station names twice in five seconds. It keeps "Travel Mode is
+  /// on", which is now TRUE and is the one thing the window could not claim.
+  /// False on every path that has no window: a resume from Screen 1, and the
+  /// unattended relaunch, where this is the only route confirmation there is.
+  String welcomeBody({
+    required String origin,
+    required String destination,
+    bool routeAlreadySpoken = false,
+  }) => routeAlreadySpoken
+      ? switch (language) {
+          AppLanguage.english =>
+            'Travel Mode is on. I will announce each station along the way. '
+                'To end the journey at any time, press and hold the End '
+                'journey button.',
+          AppLanguage.hindi =>
+            'ट्रैवल मोड चालू है। रास्ते में हर स्टेशन की घोषणा की जाएगी। '
+                'यात्रा कभी भी समाप्त करने के लिए End journey बटन को दबाकर '
+                'रखें।',
+          AppLanguage.marathi =>
+            'ट्रॅव्हल मोड सुरू आहे. मार्गातील प्रत्येक स्टेशनची घोषणा केली '
+                'जाईल. प्रवास कधीही संपवण्यासाठी End journey बटण दाबून धरून '
+                'ठेवा.',
+        }
+      : switch (language) {
         AppLanguage.english =>
           'Travel Mode is on, from $origin to $destination. I will announce '
               'each station along the way. To end the journey at any time, '

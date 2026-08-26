@@ -4,7 +4,9 @@ import 'dart:io';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/screens/preparing_flow.dart';
 import 'package:commute_guardian/screens/preparing_screen.dart';
+import 'package:commute_guardian/models/app_settings.dart';
 import 'package:commute_guardian/services/audio_output_gateway.dart';
+import 'package:commute_guardian/services/commit_announcer.dart';
 import 'package:commute_guardian/widgets/pressable.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
@@ -44,10 +46,19 @@ void main() {
   const shahadLat = 19.2403;
   const shahadLng = 73.1310;
 
+  /// Hears the commit window without a TTS engine.
+  ///
+  /// NOTE WHAT IT CANNOT DO: there is no stop(). [CommitAnnouncer] has no way
+  /// to cancel an utterance, on purpose, because iOS sends no didCancel for
+  /// tts.stop() and a ride that waits for that completion waits forever.
+  final spokenLines = <String>[];
+
   Future<bool?> pumpFlow(
     WidgetTester tester, {
     required PreparingReport report,
     FixAcquirer? acquirer,
+    bool cancelWindow = false,
+    bool tapPreflightStart = false,
   }) async {
     bool? outcome;
     await tester.pumpWidget(
@@ -67,6 +78,7 @@ void main() {
                     builder: (_) => PreparingFlow(
                       destinationName: 'Kalyan',
                       report: report,
+                      announcer: _RecordingAnnouncer(spokenLines),
                     ),
                   ),
                 );
@@ -79,11 +91,39 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text('go'));
+
+    if (cancelWindow) {
+      // NOT pumpAndSettle. Settling runs the window's own animation to its
+      // end, which COMMITS the ride, so a settle here would test the opposite
+      // of what this asks. Stop partway through instead, the way a rider does.
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        find.byKey(const Key('starting_cancel')),
+        findsOneWidget,
+        reason: 'the window must still be open to cancel from',
+      );
+      await tester.tap(find.byKey(const Key('starting_cancel')));
+      await tester.pumpAndSettle();
+      return outcome;
+    }
+
     await tester.pumpAndSettle();
+
+    if (tapPreflightStart) {
+      await tester.tap(find.byKey(const Key('preflight_start')));
+      await tester.pumpAndSettle();
+    }
+
+    // THE FLOW NOW ENDS IN A THREE SECOND WINDOW, and pumpAndSettle has
+    // already run it to the end, which is what a rider who does nothing gets.
     return outcome;
   }
 
-  test('a clear report means the rider never sees Screen 3', () {
+  // RENAMED 26 Aug 2026. `clear` no longer decides whether the rider sees this
+  // flow at all: since the commit window, the flow is pushed on EVERY ride and
+  // `clear` only decides which state it opens in. The getter is unchanged.
+  test('a clear report means there is nothing to warn about', () {
     const clear = PreparingReport(
       hasFix: true,
       originName: 'Shahad',
@@ -190,33 +230,46 @@ void main() {
       // iOS gives no way to read the built-in speaker while routed to
       // Bluetooth, so the app cannot fix this. It can stop implying it
       // measured something it did not.
+      // TESTED ON THE SCREEN, NOT THROUGH THE FLOW, and the reason is a real
+      // finding rather than test convenience: THIS ROW IS UNREACHABLE IN THE
+      // PRODUCT, and was before the commit window existed too.
+      //
+      // It renders only when `_earphonesConnected && !_volumeLow`, which is
+      // exactly the case where there is nothing to warn about. Before 26 Aug a
+      // report like that meant the gate never pushed this flow at all; after
+      // it, the flow pushes and settles straight past preflight into the
+      // window. Either way no rider stops on this screen to read the row.
+      //
+      // The copy is still pinned here, because the DECISION behind it stands
+      // (the app must not imply it measured the speaker it cannot read) and
+      // the row is one line from being reachable the day preflight is shown
+      // for another reason. Raised, not fixed.
       await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            stationRepositoryProvider.overrideWith(
-              (ref) async => StationRepository.parse(stationsJson),
-            ),
-            fixAcquirerProvider.overrideWithValue(
-              () async => fixAt(shahadLat, shahadLng),
-            ),
-          ],
-          child: const MaterialApp(
-            home: PreparingFlow(
-              destinationName: 'Kalyan',
-              report: PreparingReport(
-                hasFix: true,
-                originName: 'Shahad',
-                backgroundLocationGranted: true,
-                earphonesConnected: true,
-                alarmVolume: 0.8,
+        MaterialApp(
+          home: PreflightScreen(
+            originName: 'Shahad',
+            destinationName: 'Kalyan',
+            steps: const [
+              PrepStep(
+                label: 'Checked your earphone volume',
+                detail: "Your phone's own volume isn't visible while they're "
+                    'connected',
+                status: PrepStatus.done,
               ),
-            ),
+            ],
+            onStart: () {},
+            onRecheck: () {},
+            recheckState: RecheckState.idle,
           ),
         ),
       );
       await tester.pump();
 
       expect(find.text('Checked your earphone volume'), findsOneWidget);
+      expect(
+        find.textContaining("phone's own volume isn't visible"),
+        findsOneWidget,
+      );
     },
   );
 
@@ -556,6 +609,142 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('go'), findsOneWidget, reason: 'back where they started');
   });
+
+  /// THE COMMIT WINDOW, added 26 Aug 2026.
+  ///
+  /// The one screen on this flow that is not a problem. It exists so a mis-tap
+  /// never becomes a ride: Kalyan and Kalwa are one fat-finger apart in the
+  /// picker, and by the time Screen 4 draws the route the ride is real, which
+  /// costs a junk History row and a false ride_started in the only telemetry
+  /// this beta has.
+  group('THE COMMIT WINDOW', () {
+    const clear = PreparingReport(
+      hasFix: true,
+      originName: 'Shahad',
+      backgroundLocationGranted: true,
+      earphonesConnected: true,
+    );
+
+    testWidgets('A CLEAR RIDE NOW SEES A SCREEN, and used to see none', (
+      tester,
+    ) async {
+      final outcome = await pumpFlow(tester, report: clear);
+
+      // It still ends in a ride. It just stops at the window on the way.
+      expect(outcome, isTrue);
+    });
+
+    testWidgets('it speaks the route while cancel is still live', (
+      tester,
+    ) async {
+      spokenLines.clear();
+      await pumpFlow(tester, report: clear);
+
+      expect(spokenLines, hasLength(1));
+      // BOTH station names, because both halves of the contract are what the
+      // rider is checking, and the 9 Aug stale-origin bug was about the half
+      // that is easy to leave out.
+      expect(spokenLines.single, contains('Shahad'));
+      expect(spokenLines.single, contains('Kalyan'));
+      // "Starting", never "is on". The ride has not happened yet and may not.
+      expect(spokenLines.single, contains('Starting'));
+      expect(spokenLines.single, isNot(contains('is on')));
+    });
+
+    testWidgets('CANCEL MEANS NO RIDE EVER STARTED', (tester) async {
+      final outcome = await pumpFlow(
+        tester,
+        report: clear,
+        cancelWindow: true,
+      );
+
+      // FALSE, not null: the rider answered, and the answer was no. Nothing
+      // downstream has to be undone because nothing was ever done.
+      expect(outcome, isFalse);
+    });
+
+    testWidgets('cancelling still let the sentence finish', (tester) async {
+      spokenLines.clear();
+      await pumpFlow(tester, report: clear, cancelWindow: true);
+
+      // The line was spoken and never stopped. CommitAnnouncer has no stop()
+      // at all: iOS sends no didCancel for tts.stop(), so a stopped utterance
+      // is a completion that never arrives.
+      expect(spokenLines, hasLength(1));
+    });
+
+    testWidgets('A POCKETED PHONE STILL GETS ITS RIDE', (tester) async {
+      // THE BUG THIS WINDOW ALMOST SHIPPED WITH. Flutter mutes tickers when
+      // the app stops producing frames, which is what a pocketed phone does.
+      // While the commit was gated on the ring's AnimationController, a rider
+      // who tapped Start and put the phone away got no ride at all: the ring
+      // stalled and nothing ever committed. The clock is a Timer now, and the
+      // ring is only the picture of it.
+      //
+      // Pumping ZERO frames after the window opens is the desk version of a
+      // pocket: time passes, nothing is drawn.
+      bool? outcome;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            stationRepositoryProvider.overrideWith(
+              (ref) async => StationRepository.parse(stationsJson),
+            ),
+          ],
+          child: MaterialApp(
+            home: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  outcome = await Navigator.of(context).push<bool>(
+                    MaterialPageRoute(
+                      builder: (_) => PreparingFlow(
+                        destinationName: 'Kalyan',
+                        report: clear,
+                        announcer: _RecordingAnnouncer(spokenLines),
+                      ),
+                    ),
+                  );
+                },
+                child: const Text('go'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('go'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      // One pump that jumps the whole window, so the ring is never ticked
+      // through it.
+      await tester.pump(commitWindow);
+      await tester.pumpAndSettle();
+
+      expect(outcome, isTrue, reason: 'the ride must start with nobody watching');
+    });
+
+    testWidgets('a warned rider passes through the window too', (tester) async {
+      // Pressing Start past a volume warning confirms the WARNING, not the
+      // destination. One exit from this flow starts a ride, and it is the
+      // window.
+      spokenLines.clear();
+      final outcome = await pumpFlow(
+        tester,
+        report: const PreparingReport(
+          hasFix: true,
+          originName: 'Shahad',
+          backgroundLocationGranted: true,
+          earphonesConnected: true,
+          alarmVolume: 0.05,
+        ),
+        tapPreflightStart: true,
+      );
+
+      expect(outcome, isTrue);
+      expect(spokenLines, hasLength(1));
+    });
+  });
 }
 
 /// Earphones always in, answering instantly.
@@ -569,4 +758,17 @@ class _EarphonesIn implements AudioOutputGateway {
 
   @override
   Future<bool> earphonesConnected() async => true;
+}
+
+/// Records what the commit window said, and says nothing itself.
+class _RecordingAnnouncer extends CommitAnnouncer {
+  _RecordingAnnouncer(this.lines);
+
+  final List<String> lines;
+
+  @override
+  Future<bool> speak(String line, {required AppLanguage language}) async {
+    lines.add(line);
+    return true;
+  }
 }

@@ -171,6 +171,7 @@ class FakeRideServiceClient implements RideServiceClient {
     bool shareAnonymousUsage = false,
     bool announceEveryStation = true,
     AppLanguage language = AppLanguage.english,
+    bool routeAlreadySpoken = false,
   }) async {
     commands.add('startRide:$originStationId->$destinationStationId');
     languagePassed = language;

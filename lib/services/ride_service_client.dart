@@ -775,6 +775,10 @@ class RideServiceClient {
     // clip pack is opened from one directory, so a ride keeps the voice it
     // began in and a rider who switches language hears it on the next ride.
     AppLanguage language = AppLanguage.english,
+    // Whether Screen 3's commit window has already spoken the route. See
+    // [routeSpokenKey]. Defaults FALSE so a caller that forgets it gets the
+    // full welcome, which says too much rather than too little.
+    bool routeAlreadySpoken = false,
   }) async {
     await FlutterForegroundTask.saveData(
       key: originIdKey,
@@ -837,6 +841,10 @@ class RideServiceClient {
       value: shareAnonymousUsage,
     );
     await FlutterForegroundTask.saveData(key: languageKey, value: language.tag);
+    await FlutterForegroundTask.saveData(
+      key: routeSpokenKey,
+      value: routeAlreadySpoken,
+    );
     await FlutterForegroundTask.saveData(
       key: announceEveryStationServiceKey,
       value: announceEveryStation,

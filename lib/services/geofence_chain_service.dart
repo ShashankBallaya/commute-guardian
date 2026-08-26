@@ -366,6 +366,10 @@ class GeofenceChainService {
     // Measured by the UI at Start and carried through the store. A LOG LINE,
     // never a decision: nothing in the ride reads it.
     double? alarmVolume,
+    // Whether Screen 3's commit window already said the two station names out
+    // loud. Shortens the welcome so a rider is not told their route twice in
+    // five seconds. False on every path without a window.
+    bool routeAlreadySpoken = false,
   }) async {
     _logFile = await _createLogFile();
 
@@ -654,6 +658,7 @@ class GeofenceChainService {
         .firstWhere((s) => s.id == journey.destinationStationId)
         .nameIn(language);
     final welcomeBody = _copy.welcomeBody(
+      routeAlreadySpoken: routeAlreadySpoken,
       origin: journey.chain.first.nameIn(language),
       destination: destinationName,
     );

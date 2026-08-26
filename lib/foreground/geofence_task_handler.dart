@@ -89,6 +89,19 @@ Future<void> writeRideInFlight(bool inFlight) async {
   await const RelaunchLifeline().setArmed(inFlight);
 }
 
+/// Whether Screen 3's commit window already spoke the route out loud.
+///
+/// Crosses at START like every other ride setting, and for the same reason: a
+/// value that only travels on change never reaches a ride that simply began
+/// with it set. It shortens the spoken welcome to drop the two station names
+/// the window has just said. See `SpokenCopy.welcomeBody`.
+///
+/// FALSE ON EVERY PATH WITHOUT A WINDOW, which is a resume from Screen 1 and
+/// the unattended relaunch. There the welcome is the ONLY route confirmation
+/// the rider gets, and shortening it would take it away from the one case that
+/// cannot ask for it back.
+const routeSpokenKey = 'route_spoken_at_start';
+
 /// Wind-down action ids, shared by the notification buttons and the debug
 /// screen's sendDataToTask messages.
 const windDownEndNowId = 'wind_down_end_now';
@@ -471,6 +484,12 @@ class GeofenceTaskHandler extends TaskHandler {
       alarmVolume: await FlutterForegroundTask.getData<double>(
         key: alarmVolumeKey,
       ),
+      // Defaults FALSE for a missing key, which is the safe side here too: an
+      // older store costs the rider a repeated pair of station names, never a
+      // route confirmation they never got. See [routeSpokenKey].
+      routeAlreadySpoken:
+          await FlutterForegroundTask.getData<bool>(key: routeSpokenKey) ??
+          false,
     );
   }
 

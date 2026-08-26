@@ -511,7 +511,12 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     await service.requestBatteryOptimizationExemption();
   }
 
-  Future<void> start() async {
+  /// [routeAlreadySpoken] is true only when Screen 3's commit window has just
+  /// said the two station names out loud, which shortens the spoken welcome so
+  /// a rider is not told their route twice in five seconds. Every other caller
+  /// leaves it false, and must: on a resume and on the unattended relaunch the
+  /// welcome is the ONLY route confirmation there is.
+  Future<void> start({bool routeAlreadySpoken = false}) async {
     final journey = ref.read(plannedJourneyProvider).journey;
     if (journey == null) return;
 
@@ -533,6 +538,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final pulseSettings = await ref.read(appSettingsProvider.future);
 
     final started = await service.startRide(
+      routeAlreadySpoken: routeAlreadySpoken,
       originStationId: journey.originStationId,
       destinationStationId: journey.destinationStationId,
       notificationText:
@@ -966,12 +972,17 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final report = await const PreparingGate().check(ref);
     if (!mounted) return;
 
-    if (report.clear) {
-      await start();
-      await showTravelMode();
-      return;
-    }
-
+    // ALWAYS PUSHED SINCE 26 AUG 2026, and the shortcut that used to sit here
+    // is gone. `if (report.clear) { start(); return; }` skipped this flow
+    // entirely on the ordinary ride, which was right while the only thing the
+    // flow could offer was progress: there is none to show, and a screen that
+    // flashes for 200 ms is worse than no screen.
+    //
+    // The flow now ends in the COMMIT WINDOW, which is not progress. It is the
+    // last three seconds in which a mis-tap costs nothing, and the only place
+    // the route is spoken while Cancel is still live. That is worth a screen on
+    // every ride, and it also makes the path from pick to ride the same one
+    // every time instead of one-screen-or-none.
     final destination = stationName(destinationId);
     final proceed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
@@ -980,7 +991,9 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       ),
     );
     if (!mounted || proceed != true) return;
-    await start();
+    // TRUE ONLY HERE. The window has just spoken the route, so the welcome
+    // drops the two station names and keeps the rest.
+    await start(routeAlreadySpoken: true);
     await showTravelMode();
   }
 
