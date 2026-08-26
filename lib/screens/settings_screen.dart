@@ -73,10 +73,25 @@ class SettingsScreen extends StatelessWidget {
     this.onPreviewPulse,
     this.onVersionLongPress,
     this.onSendRideLog,
+    this.oemBrandLabel,
+    this.onOpenOemGuidance,
+    this.oemAcknowledged = false,
   });
 
   final AppSettings settings;
   final List<ReadinessItem> readiness;
+
+  /// The rider's phone brand, when it is one that keeps its own autostart list.
+  /// Null on every other phone, and on iOS, which hides the row entirely.
+  final String? oemBrandLabel;
+
+  /// Opens the guidance screen. Null hides the row, like every other optional
+  /// route on this screen.
+  final VoidCallback? onOpenOemGuidance;
+
+  /// Whether the rider has already said they did it. Changes the wording only:
+  /// nothing here is a status, because the setting cannot be read back.
+  final bool oemAcknowledged;
 
   /// Only what the device can actually speak. See TtsLanguageGateway: offering
   /// a language with no voice behind it silences the wake alarm.
@@ -123,6 +138,10 @@ class SettingsScreen extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(22, 4, 22, 28),
                 children: [
                   _readinessCard(),
+                  if (oemBrandLabel != null && onOpenOemGuidance != null) ...[
+                    const SizedBox(height: 16),
+                    _oemCard(),
+                  ],
                   const SizedBox(height: 16),
                   _pulseCard(),
                   const SizedBox(height: 16),
@@ -176,6 +195,52 @@ class SettingsScreen extends StatelessWidget {
         if (index > 0) const _Divider(),
         _ReadinessRow(item: item),
       ],
+    ],
+  );
+
+  /// SEPARATE FROM READINESS, and the separation is the point. Every row on
+  /// the readiness card can go green, because every one of them reports
+  /// something the platform will answer. This cannot: the autostart list these
+  /// skins keep has no API at all. Putting it up there would turn a card that
+  /// means "you are ready" into one that means "we cannot tell", which is the
+  /// same mistake as the three hardcoded literals it replaced.
+  ///
+  /// So it is an ACTION, drawn as a way in rather than as a state.
+  Widget _oemCard() => _Card(
+    title: 'Your $oemBrandLabel',
+    subtitle:
+        '$oemBrandLabel phones keep their own list of apps allowed to run in '
+        'the background. It can stop Travel Mode without telling you.',
+    children: [
+      PressableRow(
+        key: const Key('settings_oem_row'),
+        onTap: onOpenOemGuidance!,
+        child: Padding(
+          // 48 dp of height at this text size, which is the floor every tap
+          // target in this app is measured against rather than assumed to meet.
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  oemAcknowledged
+                      ? 'Check the steps again'
+                      : 'See what to change',
+                  style: const TextStyle(
+                    fontSize: TypeScale.body,
+                    color: Palette.text,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right,
+                size: 20,
+                color: Palette.textDim(0.5),
+              ),
+            ],
+          ),
+        ),
+      ),
     ],
   );
 

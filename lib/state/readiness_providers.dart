@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../screens/onboarding_screen.dart' show permissionsGatewayProvider;
+import '../services/oem_guidance.dart';
 import '../services/permissions_gateway.dart';
 
 /// What the app can actually promise about waking a rider, read from the
@@ -64,4 +65,23 @@ final travelReadinessProvider = FutureProvider<TravelReadiness>((ref) async {
     notifications: notifications,
     batteryExempt: batteryExempt,
   );
+});
+
+/// The phone-brand gateway, behind a provider so a test can be a Redmi.
+final oemGatewayProvider = Provider<OemGateway>((ref) => const OemGateway());
+
+/// What this rider's own phone brand does to background apps, and what to tell
+/// them about it.
+///
+/// DELIBERATELY NOT PART OF [travelReadinessProvider]. Readiness reports what
+/// the platform can be ASKED, and every row on that card can go green. This one
+/// never can: the autostart list has no API. Keeping them apart is what stops
+/// a card that means "you are ready" from growing a row that means "we cannot
+/// tell". See lib/services/oem_guidance.dart.
+///
+/// NOT autoDispose: it is read whenever Settings opens and the answer cannot
+/// change without a new phone.
+final oemGuidanceProvider = FutureProvider<OemGuidance>((ref) async {
+  final device = await ref.watch(oemGatewayProvider).describe();
+  return oemGuidanceFor(device);
 });

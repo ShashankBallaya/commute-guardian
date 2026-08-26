@@ -559,3 +559,9 @@ final onboardingSeenProvider = FutureProvider<bool>((ref) {
 final relaunchLifelineProvider = Provider<RelaunchLifeline>(
   (ref) => const RelaunchLifeline(),
 );
+
+/// Whether the rider has said they set their phone brand's autostart
+/// permission. Their word, and stored as their word.
+final oemGuidanceDoneProvider = FutureProvider<bool>((ref) {
+  return ref.watch(appDatabaseProvider).hasAcknowledgedOemGuidance();
+});

@@ -1,10 +1,12 @@
 package com.ballshank.commute_guardian
 
+import android.content.ComponentName
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.os.Build
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.view.KeyEvent
@@ -64,6 +66,54 @@ class MainActivity : FlutterActivity() {
             }
         }
         channel = ch
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "commute_guardian/oem",
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "describe" -> result.success(
+                    mapOf(
+                        "manufacturer" to Build.MANUFACTURER,
+                        "brand" to Build.BRAND,
+                        "model" to Build.MODEL,
+                        "sdkInt" to Build.VERSION.SDK_INT,
+                    ),
+                )
+                "openAutoStart" -> result.success(openAutoStart())
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    /**
+     * Opens the OEM screen that holds the second permission, and reports which
+     * one opened.
+     *
+     * RESOLVED BEFORE IT IS STARTED, every time. These components differ by
+     * skin version and several of them are not exported on newer builds, so
+     * starting one blind throws ActivityNotFoundException or SecurityException
+     * on exactly the phones this exists for. Returns null when nothing here
+     * matches, which the Dart side reads as "show the steps and no button":
+     * a button that does nothing is worse than no button.
+     */
+    private fun openAutoStart(): String? {
+        for ((pkg, cls) in AUTOSTART_TARGETS) {
+            val intent = Intent().apply {
+                component = ComponentName(pkg, cls)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            if (packageManager.resolveActivity(intent, 0) == null) continue
+            try {
+                startActivity(intent)
+                return "$pkg/$cls"
+            } catch (e: Exception) {
+                // Resolvable and still refused, which happens on skins that
+                // export the component to the system only. Try the next one.
+                continue
+            }
+        }
+        return null
     }
 
     /**
@@ -195,3 +245,45 @@ class MainActivity : FlutterActivity() {
         super.onDestroy()
     }
 }
+
+/**
+ * The phone's own name for itself, and the OEM settings screen that decides
+ * whether this app is allowed to keep running.
+ *
+ * WHY THIS EXISTS. OEM battery killers are this project's named top product
+ * risk. Android's own battery-optimisation exemption is already requested and
+ * already reported in Settings, and on a Xiaomi, Oppo, Vivo, Realme, OnePlus,
+ * Samsung or Huawei phone it is NOT ENOUGH: those skins carry a second,
+ * separate list (autostart, auto launch, background usage limits) with no
+ * public API, no way to read it, and no way to change it from code. A ride can
+ * die on a phone that reports every permission green.
+ *
+ * WHAT THIS CAN AND CANNOT DO. It can name the phone, and it can OPEN the
+ * screen the rider has to change. It cannot read the setting, cannot set it,
+ * and must never be built on as though it could. That is why the Dart side
+ * offers steps and an acknowledgement rather than a status row: a row that can
+ * never go green is the one thing the readiness card refuses to draw.
+ *
+ * The component names are the dontkillmyapp.com patterns. They are tried in
+ * order and every one is resolved against the package manager first, because
+ * an unresolvable component throws and these differ by skin version.
+ */
+private val AUTOSTART_TARGETS = listOf(
+    // Xiaomi, Redmi, POCO (MIUI and HyperOS)
+    "com.miui.securitycenter" to "com.miui.permcenter.autostart.AutoStartManagementActivity",
+    // Oppo and Realme (ColorOS), newest package first
+    "com.coloros.safecenter" to "com.coloros.safecenter.permission.startup.StartupAppListActivity",
+    "com.coloros.safecenter" to "com.coloros.safecenter.startupapp.StartupAppListActivity",
+    "com.oppo.safe" to "com.oppo.safe.permission.startup.StartupAppListActivity",
+    // Vivo (Funtouch and OriginOS)
+    "com.vivo.permissionmanager" to "com.vivo.permissionmanager.activity.BgStartUpManagerActivity",
+    "com.iqoo.secure" to "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity",
+    // Huawei and Honor (EMUI and MagicOS)
+    "com.huawei.systemmanager" to "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity",
+    "com.huawei.systemmanager" to "com.huawei.systemmanager.optimize.process.ProtectActivity",
+    // OnePlus (OxygenOS)
+    "com.oneplus.security" to "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity",
+    // Samsung (One UI). No autostart list, so this opens Device care's battery
+    // screen, which is where Sleeping apps lives.
+    "com.samsung.android.lool" to "com.samsung.android.sm.ui.battery.BatteryActivity",
+)

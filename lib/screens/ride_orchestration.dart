@@ -23,6 +23,7 @@ import '../state/settings_providers.dart';
 import 'arrival_screen.dart';
 import 'destination_picker_screen.dart';
 import 'history_screen.dart';
+import 'oem_guidance_screen.dart';
 import 'onboarding_screen.dart' show permissionsGatewayProvider;
 import 'preparing_flow.dart';
 import 'settings_screen.dart';
@@ -1355,6 +1356,41 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     messenger.showSnackBar(SnackBar(content: Text(problem)));
   }
 
+  /// Opens the phone-brand guidance, and records the rider's word if they
+  /// give it.
+  ///
+  /// AWAITED FOR THE ACKNOWLEDGEMENT ONLY. Nothing else on this route needs a
+  /// result: the deep link either opened a screen or did not, and the guidance
+  /// screen says which without help from here.
+  Future<void> openOemGuidance() async {
+    final guidance = ref.read(oemGuidanceProvider).valueOrNull;
+    if (guidance == null || !guidance.needsAttention) return;
+    final gateway = ref.read(oemGatewayProvider);
+    final database = ref.read(appDatabaseProvider);
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => Consumer(
+          builder: (context, ref, _) => OemGuidanceScreen(
+            guidance: guidance,
+            acknowledged:
+                ref.watch(oemGuidanceDoneProvider).valueOrNull ?? false,
+            onBack: () => Navigator.of(context).maybePop(),
+            onOpenSetting: gateway.openAutoStart,
+            onAcknowledge: () async {
+              await database.markOemGuidanceDone();
+              ref.invalidate(oemGuidanceDoneProvider);
+              // BACK TO SETTINGS, because the rider has finished. Leaving them
+              // on a screen whose only button has just gone inert is the same
+              // dead end the wake alert used to leave on a stood-down ladder.
+              if (context.mounted) await Navigator.of(context).maybePop();
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> openSettings() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -1382,6 +1418,19 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
                 onFixed: () => ref.invalidate(travelReadinessProvider),
                 gateway: ref.read(permissionsGatewayProvider),
               ),
+              // THE PHONE BRAND'S OWN SECOND PERMISSION. Present only on the
+              // skins that keep an autostart list, absent everywhere else,
+              // because a row about a setting a phone does not have is noise
+              // on the one screen a worried rider reads carefully.
+              oemBrandLabel: () {
+                final guidance = ref.watch(oemGuidanceProvider).valueOrNull;
+                return (guidance != null && guidance.needsAttention)
+                    ? guidance.brandLabel
+                    : null;
+              }(),
+              oemAcknowledged:
+                  ref.watch(oemGuidanceDoneProvider).valueOrNull ?? false,
+              onOpenOemGuidance: () => unawaited(openOemGuidance()),
               onBack: () => Navigator.of(context).maybePop(),
               // Written to settings AND pushed to a running ride. Without the
               // push a rider who changes the interval mid-journey would keep

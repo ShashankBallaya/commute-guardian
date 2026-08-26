@@ -248,4 +248,19 @@ class AppDatabase extends _$AppDatabase {
       (await flag(onboardingSeenKey)) == 'true';
 
   Future<void> markOnboardingSeen() => setFlag(onboardingSeenKey, 'true');
+
+  /// Whether the rider says they have set their phone brand's own autostart
+  /// permission. See lib/services/oem_guidance.dart.
+  ///
+  /// THE RIDER'S WORD, NOT A MEASUREMENT, and it is stored as a flag rather
+  /// than folded into readiness for exactly that reason. The autostart list has
+  /// no API: nothing in this app can read it, so nothing in this app may report
+  /// it as satisfied. A reinstall wipes it along with everything else, which is
+  /// right, because a reinstall on these skins usually resets that list too.
+  static const oemGuidanceDoneKey = 'oem_guidance_done';
+
+  Future<bool> hasAcknowledgedOemGuidance() async =>
+      (await flag(oemGuidanceDoneKey)) == 'true';
+
+  Future<void> markOemGuidanceDone() => setFlag(oemGuidanceDoneKey, 'true');
 }
