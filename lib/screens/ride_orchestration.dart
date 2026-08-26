@@ -7,10 +7,12 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/app_settings.dart';
 import '../models/journey.dart';
+import '../models/station.dart';
 import '../services/analytics.dart';
 import '../services/build_info.dart';
 import '../services/ride_log_export.dart';
 import '../services/permissions_gateway.dart';
+import '../services/relaunch_lifeline.dart';
 import '../services/ride_resume.dart';
 import '../services/ride_service_client.dart';
 import '../state/journey_providers.dart';
@@ -335,6 +337,15 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       return;
     }
     if (!mounted) return;
+    // NOT AWAITED, and that is a rule rather than a preference: this asks a
+    // platform channel why the app was started, and nothing that merely
+    // OBSERVES a ride may stand in front of the first screen. The 10 Aug 2026
+    // white screen was one await on a native call that never returned, and the
+    // native side of this one is allowed to wait four seconds by design.
+    //
+    // A resume that does happen restores its own screen through
+    // [resumeInterrupted], so nothing below is needed for it to work.
+    unawaited(_answerRelaunch());
     // Best-effort and deliberately NOT awaited: the foreground-task channel
     // never resolves under the widget-test binding (same trap as the location
     // fix), and the GPS fill must not hang behind it. When it does resolve
@@ -343,6 +354,72 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // later fix may move.
     unawaited(_restoreRunningRide());
     await ref.read(nearestStationProvider.notifier).locate();
+  }
+
+  /// Answers a launch iOS made by itself, and returns whether a ride resumed.
+  ///
+  /// THE OTHER HALF OF THE 16 AUG 2026 KILL. Everything built for that ride so
+  /// far waits for the rider to open the app. This is the path for the rider
+  /// who does not, because they are asleep, which is the entire reason this
+  /// product exists. See lib/services/relaunch_lifeline.dart for the lifeline
+  /// and [relaunchActionFor] for the rule.
+  ///
+  /// NO DECISION IS TAKEN HERE. This assembles the three facts the decision
+  /// needs (why we were launched, whether a ride was interrupted, and the
+  /// chain that ride was planned along) and does what it is told. The rule
+  /// itself is pure and tested at the desk.
+  Future<bool> _answerRelaunch() async {
+    final lifeline = ref.read(relaunchLifelineProvider);
+    final answer = await lifeline.consumeLaunch();
+    // An ordinary launch, Android, or a test binding. Costs one channel call
+    // that answers instantly, and says nothing to the log, because a line at
+    // every launch is a line nobody reads.
+    if (!answer.launchedByLocation) return false;
+    onOrchestrationLog(answer.describe());
+
+    final ride = await ref.read(interruptedRideProvider.future);
+    final action = relaunchActionFor(
+      answer: answer,
+      ride: ride,
+      chain: ride == null ? const [] : _plannedChain(ride),
+    );
+
+    switch (action) {
+      case RelaunchAction.ignore:
+        // Woken for a ride that has since been finished, declined or gone
+        // stale. Nothing to bring back, so stop asking iOS to wake us: the
+        // flag that arms the lifeline is already false and this is the one
+        // path that can be reached with it still armed.
+        await lifeline.setArmed(false);
+        return false;
+      case RelaunchAction.notify:
+        final refused = await lifeline.notifyRideStopped();
+        if (refused != null) onOrchestrationLog('Relaunch notice: $refused');
+        return false;
+      case RelaunchAction.resume:
+        onOrchestrationLog('Relaunch: on the corridor, resuming unattended.');
+        return resumeInterrupted(ride!);
+    }
+  }
+
+  /// The chain the interrupted ride was planned along, or empty if it cannot
+  /// be planned now.
+  ///
+  /// PLANNED FROM THE IDS, never from where the phone is standing, which is
+  /// the same rule [resumeInterrupted] follows and for the same reason: the
+  /// 9 Aug stale-origin bug fired the wake ladder thirty seconds into a ride.
+  /// An empty chain refuses the corridor test, which sends the rider a
+  /// notification instead of a ride. That is the safe direction.
+  List<Station> _plannedChain(InterruptedRide ride) {
+    final repo = ref.read(stationRepositoryProvider).valueOrNull;
+    if (repo == null) return const [];
+    try {
+      return repo.planner
+          .plan(originId: ride.originId, destinationId: ride.destinationId)
+          .chain;
+    } catch (_) {
+      return const [];
+    }
   }
 
   /// Rebuilds the pickers and route summary from the service store when the UI

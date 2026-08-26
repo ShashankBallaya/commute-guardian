@@ -735,8 +735,7 @@ class RideServiceClient {
   /// A RESUME MUST NOT CALL THIS. The new service writes the flag true again as
   /// it starts, so clearing it from here would be a race against the ride we
   /// just began, and the loser is a ride nobody offers back the second time.
-  Future<void> clearRideInFlight() =>
-      FlutterForegroundTask.saveData(key: rideInFlightKey, value: false);
+  Future<void> clearRideInFlight() => writeRideInFlight(false);
 
   Future<void> requestBatteryOptimizationExemption() async {
     if (Platform.isAndroid &&

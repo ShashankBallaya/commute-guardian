@@ -1,9 +1,11 @@
 import AVFoundation
 import AudioToolbox
 import CallKit
+import CoreLocation
 import Flutter
 import MediaPlayer
 import UIKit
+import UserNotifications
 import flutter_foreground_task
 
 @main
@@ -81,13 +83,24 @@ import flutter_foreground_task
       // The ride runs in THIS engine, so the thermal channel has to exist here
       // as well as on the implicit one. See registerThermalChannel.
       registerThermalChannel(with: registry)
+      // Same reason: the SERVICE is what arms and disarms the lifeline, because
+      // the service owns both edges of a ride. See registerRelaunchChannel.
+      registerRelaunchChannel(with: registry)
     }
+    // BEFORE super, and before any Dart runs. This is the only moment the
+    // launch options are on offer, and the answer they carry ("iOS started this
+    // process because the phone moved") is the entire premise of the lifeline.
+    relaunchLifeline.noteLaunch(options: launchOptions)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
     registerThermalChannel(with: engineBridge.pluginRegistry)
+    // THE ENGINE THAT ANSWERS THE RELAUNCH. A killed ride has no service
+    // isolate left, so the process iOS wakes has only this one, and the whole
+    // decision is taken here.
+    registerRelaunchChannel(with: engineBridge.pluginRegistry)
 
     guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "media_ack") else {
       return
@@ -783,5 +796,251 @@ private func registerThermalChannel(with registry: FlutterPluginRegistry) {
     // The raw value, not a word, because the enum is ordered and the ride log
     // wants to be able to say "it climbed". Dart names it.
     result(ProcessInfo.processInfo.thermalState.rawValue)
+  }
+}
+
+// MARK: - The relaunch lifeline, so a killed ride can come back by itself
+
+/// The one instance. FILE SCOPE FOR THE SAME REASON THE THERMAL CHANNEL IS:
+/// `setPluginRegistrantCallback` takes a C function pointer, so the closure
+/// that registers channels on the service engine may capture nothing at all,
+/// `self` included. A global `let` is initialised lazily and exactly once, and
+/// every path here reaches it from the main thread.
+private let relaunchLifeline = RelaunchLifeline()
+
+/// Asks iOS to start this app again after it has been killed mid-ride.
+///
+/// WHY THIS EXISTS. `geofencing_api`'s iOS side is a 20-line stub, so this app
+/// registers NO OS-level region on either platform: the fences are a Dart
+/// engine over the location stream. The consequence was stated plainly when the
+/// resume offer was built and it has been true ever since: **iOS never
+/// relaunches us after a kill**, so resume-on-reopen helps a rider who opens
+/// the app and nobody else. A rider asleep with the phone in their pocket, who
+/// is the entire reason this product exists, got silence. On 16 Aug 2026 that
+/// is exactly what happened, and the ride simply vanished.
+///
+/// Significant location change monitoring is the one service iOS offers that
+/// SURVIVES TERMINATION. The system holds the registration itself and starts
+/// the app again, into the background, when the phone has moved far enough.
+/// It costs no extra hardware: the fixes are cell and wifi positioning that the
+/// phone is already doing.
+///
+/// WHAT THIS CLASS IS ALLOWED TO DECIDE: nothing. It arms, it disarms, it
+/// reports the fix that woke us, and it posts a notification Dart wrote. Every
+/// judgement (is there an interrupted ride, is this fix on the corridor, may we
+/// resume without asking) lives in `ride_resume.dart`, where it is pure, tested
+/// at the desk, and reproducible without a phone. Swift does not compile on the
+/// machine this project is written on, so that rule is not stylistic: a
+/// decision put here costs a macOS runner every time it is wrong.
+private final class RelaunchLifeline: NSObject, CLLocationManagerDelegate {
+  private let manager = CLLocationManager()
+
+  /// Whether iOS started this process because the phone moved, rather than
+  /// because a rider tapped the icon. Read once and cleared: see
+  /// [consumeLaunch].
+  private var launchedByLocation = false
+
+  /// The most recent fix the significant-change service has handed us.
+  private var latestFix: CLLocation?
+
+  /// A Dart call waiting for the fix that woke us, and its deadline.
+  private var pendingResult: FlutterResult?
+  private var deadline: DispatchWorkItem?
+
+  override init() {
+    super.init()
+    manager.delegate = self
+    // Significant location change monitoring ignores both of these. They are
+    // set anyway so that nothing about this manager rests on a default: it must
+    // never pause itself, and it must never be mistaken for the 1 Hz stream the
+    // ride runs on.
+    manager.pausesLocationUpdatesAutomatically = false
+    manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+  }
+
+  /// Records whether this launch came from the location service, and restarts
+  /// monitoring if it did.
+  ///
+  /// THE RESTART IS REQUIRED, not defensive. Apple's contract is that a
+  /// relaunched app must call `startMonitoringSignificantLocationChanges` again
+  /// to receive the event that woke it. Without this line the app would be
+  /// started, learn nothing, and go back to sleep, which is a worse failure
+  /// than not being started at all because it looks like it worked.
+  func noteLaunch(options: [UIApplication.LaunchOptionsKey: Any]?) {
+    guard options?[.location] != nil else { return }
+    launchedByLocation = true
+    manager.startMonitoringSignificantLocationChanges()
+  }
+
+  /// Arm. Called when a ride starts, and idempotent by the platform's own
+  /// contract.
+  func arm() -> String? {
+    guard CLLocationManager.significantLocationChangeMonitoringAvailable() else {
+      return "significant location change monitoring unavailable"
+    }
+    manager.startMonitoringSignificantLocationChanges()
+    return nil
+  }
+
+  /// Disarm. Called when a ride ends, by whichever half of the app noticed.
+  func disarm() {
+    manager.stopMonitoringSignificantLocationChanges()
+  }
+
+  /// Answers the one question Dart asks at launch, and clears the flag so a
+  /// second caller cannot be told the same story twice.
+  ///
+  /// WAITS FOR THE FIX, up to [seconds]. The location that caused the launch
+  /// arrives at the delegate a moment AFTER monitoring is restarted, so a
+  /// caller answered synchronously would be told "iOS woke us" and handed no
+  /// position, which is the one combination that cannot be acted on. The budget
+  /// is small on purpose: a background relaunch gets seconds of runtime, not
+  /// minutes.
+  func consumeLaunch(seconds: Double, result: @escaping FlutterResult) {
+    let woke = launchedByLocation
+    launchedByLocation = false
+
+    if !woke || latestFix != nil {
+      result(answer(woke: woke))
+      return
+    }
+
+    // Only one caller is ever expected. If a second arrives, the first is
+    // answered with what we have rather than left hanging: a FlutterResult that
+    // is never called leaks a Dart future for the life of the process.
+    finishPending()
+
+    pendingResult = result
+    let timeout = DispatchWorkItem { [weak self] in
+      self?.finishPending()
+    }
+    deadline = timeout
+    DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: timeout)
+  }
+
+  /// Posts a notification Dart wrote the words for.
+  ///
+  /// THE OFF-CORRIDOR ANSWER. A rider who finished the journey another way is
+  /// not on the rail corridor, and starting a ride for them would announce
+  /// stations at somebody sitting at home. They get told, once, that Travel
+  /// Mode stopped, and the app waits to be opened.
+  func notify(title: String, body: String, result: @escaping FlutterResult) {
+    let content = UNMutableNotificationContent()
+    content.title = title
+    content.body = body
+    content.sound = .default
+    let request = UNNotificationRequest(
+      // A FIXED IDENTIFIER, so a phone woken repeatedly on one dead ride
+      // replaces its own notification instead of stacking a column of them.
+      identifier: "commute_guardian.relaunch",
+      content: content,
+      trigger: nil
+    )
+    UNUserNotificationCenter.current().add(request) { error in
+      // Back to the platform thread. A FlutterResult called from the
+      // notification centre's own queue is a documented way to crash.
+      DispatchQueue.main.async {
+        result(error?.localizedDescription)
+      }
+    }
+  }
+
+  func locationManager(
+    _ manager: CLLocationManager,
+    didUpdateLocations locations: [CLLocation]
+  ) {
+    guard let fix = locations.last else { return }
+    latestFix = fix
+    finishPending()
+  }
+
+  func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    // Nothing to do but stop waiting. The answer carries the authorization
+    // word, which is what a failure here usually turns out to mean.
+    finishPending()
+  }
+
+  /// Answers a waiting Dart call, once, and cancels its deadline.
+  private func finishPending() {
+    guard let waiting = pendingResult else { return }
+    pendingResult = nil
+    deadline?.cancel()
+    deadline = nil
+    waiting(answer(woke: true))
+  }
+
+  private func answer(woke: Bool) -> [String: Any] {
+    var payload: [String: Any] = [
+      "launchedByLocation": woke,
+      "authorization": authorizationWord(),
+      "available": CLLocationManager.significantLocationChangeMonitoringAvailable(),
+    ]
+    if let fix = latestFix {
+      payload["lat"] = fix.coordinate.latitude
+      payload["lng"] = fix.coordinate.longitude
+      // NEGATIVE MEANS INVALID in Core Location, and it is passed through
+      // rather than cleaned up here: Dart treats a fix that will not state its
+      // accuracy as the worst case, which is a decision and belongs there.
+      payload["accuracyM"] = fix.horizontalAccuracy
+      payload["ageSeconds"] = -fix.timestamp.timeIntervalSinceNow
+    }
+    return payload
+  }
+
+  private func authorizationWord() -> String {
+    let status: CLAuthorizationStatus
+    if #available(iOS 14.0, *) {
+      status = manager.authorizationStatus
+    } else {
+      status = CLLocationManager.authorizationStatus()
+    }
+    switch status {
+    case .authorizedAlways: return "always"
+    case .authorizedWhenInUse: return "whenInUse"
+    case .denied: return "denied"
+    case .restricted: return "restricted"
+    case .notDetermined: return "notDetermined"
+    @unknown default: return "unknown"
+    }
+  }
+}
+
+/// Registers `commute_guardian/relaunch` on [registry]'s engine.
+///
+/// ON BOTH ENGINES, like the thermal channel and for a mirror of its reason.
+/// The SERVICE arms and disarms the lifeline, because the service owns both
+/// edges of a ride and is the only half that runs when the rider's screen is
+/// off. The IMPLICIT engine answers the relaunch, because after a kill the
+/// service isolate is exactly what no longer exists.
+///
+/// FILE SCOPE, NOT A METHOD ON AppDelegate: `setPluginRegistrantCallback` takes
+/// a C function pointer and its closure may capture nothing, `self` included.
+/// CI answered that with "a C function pointer cannot be formed from a closure
+/// that captures context" once already, on 18 Aug 2026, and that round trip
+/// costs a macOS runner.
+private func registerRelaunchChannel(with registry: FlutterPluginRegistry) {
+  guard let registrar = registry.registrar(forPlugin: "relaunch") else { return }
+  let channel = FlutterMethodChannel(
+    name: "commute_guardian/relaunch",
+    binaryMessenger: registrar.messenger()
+  )
+  channel.setMethodCallHandler { call, result in
+    switch call.method {
+    case "arm":
+      result(relaunchLifeline.arm())
+    case "disarm":
+      relaunchLifeline.disarm()
+      result(nil)
+    case "consumeLaunch":
+      let seconds = (call.arguments as? NSNumber)?.doubleValue ?? 4.0
+      relaunchLifeline.consumeLaunch(seconds: seconds, result: result)
+    case "notify":
+      let arguments = call.arguments as? [String: Any]
+      let title = arguments?["title"] as? String ?? ""
+      let body = arguments?["body"] as? String ?? ""
+      relaunchLifeline.notify(title: title, body: body, result: result)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
   }
 }

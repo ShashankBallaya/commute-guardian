@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/app_database.dart';
 import '../services/ride_resume.dart';
+import '../services/relaunch_lifeline.dart';
 import '../services/ride_service_client.dart';
 import '../services/wind_down.dart';
 
@@ -548,3 +549,13 @@ final savedRoutesProvider = FutureProvider.autoDispose<List<SavedRoute>>((ref) {
 final onboardingSeenProvider = FutureProvider<bool>((ref) {
   return ref.watch(appDatabaseProvider).hasSeenOnboarding();
 });
+
+/// The iOS relaunch lifeline, behind a provider so a test can hand the app a
+/// launch it never had.
+///
+/// See lib/services/relaunch_lifeline.dart. On Android and under a test
+/// binding the real one answers "no lifeline" to everything, which is the
+/// state the app has always been in and is never an error.
+final relaunchLifelineProvider = Provider<RelaunchLifeline>(
+  (ref) => const RelaunchLifeline(),
+);

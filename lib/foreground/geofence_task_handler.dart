@@ -6,6 +6,7 @@ import '../models/app_settings.dart';
 import '../services/analytics.dart';
 import '../services/crash_reporting.dart';
 import '../services/geofence_chain_service.dart';
+import '../services/relaunch_lifeline.dart';
 
 /// Entry point the foreground service isolate calls to install the handler.
 /// Must stay top-level (or static) per flutter_foreground_task's contract.
@@ -68,6 +69,25 @@ const rideStartBatteryKey = 'ride_start_battery';
 /// only this isolate is present for both ends of it. See
 /// lib/services/ride_resume.dart for what the flag is allowed to buy.
 const rideInFlightKey = 'ride_in_flight';
+
+/// Writes [rideInFlightKey] AND moves the iOS relaunch lifeline with it.
+///
+/// ONE FUNCTION SO THE TWO CANNOT DRIFT. The lifeline's whole job is to bring
+/// back a ride that this flag says should still be running, so the flag is
+/// exactly its lifetime: armed while a ride is in flight, disarmed the moment
+/// an ending is chosen. Kept together by construction rather than by three
+/// call sites remembering, because the failure of forgetting is invisible on
+/// this desk (a lifeline left armed wakes a phone for a ride that is over, and
+/// a lifeline never armed does nothing at all, and neither shows up in a test
+/// run or on Android).
+///
+/// Called from BOTH isolates, which is why it is a top-level function next to
+/// the key rather than a method on either side. See
+/// lib/services/relaunch_lifeline.dart.
+Future<void> writeRideInFlight(bool inFlight) async {
+  await FlutterForegroundTask.saveData(key: rideInFlightKey, value: inFlight);
+  await const RelaunchLifeline().setArmed(inFlight);
+}
 
 /// Wind-down action ids, shared by the notification buttons and the debug
 /// screen's sendDataToTask messages.
@@ -296,7 +316,7 @@ class GeofenceTaskHandler extends TaskHandler {
     // Set AFTER the ids are proved present, so a service started with an empty
     // store cannot leave a flag behind that outlives it and offers to resume a
     // ride that never had a route. See [rideInFlightKey].
-    await FlutterForegroundTask.saveData(key: rideInFlightKey, value: true);
+    await writeRideInFlight(true);
     final sarvamGreeting =
         await FlutterForegroundTask.getData<bool>(key: sarvamGreetingKey) ??
         false;
@@ -469,7 +489,7 @@ class GeofenceTaskHandler extends TaskHandler {
     // anything sitting behind a 2.5 s spoken farewell is a line that may never
     // run. This path covers the wind-down auto-off and the four-hour timeout,
     // which ends down the same route. See [rideInFlightKey].
-    await FlutterForegroundTask.saveData(key: rideInFlightKey, value: false);
+    await writeRideInFlight(false);
     await chain.stop(reason: 'wind-down auto-off');
     await FlutterForegroundTask.stopService();
   }
