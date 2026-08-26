@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 /// Sentry, and the rules that keep a rider's journey out of it.
@@ -86,15 +87,7 @@ class CrashReporting {
     try {
       await SentryFlutter.init((options) {
         _configure(options, isolate: 'ui');
-        // Flutter-only collectors, and both of them can see a journey: Screen 4
-        // draws the whole chain, so a screenshot of it IS the rider's route,
-        // and the view hierarchy carries every station name on screen.
-        options.attachScreenshot = false;
-        // Experimental in the SDK, and set anyway: if it is removed the build
-        // breaks here loudly, which is the correct way for this particular
-        // setting to fail.
-        // ignore: experimental_member_use
-        options.attachViewHierarchy = false;
+        configureFlutterOnly(options);
       }).timeout(uiInitTimeout);
       _uiInit = 'ready';
     } on TimeoutException {
@@ -110,6 +103,60 @@ class CrashReporting {
       // hides the cause of the fault it exists to find is not an instrument.
       _uiInit = 'failed: $error';
     }
+  }
+
+  /// The settings that exist only on [SentryFlutterOptions], and therefore only
+  /// on the UI isolate: the service isolate runs the pure Dart [Sentry.init]
+  /// and never touches the native SDKs.
+  ///
+  /// Separated from the init closure so a test can hold a real options object
+  /// and read the values back. A comment claiming a collector is off is not
+  /// evidence; a defaulted flag that a future SDK flips is exactly the failure
+  /// this file exists to prevent.
+  @visibleForTesting
+  static void configureFlutterOnly(SentryFlutterOptions options) {
+    // Flutter-only collectors, and both of them can see a journey: Screen 4
+    // draws the whole chain, so a screenshot of it IS the rider's route, and
+    // the view hierarchy carries every station name on screen.
+    options.attachScreenshot = false;
+    // Experimental in the SDK, and set anyway: if it is removed the build
+    // breaks here loudly, which is the correct way for this particular setting
+    // to fail.
+    // ignore: experimental_member_use
+    options.attachViewHierarchy = false;
+
+    // WATCHDOG TERMINATION TRACKING IS OFF, and this one is not about privacy.
+    // It is here because it KILLED THE APP.
+    //
+    // 11 Aug 2026, 13:33:35, from the iPhone's own report: `0x8BADF00D`,
+    // `WatchdogEvent: process-exit`, "Failed to terminate gracefully after
+    // 5.0s", thermal level 0 so heat was not the cause. The main thread was in
+    //
+    //     -[UIApplication _terminateWithStatus:] -> NSNotificationCenter ->
+    //     -[SentryAppStateManager updateAppState:] ->
+    //     [SentryFileManager storeAppState:] -> NSData._writeData -> write
+    //
+    // That is this feature: `storeAppState` IS the watchdog-termination
+    // detector, and it writes SYNCHRONOUSLY, on the main thread, at every
+    // lifecycle transition. The termination budget is about five seconds and
+    // the app was spending it twice, once here and once on the service's
+    // farewell.
+    //
+    // WHAT TURNING IT OFF COSTS: a report this project has PROVED it never
+    // receives. The Cocoa SDK drops watchdog terminations that happened in the
+    // BACKGROUND, and both of this app's kills were in the background. Checked
+    // against the dashboard on 18 Aug 2026: the only issue there was our own
+    // test event. The app counts these itself instead, as
+    // `RideOutcome.interrupted` on the existing `ride_ended` event.
+    //
+    // iOS ONLY. The SDK documents it as "Out of Memory Tracking for iOS and
+    // macCatalyst", and it reaches the native side over the method channel at
+    // init. Android is untouched.
+    //
+    // IT IS NOT A PROMISE. This deletes one cost paid for nothing. At thermal
+    // level 7 the main thread can still stall inside a transition, which is
+    // what the state-preservation overrides in `AppDelegate.swift` address.
+    options.enableWatchdogTerminationTracking = false;
   }
 
   /// How long the UI isolate's init is given before it is abandoned. Generous,

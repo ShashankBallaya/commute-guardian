@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:commute_guardian/services/crash_reporting.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 /// The scrubber, which is the only part of crash reporting worth testing and
 /// the part that must never quietly stop working.
@@ -228,6 +229,41 @@ void main() async {
         ),
         reason: 'an awaited init must fail the unawaited assertion',
       );
+    });
+  });
+
+  /// The three settings that exist only on [SentryFlutterOptions], read back
+  /// off a real options object rather than asserted about the source.
+  ///
+  /// The watchdog one is here because it KILLED THE APP: on 11 Aug 2026 the
+  /// iPhone reported a `0x8BADF00D` termination with the main thread inside
+  /// `[SentryFileManager storeAppState:]`, which is this feature writing
+  /// synchronously during a lifecycle transition. See the comment on
+  /// `configureFlutterOnly`.
+  group('configureFlutterOnly', () {
+    test('THE SDK SHIPS WATCHDOG TRACKING ON, which is why this matters', () {
+      final untouched = SentryFlutterOptions();
+
+      // The one that defaults ON. If a future SDK flips it to off, the guard
+      // below stops proving anything and this line is where that shows up.
+      expect(untouched.enableWatchdogTerminationTracking, isTrue);
+
+      // These two already default OFF, and are still set by name. A default is
+      // not a decision, and this project has been bitten by one before.
+      expect(untouched.attachScreenshot, isFalse);
+      // ignore: experimental_member_use
+      expect(untouched.attachViewHierarchy, isFalse);
+    });
+
+    test('all three are off after it runs', () {
+      final options = SentryFlutterOptions();
+
+      CrashReporting.configureFlutterOnly(options);
+
+      expect(options.enableWatchdogTerminationTracking, isFalse);
+      expect(options.attachScreenshot, isFalse);
+      // ignore: experimental_member_use
+      expect(options.attachViewHierarchy, isFalse);
     });
   });
 }
