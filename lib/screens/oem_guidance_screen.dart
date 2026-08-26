@@ -16,12 +16,24 @@ import '../widgets/primary_button.dart';
 /// take the rider's word that they have done it. See
 /// lib/services/oem_guidance.dart.
 ///
+/// THE CONFIRMATION IS PINNED, THE READING SCROLLS, and that was measured
+/// rather than chosen. The first draft put everything in one ListView, and at
+/// 360x640 (the 3T, the device every bench runs on) the "I have done this"
+/// button was not merely below the fold: it was never built. A rider on a
+/// budget Android, which is most of this market, met a screen whose primary
+/// action did not exist until they scrolled past five steps. The steps are a
+/// document and scroll like one. The confirmation is a control and stays put.
+///
+/// The deep link sits WITH the steps rather than in the footer, because it is
+/// about them: it opens the screen those steps are performed on. Only the
+/// answer to "have you done it" is pinned.
+///
 /// SEEN ONCE, MAYBE TWICE, which is what earns it any motion at all. The steps
-/// stagger in as it opens (40 ms apart, 260 ms each), because a numbered list
-/// that assembles reads as a sequence and a list that appears whole reads as a
-/// wall. That is the only animation here, it is decorative, and it is gone
-/// entirely under reduced motion. Everything else on this screen is a press
-/// response, which the design system already owns.
+/// stagger in (40 ms apart, 240 ms each) off one controller, because a
+/// numbered list that assembles reads as a sequence and one that appears whole
+/// reads as a wall. It is decorative, and it is gone entirely under reduced
+/// motion. Everything else here is press feedback, which the design system
+/// already owns.
 class OemGuidanceScreen extends StatefulWidget {
   const OemGuidanceScreen({
     super.key,
@@ -71,7 +83,7 @@ class _OemGuidanceScreenState extends State<OemGuidanceScreen> {
             _Header(onBack: widget.onBack),
             Expanded(
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(22, 4, 22, 28),
+                padding: const EdgeInsets.fromLTRB(22, 4, 22, 20),
                 children: [
                   Text(
                     'Your ${guidance.brandLabel} needs one more setting',
@@ -102,57 +114,39 @@ class _OemGuidanceScreenState extends State<OemGuidanceScreen> {
                   const SizedBox(height: 22),
                   _StepsCard(steps: guidance.steps),
                   const SizedBox(height: 18),
-                  if (_deepLinkWorked == false)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: Text(
-                        'This phone will not open that screen directly. '
-                        'Follow the steps above by hand.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: TypeScale.label,
-                          height: 1.45,
-                          color: Palette.textDim(0.55),
-                        ),
-                      ),
-                    )
-                  else
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: PrimaryButton(
-                        key: const Key('oem_open_setting'),
-                        label: 'Open the setting',
-                        filled: false,
-                        onTap: _openSetting,
-                      ),
-                    ),
-                  PrimaryButton(
-                    key: const Key('oem_acknowledge'),
-                    label: widget.acknowledged
-                        ? 'Done'
-                        : 'I have done this',
-                    // WHITE, NOT CRIMSON. Crimson means END A RIDE and nothing
-                    // else may wear it. White is the primary action of the
-                    // screen in front of the rider, which this is.
-                    onTap: widget.onAcknowledge,
-                    enabled: !widget.acknowledged,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    // THE HONEST FOOTNOTE. This is the rider's word and the
-                    // app records it as exactly that. Writing "verified" here
-                    // would be the one lie this screen could tell.
-                    'The app cannot check this setting, so this is your note '
-                    'to yourself. You can come back to it from Settings.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: TypeScale.caption,
-                      height: 1.45,
-                      color: Palette.textDim(0.45),
-                    ),
+                  // CROSSFADED, NOT SWAPPED. A control that vanishes and is
+                  // replaced by a paragraph in one frame reads as a glitch,
+                  // and this particular swap lands the moment a rider has just
+                  // pressed something, which is when they are watching hardest.
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    switchInCurve: const Cubic(0.23, 1, 0.32, 1),
+                    switchOutCurve: const Cubic(0.23, 1, 0.32, 1),
+                    child: _deepLinkWorked == false
+                        ? Text(
+                            key: const Key('oem_open_unavailable'),
+                            'This phone will not open that screen directly. '
+                            'Follow the steps above by hand.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: TypeScale.label,
+                              height: 1.45,
+                              color: Palette.textDim(0.55),
+                            ),
+                          )
+                        : PrimaryButton(
+                            key: const Key('oem_open_setting'),
+                            label: 'Open the setting',
+                            filled: false,
+                            onTap: _openSetting,
+                          ),
                   ),
                 ],
               ),
+            ),
+            _Confirmation(
+              acknowledged: widget.acknowledged,
+              onAcknowledge: widget.onAcknowledge,
             ),
           ],
         ),
@@ -161,77 +155,100 @@ class _OemGuidanceScreenState extends State<OemGuidanceScreen> {
   }
 }
 
-/// The numbered steps, staggered in.
-class _StepsCard extends StatelessWidget {
-  const _StepsCard({required this.steps});
+/// The pinned foot: the one control this screen exists to offer, and the one
+/// sentence that keeps it honest.
+class _Confirmation extends StatelessWidget {
+  const _Confirmation({required this.acknowledged, required this.onAcknowledge});
 
-  final List<String> steps;
+  final bool acknowledged;
+  final VoidCallback onAcknowledge;
 
   @override
   Widget build(BuildContext context) {
-    final reduced = MediaQuery.disableAnimationsOf(context);
     return Container(
-      decoration: Palette.glassCard(radius: 20),
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      // A hairline rather than a card, so the foot reads as the edge of the
+      // document above it rather than as a fourth surface.
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: Palette.hairline)),
+      ),
+      padding: const EdgeInsets.fromLTRB(22, 14, 22, 12),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final (index, step) in steps.indexed) ...[
-            if (index > 0) const SizedBox(height: 16),
-            _Step(
-              number: index + 1,
-              text: step,
-              // 40 ms apart. Short enough that the list is assembled before a
-              // rider has finished reading the first line, long enough to read
-              // as an order rather than a flicker.
-              delay: reduced
-                  ? Duration.zero
-                  : Duration(milliseconds: 40 * index),
-              animate: !reduced,
+          PrimaryButton(
+            key: const Key('oem_acknowledge'),
+            label: acknowledged ? 'Done' : 'I have done this',
+            // WHITE, NOT CRIMSON. Crimson means END A RIDE and nothing else
+            // may wear it. White is the primary action of the screen in front
+            // of the rider, which this is.
+            onTap: onAcknowledge,
+            enabled: !acknowledged,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            // THE HONEST FOOTNOTE. This is the rider's word and the app
+            // records it as exactly that. Writing "verified" here would be the
+            // one lie this screen is in a position to tell.
+            'The app cannot check this setting. This is your own note.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: TypeScale.caption,
+              height: 1.4,
+              color: Palette.textDim(0.45),
             ),
-          ],
+          ),
         ],
       ),
     );
   }
 }
 
-class _Step extends StatefulWidget {
-  const _Step({
-    required this.number,
-    required this.text,
-    required this.delay,
-    required this.animate,
-  });
+/// The numbered steps, staggered in off ONE controller.
+///
+/// One controller with an [Interval] per row, rather than one controller and a
+/// delayed start per row. Five controllers and five pending futures is a lot of
+/// machinery for a decoration, and the futures outlive a fast back-press: they
+/// resolve into a disposed State and are only harmless because every one of
+/// them checks `mounted`. An interval cannot outlive the animation it belongs
+/// to.
+class _StepsCard extends StatefulWidget {
+  const _StepsCard({required this.steps});
 
-  final int number;
-  final String text;
-  final Duration delay;
-  final bool animate;
+  final List<String> steps;
 
   @override
-  State<_Step> createState() => _StepState();
+  State<_StepsCard> createState() => _StepsCardState();
 }
 
-class _StepState extends State<_Step> with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 260),
-  );
+class _StepsCardState extends State<_StepsCard>
+    with SingleTickerProviderStateMixin {
+  /// 40 ms between rows (inside the 30 to 80 ms band a stagger reads in) and
+  /// 240 ms for each row's own fade. The whole cascade for five steps is
+  /// therefore 400 ms, while no single element is on screen for longer than
+  /// 240, which is the number that decides whether motion feels quick.
+  static const _step = Duration(milliseconds: 40);
+  static const _fade = Duration(milliseconds: 240);
+
+  late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
-    if (!widget.animate) {
+    final total = _fade + _step * (widget.steps.length - 1);
+    _controller = AnimationController(vsync: this, duration: total);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Reduced motion is read here rather than in initState because it is a
+    // MediaQuery, and it decides whether this runs at all.
+    if (MediaQuery.disableAnimationsOf(context)) {
       _controller.value = 1;
-      return;
+    } else if (!_controller.isAnimating && _controller.value == 0) {
+      _controller.forward();
     }
-    // A DELAY, NOT A TIMER. forward(from:) after a scheduled callback would
-    // need cancelling on dispose; an interval on the controller cannot outlive
-    // it. The stagger is the delay, and the whole thing is one animation.
-    Future<void>.delayed(widget.delay, () {
-      if (mounted) _controller.forward();
-    });
   }
 
   @override
@@ -242,54 +259,99 @@ class _StepState extends State<_Step> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        // A strong ease-out, the same curve the press feedback uses. Flutter's
-        // stock curves are too soft to read at this duration.
-        final t = const Cubic(0.23, 1, 0.32, 1).transform(_controller.value);
-        return Opacity(
-          opacity: t,
-          // 8 px, and never from zero: nothing in the real world arrives from
-          // nowhere, and a longer rise at this speed reads as a jump.
-          child: Transform.translate(offset: Offset(0, 8 * (1 - t)), child: child),
-        );
-      },
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    final total = _controller.duration!.inMilliseconds;
+    return Container(
+      decoration: Palette.glassCard(radius: 20),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: 24,
-            height: 24,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: Palette.textDim(0.08),
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              '${widget.number}',
-              style: TextStyle(
-                fontSize: TypeScale.caption,
-                fontWeight: FontWeight.w700,
-                color: Palette.textDim(0.8),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                widget.text,
-                style: const TextStyle(
-                  fontSize: TypeScale.body,
-                  height: 1.5,
-                  color: Palette.text,
+          for (final (index, step) in widget.steps.indexed) ...[
+            if (index > 0) const SizedBox(height: 16),
+            _Step(
+              number: index + 1,
+              text: step,
+              progress: CurvedAnimation(
+                parent: _controller,
+                curve: Interval(
+                  (_step.inMilliseconds * index) / total,
+                  (_step.inMilliseconds * index + _fade.inMilliseconds) / total,
+                  // A strong ease-out, the same curve the press feedback uses.
+                  // Flutter's stock curves are too soft to read at 240 ms.
+                  curve: const Cubic(0.23, 1, 0.32, 1),
                 ),
               ),
             ),
-          ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _Step extends StatelessWidget {
+  const _Step({
+    required this.number,
+    required this.text,
+    required this.progress,
+  });
+
+  final int number;
+  final String text;
+  final Animation<double> progress;
+
+  @override
+  Widget build(BuildContext context) {
+    // FadeTransition and SlideTransition rather than Opacity and
+    // Transform.translate inside an AnimatedBuilder: these two repaint without
+    // rebuilding the subtree under them, which is the whole reason Flutter
+    // ships them.
+    return FadeTransition(
+      opacity: progress,
+      child: SlideTransition(
+        // A fraction of the row's own height, not a hardcoded 8 px, so a step
+        // that wraps to three lines rises by the same proportion as one that
+        // does not. Never from zero: nothing arrives from nowhere.
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.25),
+          end: Offset.zero,
+        ).animate(progress),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Palette.textDim(0.08),
+                shape: BoxShape.circle,
+              ),
+              child: Text(
+                '$number',
+                style: TextStyle(
+                  fontSize: TypeScale.caption,
+                  fontWeight: FontWeight.w700,
+                  color: Palette.textDim(0.8),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    fontSize: TypeScale.body,
+                    height: 1.5,
+                    color: Palette.text,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -315,12 +377,20 @@ class _Header extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 2),
-          const Text(
-            'Keeping Travel Mode alive',
-            style: TextStyle(
-              fontSize: TypeScale.heading,
-              fontWeight: FontWeight.w700,
-              color: Palette.text,
+          // EXPANDED, and it was overflowing without it at every size this app
+          // is measured at, 412 px included. A header title is the one string
+          // on a screen that cannot be allowed to push a back button off the
+          // edge, and a rider at a large text scale meets that first.
+          const Expanded(
+            child: Text(
+              'Keeping Travel Mode alive',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: TypeScale.heading,
+                fontWeight: FontWeight.w700,
+                color: Palette.text,
+              ),
             ),
           ),
         ],

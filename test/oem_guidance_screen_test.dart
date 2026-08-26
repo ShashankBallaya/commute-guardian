@@ -40,14 +40,15 @@ void main() {
     return events;
   }
 
-  /// Brings the foot of the screen into view.
+
+
+  /// Scrolls the document to the deep link, which lives WITH the steps.
   ///
-  /// The acknowledgement lives below the steps, and a list of five steps is
-  /// taller than the 800 px test viewport. That is not a layout fault: the
-  /// screen is a scrolling document on a phone too, and a rider is meant to
-  /// read the steps before saying they have done them.
-  Future<void> scrollToFoot(WidgetTester tester) async {
-    await tester.drag(find.byType(ListView), const Offset(0, -400));
+  /// Deliberate: the button opens the screen those steps are performed on, so
+  /// it belongs to them and scrolls with them. Only the confirmation is
+  /// pinned, and the tests below prove that separately.
+  Future<void> scrollToDeepLink(WidgetTester tester) async {
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
     await tester.pumpAndSettle();
   }
 
@@ -72,7 +73,6 @@ void main() {
 
   testWidgets('the rider can say they have done it', (tester) async {
     final events = await pumpGuidance(tester);
-    await scrollToFoot(tester);
 
     await tester.tap(find.byKey(const Key('oem_acknowledge')));
     await tester.pump();
@@ -84,7 +84,6 @@ void main() {
     tester,
   ) async {
     final events = await pumpGuidance(tester, acknowledged: true);
-    await scrollToFoot(tester);
 
     await tester.tap(find.byKey(const Key('oem_acknowledge')));
     await tester.pump();
@@ -102,6 +101,7 @@ void main() {
       // tell whether they are looking at a broken app or a phone that just
       // works differently.
       final events = await pumpGuidance(tester, opens: null);
+      await scrollToDeepLink(tester);
 
       expect(find.byKey(const Key('oem_open_setting')), findsOneWidget);
 
@@ -119,6 +119,7 @@ void main() {
 
   testWidgets('a deep link that works leaves the button alone', (tester) async {
     await pumpGuidance(tester);
+    await scrollToDeepLink(tester);
 
     await tester.tap(find.byKey(const Key('oem_open_setting')));
     await tester.pumpAndSettle();
@@ -132,7 +133,6 @@ void main() {
 
   testWidgets('IT NEVER CLAIMS TO HAVE CHECKED THE SETTING', (tester) async {
     await pumpGuidance(tester, acknowledged: true);
-    await scrollToFoot(tester);
 
     // The rider's word is recorded as the rider's word. "Verified" or "we
     // checked" would be the one lie this screen is in a position to tell.
@@ -164,5 +164,53 @@ void main() {
     for (final step in guidance.steps) {
       expect(find.text(step), findsOneWidget);
     }
+  });
+
+  /// THE BUG THE FIRST DRAFT SHIPPED, measured rather than argued.
+  ///
+  /// Everything used to live in one ListView. At 360x640, which is the 3T and
+  /// the device every bench in this project runs on, "I have done this" was
+  /// not merely below the fold: it was never built, so a rider met a screen
+  /// whose primary action did not exist until they scrolled past five steps.
+  /// Most of this market is on a phone this size or smaller.
+  testWidgets(
+    'THE CONFIRMATION IS REACHABLE WITHOUT SCROLLING, on the smallest phone',
+    (tester) async {
+      // The floor overflow_test.dart measures against: a 320x568 phone, which
+      // is narrower and shorter than the 3T.
+      tester.view.physicalSize = const Size(320, 568);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await pumpGuidance(tester);
+
+      final ack = find.byKey(const Key('oem_acknowledge'));
+      expect(ack, findsOneWidget, reason: 'it must exist without scrolling');
+
+      final box = tester.getRect(ack);
+      expect(
+        box.bottom,
+        lessThanOrEqualTo(568.0),
+        reason: 'the primary action must be on screen, not under the fold',
+      );
+    },
+  );
+
+  testWidgets('and the steps still scroll under it', (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await pumpGuidance(tester);
+
+    // The document scrolls; the control does not move with it. That is the
+    // whole split, and a layout change that quietly puts the button back in
+    // the list would pass every other test in this file.
+    final before = tester.getRect(find.byKey(const Key('oem_acknowledge')));
+    await tester.drag(find.byType(ListView), const Offset(0, -200));
+    await tester.pumpAndSettle();
+    final after = tester.getRect(find.byKey(const Key('oem_acknowledge')));
+
+    expect(after, before);
   });
 }

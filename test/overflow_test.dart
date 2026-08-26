@@ -8,7 +8,9 @@ import 'package:commute_guardian/screens/arrival_screen.dart';
 import 'package:commute_guardian/screens/destination_picker_screen.dart';
 import 'package:commute_guardian/screens/history_screen.dart';
 import 'package:commute_guardian/screens/home_screen.dart';
+import 'package:commute_guardian/screens/oem_guidance_screen.dart';
 import 'package:commute_guardian/services/journey_suggestion.dart';
+import 'package:commute_guardian/services/oem_guidance.dart';
 import 'package:commute_guardian/screens/preparing_screen.dart';
 import 'package:commute_guardian/screens/settings_screen.dart';
 import 'package:commute_guardian/screens/travel_mode_screen.dart';
@@ -385,6 +387,26 @@ void main() {
         onAnnounceEveryStation: (_) {},
         onShareAnonymousUsage: (_) {},
         onLanguage: (_) {},
+      ),
+    ),
+  );
+
+  // ------------------------------------------------------- The OEM guidance
+
+  // THE LONGEST STEP LIST IN THE SET, because the risk here is height and the
+  // worst case is the phone with the most to do. Five steps, and the
+  // confirmation below them must survive every size: on the first draft of
+  // this screen it did not, and at 360x640 (the 3T) it was never even built.
+  atEverySize(
+    'oem guidance, five steps',
+    () => MaterialApp(
+      home: OemGuidanceScreen(
+        guidance: oemGuidanceFor(
+          const OemDevice(manufacturer: 'Xiaomi', brand: 'Redmi'),
+        ),
+        onBack: () {},
+        onOpenSetting: () async => null,
+        onAcknowledge: () {},
       ),
     ),
   );
