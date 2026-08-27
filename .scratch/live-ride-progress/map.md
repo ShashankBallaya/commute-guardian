@@ -13,6 +13,117 @@ notification on Android and a Live Activity on iOS.
 Done when the model is locked, Android ships it, and iOS either ships it or has a
 known, priced reason not to.
 
+## 27 AUG 2026: SCHEDULED, PRICED, AND ONE RISK REMOVED
+
+Owner asked when the iOS Live Activity gets built, in his words: "I need
+something what Uber/Blinkit/Zomato has." Answer given and agreed to record:
+**mid to late September on a device.**
+
+### Why not sooner, and it is not difficulty
+
+Three iPhone testers are waiting on TestFlight in early September, and both
+jobs draw on the same pool of 8 to 12 macOS runs a month. A Live Activity is
+a surface, not safety: it does not wake anybody. When the two compete for a
+run, testers with a date win.
+
+    28 Aug          the ride. Nothing changes.
+    29 to 31 Aug    notification shows live progress. Dart only, ZERO macOS
+                    runs, works on all three phones.
+    early Sept      Apple enrolment, then the TestFlight build.
+    mid to late Sept  the Live Activity. Budget 4 to 6 macOS runs.
+
+### THE BIG ONE: TICKET 01's PRICE RISK LARGELY EVAPORATES
+
+Ticket 01 exists to find out whether a Widget Extension will sideload at all
+on a FREE account, because a second App ID on a 7-day expiry might not, and
+if it did not the iOS half cost USD 349.
+
+**He is enrolling in the Apple Developer Program anyway**, for the early
+September TestFlight (checklist A3). That purchase removes the second-App-ID
+and 7-day-expiry problem that ticket 01 was written to price.
+
+So do NOT spend an afternoon on ticket 01 as written. Re-scope it: after
+enrolment the spike is simply the first build of the real extension, and its
+question ("does this install") is answered by TestFlight itself. This also
+unblocks ticket 08, which was blocked on 01.
+
+### Ticket 08 answered, provisionally
+
+The app STAYS at `IPHONEOS_DEPLOYMENT_TARGET = 13.0`. The extension carries
+its own 16.1, and the ActivityKit calls sit behind `if #available(iOS 16.1,
+*)`. Verified 27 Aug: three build configs in project.pbxproj all read 13.0.
+Nobody is excluded and no market number is needed to decide it.
+
+### Facts checked at the desk 27 Aug, so no session re-derives them
+
+- `ios/Runner.xcodeproj/project.pbxproj` has **two native targets**, Runner
+  and RunnerTests. A third must be added, blind, from Windows.
+- **`NSSupportsLiveActivities` is absent** from `ios/Runner/Info.plist`.
+- There is **no Podfile in the repo**; Flutter generates it. A widget
+  extension needs no pods, so this is not a blocker.
+- Live Activities need **no Apple enrolment to build or sideload**, so this
+  work is not gated by A3. It is only sequenced behind it.
+
+### TWO STALE FACTS IN THIS MAP, CORRECTED
+
+1. "`showNotification: false` on iOS, iOS has NO passive surface today" is
+   **out of date**. It shipped TRUE on 11 Aug (`3f9648b`). iOS has an ongoing
+   notification with real buttons now. The Live Activity is an upgrade to
+   something, not the first surface.
+2. "The Android notification never updates" is **still true, on both
+   platforms**. Title `Travel Mode active`, text `<origin> to <destination>`,
+   set once at start and never touched. Only the BUTTONS change.
+
+### DYNAMIC ISLAND IS OUT, AND THE HARDWARE SETTLES IT
+
+The 30 Jul grilling ruled it out on reach. The phase 3 checklist then said
+"Lock Screen plus Dynamic Island", which contradicts this map. The owner's
+phone decides it: **Dynamic Island arrived with the iPhone 14 Pro and his is
+an iPhone 13**, so he could never see or test one. Lock screen card only.
+
+### HOW WE STOP IT BURNING macOS RUNS
+
+The blind `pbxproj` edit is the only genuinely dangerous part. C1 already
+beat this class of problem: it compiled green on its FIRST run because nine
+Dart tests read the Swift source and checked its structure before a run was
+spent. Same trick:
+
+1. **Generate the target with a script**, never by hand. Deterministic,
+   reviewable, re-runnable.
+2. **Desk tests that parse `project.pbxproj`** and assert the third target
+   exists, that its product type is `com.apple.product-type.app-extension`,
+   that its deployment target is 16.1, and that it is in the app's Embed App
+   Extensions copy phase.
+3. **A test asserting `NSSupportsLiveActivities` is true** in Info.plist.
+
+That is what turns "blind" into "checked" and why 4 to 6 runs is realistic
+rather than optimistic.
+
+### WHAT IT SHOWS
+
+Uber shows a map and an ETA. The train equivalent is the wayfinder already
+specified and MEASURED for Screen 1: the five-dot line strip redrawn in
+SwiftUI, next station, stops remaining, ETA, and the whole card switching to
+the alarm state while the wake ladder is live. The design work is done; see
+[[screen-1-line-strip]].
+
+Updates are **LOCAL**, driven from the ride's own isolate through a method
+channel into Swift, because push updates need APNs and that is a backend.
+Roughly 30 updates a ride, well inside what iOS allows. Reuse the channel
+pattern `RelaunchLifeline` already registers on both engines.
+
+### THE CHEAP HALF THAT LANDS FIRST
+
+`FlutterForegroundTask.updateService` already takes `notificationText` and
+the handler already calls it for buttons. One Dart change gives, on the 3T's
+Android 9, the moto AND the iPhone lock screen:
+
+    Travel Mode active
+    Next: Parel  .  3 stops  .  ~11 min
+
+No Kotlin, no Swift, no pbxproj, no macOS run. It is the part of the Uber
+feeling that is about information rather than chrome. Do this first.
+
 ## Notes
 
 **Domain.** Flutter, Dart. Suburban rail commuter app, Mumbai local first. See

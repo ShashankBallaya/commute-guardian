@@ -1,5 +1,22 @@
 # 01 - Can a Widget Extension sideload onto the iPhone at all?
 
+> **27 AUG 2026: RE-SCOPE THIS. Its price risk has largely evaporated.**
+>
+> This ticket exists to find out whether a Widget Extension will sideload on a
+> FREE account, because a second App ID on a 7-day expiry might refuse, and if
+> it did the iOS half cost USD 349.
+>
+> **The owner is enrolling in the Apple Developer Program anyway**, for the
+> early September TestFlight (phase 3 checklist A3). That purchase removes the
+> second-App-ID and 7-day-expiry problem this ticket was written to price.
+>
+> So do not spend an afternoon here as written. After enrolment the spike is
+> simply the first build of the real extension, and "does it install" is
+> answered by TestFlight itself. This also unblocks 08.
+>
+> See the 27 Aug section of `map.md` for the schedule and the de-risking method.
+
+
 Type: task
 Status: open
 Blocked by: none

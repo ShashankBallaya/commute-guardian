@@ -1,5 +1,17 @@
 # 08 - Does the app's iOS deployment target rise from 13.0?
 
+> **27 AUG 2026: ANSWERED PROVISIONALLY. The app stays at 13.0.**
+>
+> The extension carries its own 16.1 and the ActivityKit calls sit behind
+> `if #available(iOS 16.1, *)`. Checked at the desk: all three build configs in
+> `project.pbxproj` read `IPHONEOS_DEPLOYMENT_TARGET = 13.0`.
+>
+> This needs no market number, because nobody is excluded either way. Reopen it
+> only if a dependency forces the host app higher.
+>
+> No longer blocked: 01's risk evaporated with the Apple enrolment. See `map.md`.
+
+
 Type: grilling
 Status: open
 Blocked by: 01
