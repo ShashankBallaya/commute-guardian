@@ -80,7 +80,10 @@ one-change routes with no "recommended" badge.
 
 ## THE SAFETY HOLE THE SAME PREMISE CREATED
 
-This is the part that makes this urgent rather than merely correct.
+This is the part that makes this a safety item rather than merely a
+correctness one. Read it with the exposure measurement at the end of the
+section: the mechanism is total when it fires, and it is not currently
+likely to fire for most of the cohort. Both halves are true.
 
 `WakeEscalation` does not target the destination directly. It walks a list of
 critical stations: **every interchange the plan requires, then the destination**,
@@ -101,9 +104,27 @@ carried a change.
 
 Station announcements are broken in BOTH rows, because those are chain geofences.
 
-**Half the servable cohort is exposed today**: V3 (Kalyan to Goregaon, change at
-Dadar), V5 (Virar to Sion, change at Dadar Western), the Ghansoli reporter
-(change at Sanpada), and the owner's own 21 Aug Bandra to Kalyan ride.
+**The mechanism reaches four riders. The probability is not uniform, and
+saying otherwise would overstate it.** V3 (Kalyan to Goregaon, change at Dadar),
+V5 (Virar to Sion, change at Dadar Western), the Ghansoli reporter (change at
+Sanpada) and the owner's own 21 Aug Bandra to Kalyan ride all carry a change, so
+the cursor can stick for all four. V2 and V6 have no change in their plan and are
+safe outright.
+
+But measured against the alternative each rider actually has:
+
+    V3       alt is 38 stations via Sandhurst Road against 30 via Dadar
+             -> UNLIKELY, the alternative is eight stops worse
+    V5       alt is 32 stations and TWO changes against 24 and one
+             -> NO, clearly worse, she will not take it
+    friend   alt is via Thane, WHICH SHE TOLD US SHE TAKES
+             -> YES, and she is the reason this was found at all
+
+So this is a real hole that is not currently on fire. The one rider genuinely
+exposed is the one whose stated habit differs from our silent guess, which is
+precisely the class of rider the whole ADR is about. Build the floor anyway: a
+silent, total failure of the one thing the app exists for earns a guard even at
+low probability, and the guard is days of work.
 
 ## The decision
 
