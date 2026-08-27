@@ -218,60 +218,46 @@ void main() {
     expect(outcome, isTrue);
   });
 
-  testWidgets(
-    'A HEALTHY READING WITH EARPHONES IN SAYS WHAT IT DID NOT MEASURE',
-    (tester) async {
-      // The AirPods gap, 12 Aug 2026. `alarmVolume()` reads the current output
-      // ROUTE, so a fine number with earphones connected describes the
-      // EARPHONES. The rider has been told nothing about the speaker their
-      // alarm falls back to when those run out of battery an hour into a
-      // commute, and on the owner's own iPhone that speaker is at zero.
-      //
-      // iOS gives no way to read the built-in speaker while routed to
-      // Bluetooth, so the app cannot fix this. It can stop implying it
-      // measured something it did not.
-      // TESTED ON THE SCREEN, NOT THROUGH THE FLOW, and the reason is a real
-      // finding rather than test convenience: THIS ROW IS UNREACHABLE IN THE
-      // PRODUCT, and was before the commit window existed too.
-      //
-      // It renders only when `_earphonesConnected && !_volumeLow`, which is
-      // exactly the case where there is nothing to warn about. Before 26 Aug a
-      // report like that meant the gate never pushed this flow at all; after
-      // it, the flow pushes and settles straight past preflight into the
-      // window. Either way no rider stops on this screen to read the row.
-      //
-      // The copy is still pinned here, because the DECISION behind it stands
-      // (the app must not imply it measured the speaker it cannot read) and
-      // the row is one line from being reachable the day preflight is shown
-      // for another reason. Raised, not fixed.
-      await tester.pumpWidget(
-        MaterialApp(
-          home: PreflightScreen(
-            originName: 'Shahad',
-            destinationName: 'Kalyan',
-            steps: const [
-              PrepStep(
-                label: 'Checked your earphone volume',
-                detail: "Your phone's own volume isn't visible while they're "
-                    'connected',
-                status: PrepStatus.done,
-              ),
-            ],
-            onStart: () {},
-            onRecheck: () {},
-            recheckState: RecheckState.idle,
-          ),
-        ),
-      );
-      await tester.pump();
+  testWidgets('THE ROW THAT COULD NEVER BE READ IS GONE, 27 Aug 2026', (
+    tester,
+  ) async {
+    // The AirPods gap, 12 Aug 2026. `alarmVolume()` reads the current output
+    // ROUTE, so a fine number with earphones connected describes the
+    // EARPHONES and says nothing about the speaker the alarm falls back to
+    // when they run out of battery an hour into a commute. On the owner's
+    // own iPhone that speaker is at zero.
+    //
+    // The app used to answer that with a preflight row reading "Checked your
+    // earphone volume". It drew only when `_earphonesConnected &&
+    // !_volumeLow`, which is precisely the report that leaves this screen:
+    // before 26 Aug the gate never pushed the flow at all, and after it the
+    // flow settles straight into the commit window. No rider ever read it.
+    //
+    // THE GAP IS REAL AND STILL OPEN. It needs a surface a rider meets
+    // before they are mid-Start, which is Screen 1's readiness card, not
+    // three seconds of a window whose whole job is catching a mis-tap. This
+    // test pins the deletion so the dead row does not come back in place of
+    // that work.
+    // Driven with cancelWindow, which stops PART WAY through the window
+    // instead of settling it. A settle would run the window to its end and
+    // commit the ride, and this needs the flow held open to look at.
+    await pumpFlow(
+      tester,
+      report: const PreparingReport(
+        hasFix: true,
+        originName: 'Shahad',
+        backgroundLocationGranted: true,
+        earphonesConnected: true,
+      ),
+      cancelWindow: true,
+    );
 
-      expect(find.text('Checked your earphone volume'), findsOneWidget);
-      expect(
-        find.textContaining("phone's own volume isn't visible"),
-        findsOneWidget,
-      );
-    },
-  );
+    expect(find.text('Checked your earphone volume'), findsNothing);
+    expect(
+      find.textContaining("phone's own volume isn't visible"),
+      findsNothing,
+    );
+  });
 
   testWidgets(
     'a low volume DRAWS the warning that had never been wired to anything',
@@ -652,11 +638,7 @@ void main() {
     });
 
     testWidgets('CANCEL MEANS NO RIDE EVER STARTED', (tester) async {
-      final outcome = await pumpFlow(
-        tester,
-        report: clear,
-        cancelWindow: true,
-      );
+      final outcome = await pumpFlow(tester, report: clear, cancelWindow: true);
 
       // FALSE, not null: the rider answered, and the answer was no. Nothing
       // downstream has to be undone because nothing was ever done.
@@ -721,7 +703,11 @@ void main() {
       await tester.pump(commitWindow);
       await tester.pumpAndSettle();
 
-      expect(outcome, isTrue, reason: 'the ride must start with nobody watching');
+      expect(
+        outcome,
+        isTrue,
+        reason: 'the ride must start with nobody watching',
+      );
     });
 
     testWidgets('a warned rider passes through the window too', (tester) async {

@@ -279,8 +279,7 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
     final volumeLow = answered
         ? volume != null && volume < AudioOutputGateway.lowVolume
         : _volumeLow;
-    final changed =
-        connected != _earphonesConnected || volumeLow != _volumeLow;
+    final changed = connected != _earphonesConnected || volumeLow != _volumeLow;
 
     // Hold "Checking…" long enough to be seen. Measured from the tap, so a slow
     // probe waits no longer than it already took.
@@ -395,17 +394,26 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
               detail: 'Turn it up, or the alarm may not wake you',
               status: PrepStatus.active,
             ),
-          // The honest half of the same fact, and it appears when the reading
-          // looks FINE. A rider with earphones in has been told nothing about
-          // the speaker their alarm falls back to, so this says so rather than
-          // letting a healthy number stand for both.
-          if (_earphonesConnected && !_volumeLow)
-            const PrepStep(
-              label: 'Checked your earphone volume',
-              detail: "Your phone's own volume isn't visible while they're "
-                  'connected',
-              status: PrepStatus.done,
-            ),
+          // REMOVED 27 Aug 2026: a row whose condition was the exact condition
+          // for leaving this screen.
+          //
+          // It read "Checked your earphone volume / Your phone's own volume
+          // isn't visible while they're connected" and drew only when
+          // `_earphonesConnected && !_volumeLow`, which is what
+          // `_settleIfClear` tests before moving straight to the commit
+          // window. So it could never be read, and it had been unreachable
+          // before the window existed too: the flow used to skip itself
+          // entirely on a clear report.
+          //
+          // THE FACT IT CARRIED IS STILL TRUE AND STILL HAS NO HOME.
+          // `alarmVolume()` reads the CURRENT OUTPUT ROUTE, so with earphones
+          // connected it describes the earphones and says nothing about the
+          // speaker the alarm falls back to when they die mid-commute (the
+          // 11 Aug silent alarm, on a phone whose media volume is always
+          // zero). Screen 1's readiness card is the surface that could say it
+          // to a rider who is not already mid-Start. Deleting the row does not
+          // shrink what the app knows, it stops the app claiming a disclosure
+          // it never made.
           PrepStep(label: 'Watching for $destination', status: PrepStatus.done),
         ],
         // THROUGH THE WINDOW, like the clear path. A rider who pressed Start
