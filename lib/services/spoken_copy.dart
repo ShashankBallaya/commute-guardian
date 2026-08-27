@@ -96,19 +96,19 @@ class SpokenCopy {
                 'ठेवा.',
         }
       : switch (language) {
-        AppLanguage.english =>
-          'Travel Mode is on, from $origin to $destination. I will announce '
-              'each station along the way. To end the journey at any time, '
-              'press and hold the End journey button.',
-        AppLanguage.hindi =>
-          'ट्रैवल मोड चालू है, $origin से $destination तक। रास्ते में हर '
-              'स्टेशन की घोषणा की जाएगी। यात्रा कभी भी समाप्त करने के लिए '
-              'End journey बटन को दबाकर रखें।',
-        AppLanguage.marathi =>
-          'ट्रॅव्हल मोड सुरू आहे, $origin ते $destination पर्यंत. मार्गातील '
-              'प्रत्येक स्टेशनची घोषणा केली जाईल. प्रवास कधीही संपवण्यासाठी '
-              'End journey बटण दाबून धरून ठेवा.',
-      };
+          AppLanguage.english =>
+            'Travel Mode is on, from $origin to $destination. I will announce '
+                'each station along the way. To end the journey at any time, '
+                'press and hold the End journey button.',
+          AppLanguage.hindi =>
+            'ट्रैवल मोड चालू है, $origin से $destination तक। रास्ते में हर '
+                'स्टेशन की घोषणा की जाएगी। यात्रा कभी भी समाप्त करने के लिए '
+                'End journey बटन को दबाकर रखें।',
+          AppLanguage.marathi =>
+            'ट्रॅव्हल मोड सुरू आहे, $origin ते $destination पर्यंत. मार्गातील '
+                'प्रत्येक स्टेशनची घोषणा केली जाईल. प्रवास कधीही संपवण्यासाठी '
+                'End journey बटण दाबून धरून ठेवा.',
+        };
 
   /// The debug screen's text-to-speech self test.
   String testAnnouncement() => switch (language) {
@@ -121,6 +121,22 @@ class SpokenCopy {
     AppLanguage.marathi =>
       'ही कम्यूट गार्जियनची चाचणी घोषणा आहे. हे आपल्याला ऐकू येत असेल, तर '
           'टेक्स्ट टू स्पीच व्यवस्थित काम करत आहे.',
+  };
+
+  /// The rider asked for the far side of a foot overbridge, so the ride ends
+  /// on the near side and the last few metres are on foot (ask for Prabhadevi
+  /// from a Central train and the train puts you at Parel).
+  ///
+  /// SPOKEN AFTER THE ARRIVAL SENTENCE, never instead of it. The arrival names
+  /// the platform the rider is standing on, which is the fact they need first;
+  /// this adds the one they came for. It says "across the foot overbridge"
+  /// rather than "nearby" because the bridge is the whole reason these two
+  /// rows are one place, and a rider who looks for a bridge finds one.
+  String destinationAcrossBridge(String station) => switch (language) {
+    AppLanguage.english => '$station is just across the foot overbridge.',
+    AppLanguage.hindi => '$station यहीं पास, फुट ओवरब्रिज के उस पार है।',
+    AppLanguage.marathi =>
+      '$station येथून जवळच, फूट ओव्हरब्रिजच्या पलीकडे आहे.',
   };
 
   /// Change trains here, and walk to a different station to do it (Dadar

@@ -483,7 +483,12 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         break;
       case RideEndedByService():
         unawaited(onRideEndedByService());
-      case ServiceFix(:final lat, :final lng, :final accuracyM, :final speedKmh):
+      case ServiceFix(
+        :final lat,
+        :final lng,
+        :final accuracyM,
+        :final speedKmh,
+      ):
         // Its own provider, not liveRideProvider: this changes on every fix and
         // Screen 4 must not rebuild at 1 Hz for a number it does not show.
         ref.read(rideSpeedProvider.notifier).applyFix(speedKmh, DateTime.now());
@@ -537,13 +542,24 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // that persist are not settings that arrive.
     final pulseSettings = await ref.read(appSettingsProvider.future);
 
+    // THE RIDER'S PICK IS WHAT THE RIDE IS CALLED, not the platform the planner
+    // chose for them. These two differ only across a foot overbridge, and
+    // passing the resolved one here is what made that substitution silent
+    // everywhere at once: the notification, the History row, the Recent card
+    // that offers the ride again, and the replan on every resume and
+    // relaunch, which turned Prabhadevi into Parel and then had nothing left
+    // to say about it. The service replans from this id and resolves it again,
+    // so the chain, the geofences and the arrival are unchanged; what it gains
+    // is that they can still be told about the walk. Screen 5 already names
+    // the real platform, from `alightStationId`, which WindDown publishes at
+    // the start of every ride.
     final started = await service.startRide(
       routeAlreadySpoken: routeAlreadySpoken,
       originStationId: journey.originStationId,
-      destinationStationId: journey.destinationStationId,
+      destinationStationId: journey.requestedDestinationId,
       notificationText:
           '${stationName(journey.originStationId)} to '
-          '${stationName(journey.destinationStationId)}',
+          '${stationName(journey.requestedDestinationId)}',
       sarvamGreeting: sarvamGreeting,
       sarvamClips: sarvamClips,
       startedAt: DateTime.now(),
@@ -691,8 +707,9 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// counting a lost ride may delay giving one back.
   Future<void> _reportInterrupted() async {
     final settings = await ref.read(appSettingsProvider.future);
-    await Analytics(enabled: settings.shareAnonymousUsage)
-        .trackRideInterrupted();
+    await Analytics(
+      enabled: settings.shareAnonymousUsage,
+    ).trackRideInterrupted();
   }
 
   Future<void> stop() async {

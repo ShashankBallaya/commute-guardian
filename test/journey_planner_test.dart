@@ -1,9 +1,10 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:commute_guardian/models/line.dart';
 import 'package:commute_guardian/models/station.dart';
+import 'package:commute_guardian/services/announcement_templates.dart';
 import 'package:commute_guardian/services/journey_planner.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -501,25 +502,28 @@ void main() {
       expect(_ids(journey.chain), isNot(contains('parel')));
     });
 
-    test('PAREL IS NOT A THROUGH INTERCHANGE, EVEN WHEN IT IS ONE STOP NEARER', () {
-      // Parel and Prabhadevi are slow-only halts; Dadar is where the fast
-      // locals stop. Coming from the south, Prabhadevi arrives one station
-      // before Dadar Western, so ranking equal-change routes by stations
-      // travelled picked the Parel bridge and saved one stop on a slow train
-      // by changing where no fast train calls.
-      for (final originId in ['mumbai_central', 'churchgate', 'grant_road']) {
-        final journey = _planner().plan(
-          originId: originId,
-          destinationId: 'kalyan',
-        );
-        expect(journey.interchanges, hasLength(1), reason: originId);
-        expect(
-          journey.interchanges.single.stationId,
-          'dadar_western',
-          reason: '$originId should change at Dadar, not Parel',
-        );
-      }
-    });
+    test(
+      'PAREL IS NOT A THROUGH INTERCHANGE, EVEN WHEN IT IS ONE STOP NEARER',
+      () {
+        // Parel and Prabhadevi are slow-only halts; Dadar is where the fast
+        // locals stop. Coming from the south, Prabhadevi arrives one station
+        // before Dadar Western, so ranking equal-change routes by stations
+        // travelled picked the Parel bridge and saved one stop on a slow train
+        // by changing where no fast train calls.
+        for (final originId in ['mumbai_central', 'churchgate', 'grant_road']) {
+          final journey = _planner().plan(
+            originId: originId,
+            destinationId: 'kalyan',
+          );
+          expect(journey.interchanges, hasLength(1), reason: originId);
+          expect(
+            journey.interchanges.single.stationId,
+            'dadar_western',
+            reason: '$originId should change at Dadar, not Parel',
+          );
+        }
+      },
+    );
 
     test('STANDING AT PAREL, THE PAREL BRIDGE IS EXACTLY RIGHT', () {
       // The rule is about through journeys, not about the bridge being bad. A
@@ -557,17 +561,11 @@ void main() {
     test('THE OTHER SIDE OF THE BRIDGE IS A WALK, NOT A JOURNEY', () {
       final planner = _planner();
       expect(
-        () => planner.plan(
-          originId: 'dadar',
-          destinationId: 'dadar_western',
-        ),
+        () => planner.plan(originId: 'dadar', destinationId: 'dadar_western'),
         throwsArgumentError,
       );
       expect(
-        () => planner.plan(
-          originId: 'prabhadevi',
-          destinationId: 'parel',
-        ),
+        () => planner.plan(originId: 'prabhadevi', destinationId: 'parel'),
         throwsArgumentError,
       );
     });
@@ -579,5 +577,100 @@ void main() {
     });
   });
 
+  group('THE SUBSTITUTION IS NOT SILENT ANY MORE, 27 Aug 2026', () {
+    // The planner choosing the side of a bridge is right. Choosing it and
+    // never saying so is the bug: a rider who asked for Prabhadevi was ridden
+    // to Parel, told "Parel", and left to work the rest out on a platform.
 
+    test('the pick survives the plan that overrode it', () {
+      final journey = _planner().plan(
+        originId: 'kalyan',
+        destinationId: 'prabhadevi',
+      );
+      expect(
+        journey.destinationStationId,
+        'parel',
+        reason: 'the train still puts them on the Central platform',
+      );
+      expect(journey.requestedDestinationId, 'prabhadevi');
+      expect(journey.walkOnStationId, 'prabhadevi');
+      expect(journey.walkOnStationName?.en, 'Prabhadevi');
+    });
+
+    test('the arrival names the platform AND the station they came for', () {
+      final journey = _planner().plan(
+        originId: 'kalyan',
+        destinationId: 'prabhadevi',
+      );
+      expect(
+        journey.arrivalAnnouncementsIn()['parel'],
+        'You have arrived at your destination, Parel. '
+        'Prabhadevi is just across the foot overbridge.',
+      );
+    });
+
+    test('the same holds for the Dadar bridge', () {
+      final journey = _planner().plan(
+        originId: 'kalyan',
+        destinationId: 'dadar_western',
+      );
+      expect(journey.destinationStationId, 'dadar');
+      expect(journey.walkOnStationId, 'dadar_western');
+      expect(
+        journey.arrivalAnnouncementsIn()['dadar'],
+        'You have arrived at your destination, Dadar Central. '
+        'Dadar Western is just across the foot overbridge.',
+      );
+    });
+
+    test('AN ORDINARY RIDE IS UNTOUCHED, and still clip-backed', () {
+      final journey = _planner().plan(
+        originId: 'kalyan',
+        destinationId: 'thane',
+      );
+      expect(journey.requestedDestinationId, 'thane');
+      expect(journey.walkOnStationId, isNull);
+      expect(journey.walkOnStationName, isNull);
+      // BYTE-IDENTICAL to the template the clip pack was cut from. This is the
+      // guard that stops the walk-on sentence leaking onto every other ride
+      // and silently demoting 127 stations to the device TTS floor.
+      expect(
+        journey.arrivalAnnouncementsIn()['thane'],
+        ClipKind.destination.render('Thane'),
+      );
+    });
+
+    test('THE WALK-ON ARRIVAL KNOWINGLY GIVES UP ITS CLIP', () {
+      // Not an oversight, and pinned so it cannot become one. The appended
+      // sentence breaks ClipLibrary's byte-identical rule, so this one
+      // announcement drops to device TTS. A Sarvam voice saying half of what
+      // the rider needs is worse than a device voice saying all of it.
+      final journey = _planner().plan(
+        originId: 'kalyan',
+        destinationId: 'prabhadevi',
+      );
+      expect(
+        journey.arrivalAnnouncementsIn()['parel'],
+        isNot(ClipKind.destination.render('Parel')),
+      );
+    });
+
+    test('REPLANNING FROM THE STORED PICK REBUILDS THE SAME RIDE', () {
+      // The resume and the iOS relaunch both replan from the persisted id. If
+      // the resolved id were stored instead, Parel would replan to Parel, the
+      // walk would vanish, and a resumed ride would fall silent exactly where
+      // the first one spoke.
+      final first = _planner().plan(
+        originId: 'kalyan',
+        destinationId: 'prabhadevi',
+      );
+      final resumed = _planner().plan(
+        originId: first.originStationId,
+        destinationId: first.requestedDestinationId,
+      );
+      expect(_ids(resumed.chain), _ids(first.chain));
+      expect(resumed.destinationStationId, first.destinationStationId);
+      expect(resumed.walkOnStationId, 'prabhadevi');
+    });
+  });
 }

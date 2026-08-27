@@ -65,6 +65,8 @@ class Journey {
     required this.overshootStations,
     required this.wrongWayStations,
     required this.interchanges,
+    required this.requestedDestinationId,
+    this.walkOnStationName,
   });
 
   /// Every station the ride passes, in travel order, from the origin through to
@@ -81,7 +83,44 @@ class Journey {
   final String originStationId;
 
   /// Where the rider alights. Announced as an arrival, not a passing ping.
+  ///
+  /// THE PLANNER MAY CHOOSE THIS, and it is not always what the rider tapped.
+  /// Both halves of a foot overbridge are one place to a rider, so asking for
+  /// Prabhadevi from a Central train plans a ride to Parel and a walk across.
+  /// [requestedDestinationId] is what they asked for; this is the geometry:
+  /// the chain ends here, the geofences sit here, and the arrival is announced
+  /// here, because this is the platform they have to be standing on.
   final String destinationStationId;
+
+  /// The station the rider actually picked.
+  ///
+  /// Equal to [destinationStationId] on almost every ride. It differs only
+  /// across a foot overbridge, and when it differs the rider has to be TOLD,
+  /// which is the whole reason this field exists: until 27 Aug 2026 the
+  /// substitution was silent, and a rider who asked for Prabhadevi was ridden
+  /// to Parel, told "Parel", and left to work out the rest on a platform.
+  ///
+  /// It is also the id that gets PERSISTED and re-planned. Storing the
+  /// resolved one instead loses the walk: replanning Parel to Parel produces a
+  /// journey with nothing to say, so a resumed or relaunched ride would fall
+  /// silent again exactly where the first one spoke.
+  final String requestedDestinationId;
+
+  /// Where the rider walks to after alighting, or null when they asked for the
+  /// station the ride actually ends at.
+  String? get walkOnStationId => requestedDestinationId == destinationStationId
+      ? null
+      : requestedDestinationId;
+
+  /// Spoken name of that station, or null when there is no walk.
+  ///
+  /// Carried rather than looked up because the walk-on station is NOT on
+  /// [chain]: the chain ends at the platform the rider alights on, so nothing
+  /// else in this object can resolve the far side of the bridge. A
+  /// [SpokenName] for the same reason [Interchange.walkToStationName] is one:
+  /// the planner resolves it at Start and the ride's language can change after
+  /// that.
+  final SpokenName? walkOnStationName;
 
   /// The stations one stop past the destination: the safety net that still
   /// warns a rider who slept through the alight.
@@ -183,10 +222,24 @@ class Journey {
 
     final destination =
         byId[destinationStationId]?.nameIn(language) ?? destinationStationId;
-    announcements[destinationStationId] = ClipKind.destination.render(
-      destination,
-      language: language,
-    );
+    var arrival = ClipKind.destination.render(destination, language: language);
+
+    // THE WALK ACROSS, when the rider asked for the other end of a foot
+    // overbridge. Said HERE rather than at the check-in because this is the
+    // moment they step onto the platform and have to choose a direction.
+    //
+    // THE COST, accepted with eyes open: this sentence is appended to a
+    // clip-backed one, so the byte-identical rule in ClipLibrary stops
+    // matching and the whole arrival drops to the device TTS floor for this
+    // ride. That is the right way round. A Sarvam voice saying only half of
+    // what the rider needs is worse than a device voice saying all of it, and
+    // it costs the voice on walk-on rides alone, never on an ordinary one.
+    final walkOnId = walkOnStationId;
+    if (walkOnId != null) {
+      final walkOn = walkOnStationName?.inLanguage(language) ?? walkOnId;
+      arrival = '$arrival ${copy.destinationAcrossBridge(walkOn)}';
+    }
+    announcements[destinationStationId] = arrival;
 
     return announcements;
   }
