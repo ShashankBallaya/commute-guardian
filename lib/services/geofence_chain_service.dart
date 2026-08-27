@@ -620,6 +620,23 @@ class GeofenceChainService {
     }
 
     _log('Planned journey: ${journey.chain.map((s) => s.name).join(' -> ')}');
+    // THE RIDER'S OWN PICK, when the planner chose a different platform for
+    // them across a foot overbridge.
+    //
+    // Added 27 Aug 2026 off the back of a desk bench that could not be read.
+    // The chain line above ends at "Parel" whether the rider asked for Parel
+    // or for Prabhadevi, so the one artifact a tester can actually send back
+    // could not tell the two apart, and the walk this build exists to
+    // announce was invisible in it. The History row had the answer and the
+    // log did not.
+    final walkOn = journey.walkOnStationName;
+    if (walkOn != null) {
+      _log(
+        'Asked for ${walkOn.en}, which is across the foot overbridge from '
+        '${journey.chain.last.name}. The ride ends at '
+        '${journey.chain.last.name} and the arrival says so.',
+      );
+    }
     for (final interchange in journey.interchanges) {
       _log(
         'Change trains at ${interchange.stationId} onto '
