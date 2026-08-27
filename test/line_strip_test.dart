@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/widgets/line_strip.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Against the REAL bundled network, like the planner tests: the window rule's
@@ -46,7 +47,10 @@ void main() {
     final repo = _repo();
     final first = LineWindow.around(repo, 'kurla')!;
     for (var i = 0; i < 5; i++) {
-      expect(LineWindow.around(repo, 'kurla')!.stationNames, first.stationNames);
+      expect(
+        LineWindow.around(repo, 'kurla')!.stationNames,
+        first.stationNames,
+      );
     }
     expect(first.stationNames[first.currentIndex], 'Kurla');
   });
@@ -83,15 +87,18 @@ void main() {
     expect(window.stationNames[3], 'Ambivli');
   });
 
-  test('THE TRUNK STOPS AT AN AMBIGUOUS JUNCTION rather than picking a branch', () {
-    // Kalyan carries two through services, Kasara and Karjat. From the trunk
-    // there is no single answer to what lies beyond it, and a strip that picked
-    // one would be telling a Karjat rider about Kasara.
-    final window = LineWindow.around(_repo(), 'kalyan')!;
+  test(
+    'THE TRUNK STOPS AT AN AMBIGUOUS JUNCTION rather than picking a branch',
+    () {
+      // Kalyan carries two through services, Kasara and Karjat. From the trunk
+      // there is no single answer to what lies beyond it, and a strip that picked
+      // one would be telling a Karjat rider about Kasara.
+      final window = LineWindow.around(_repo(), 'kalyan')!;
 
-    expect(window.stationNames.last, 'Kalyan');
-    expect(window.currentIndex, LineWindow.size - 1);
-  });
+      expect(window.stationNames.last, 'Kalyan');
+      expect(window.currentIndex, LineWindow.size - 1);
+    },
+  );
 
   test('AT A REAL TERMINUS THE RAIL STOPS, it does not fade into nothing', () {
     // CSMT is the end of the Central main. A fade says "there is more line
@@ -118,7 +125,11 @@ void main() {
     final window = LineWindow.around(_repo(), 'kalyan')!;
 
     expect(window.stationNames.last, 'Kalyan');
-    expect(window.continuesAfter, isTrue, reason: 'Kasara and Karjat are past it');
+    expect(
+      window.continuesAfter,
+      isTrue,
+      reason: 'Kasara and Karjat are past it',
+    );
   });
 
   test('THE RIDER IS ALWAYS BELOW THE RAIL, whatever the window does', () {
@@ -131,5 +142,89 @@ void main() {
     }
     expect(LineStrip.isBelow(1), isFalse);
     expect(LineStrip.isBelow(3), isFalse);
+  });
+
+  group('THE WINDOW CROSSFADES WHEN THE RIDER MOVES, 27 Aug 2026', () {
+    Widget strip(LineWindow window, {bool reduceMotion = false}) => MediaQuery(
+      data: MediaQueryData(disableAnimations: reduceMotion),
+      child: MaterialApp(
+        home: Scaffold(body: LineStrip(window: window)),
+      ),
+    );
+
+    const before = LineWindow(
+      stationNames: ['Thane', 'Kalwa', 'Mumbra', 'Diva', 'Kopar'],
+      currentIndex: 2,
+      continuesBefore: true,
+      continuesAfter: true,
+    );
+    const after = LineWindow(
+      stationNames: ['Kalwa', 'Mumbra', 'Diva', 'Kopar', 'Dombivli'],
+      currentIndex: 2,
+      continuesBefore: true,
+      continuesAfter: true,
+    );
+
+    // NEVER pumpAndSettle IN THIS GROUP. The halo repeats for the life of the
+    // widget, so there is no quiet frame to settle to and pumpAndSettle times
+    // out after ten seconds. Pump explicit frames instead, which is what
+    // measuring a 200 ms transition wants anyway.
+    testWidgets('both windows are on screen mid-transition', (tester) async {
+      await tester.pumpWidget(strip(before));
+      await tester.pump();
+      expect(find.text('Thane'), findsOneWidget);
+      expect(find.text('Dombivli'), findsNothing);
+
+      await tester.pumpWidget(strip(after));
+      await tester.pump();
+      // PART WAY THROUGH, which is the whole point: an instant swap would
+      // never show the two together.
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(
+        find.text('Thane'),
+        findsOneWidget,
+        reason: 'the outgoing window is still fading out',
+      );
+      expect(
+        find.text('Dombivli'),
+        findsOneWidget,
+        reason: 'and the incoming one is fading in',
+      );
+
+      // Past the far end of the 200 ms band.
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(find.text('Thane'), findsNothing);
+      expect(find.text('Dombivli'), findsOneWidget);
+    });
+
+    testWidgets('REDUCED MOTION SWAPS INSTANTLY, no fade', (tester) async {
+      await tester.pumpWidget(strip(before, reduceMotion: true));
+      await tester.pump();
+
+      await tester.pumpWidget(strip(after, reduceMotion: true));
+      await tester.pump();
+
+      expect(
+        find.text('Thane'),
+        findsNothing,
+        reason: 'a rider who asked for no motion gets the swap, not the fade',
+      );
+      expect(find.text('Dombivli'), findsOneWidget);
+    });
+
+    testWidgets('A REDRAW OF THE SAME WINDOW DOES NOT FADE', (tester) async {
+      // The key is what is DRAWN, so an unrelated rebuild (a setState higher
+      // up Screen 1, a fix landing that changes nothing) must not blink the
+      // strip. This is the guard against keying on something that churns.
+      await tester.pumpWidget(strip(before));
+      await tester.pump();
+
+      await tester.pumpWidget(strip(before));
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('Thane'), findsOneWidget);
+      expect(find.text('Kalwa'), findsOneWidget);
+    });
   });
 }

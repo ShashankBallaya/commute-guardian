@@ -120,70 +120,110 @@ class _LineStripState extends State<LineStrip>
 
     return SizedBox(
       height: LineStrip.height,
-      // LayoutBuilder is safe here despite FillOrScroll's IntrinsicHeight: the
-      // SizedBox above answers a height intrinsic from its own fixed value and
-      // never asks its child, so the builder is not queried for one.
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth;
-          final slot = width / stations.length;
-          // Nearly two slots, because the neighbours are on the other side of
-          // the rail and cannot be run into. Held just under 2 so two labels on
-          // the SAME side, which are two slots apart, still keep a gap.
-          final labelWidth = slot * 1.9;
+      // THE WINDOW CROSSFADES WHEN THE RIDER MOVES A STATION, 27 Aug 2026.
+      //
+      // Before this, five labels and the dot swapped between one frame and the
+      // next. The swap is RARE (a station is minutes apart, not seconds) and
+      // it is a real change of information, which is the case the animation
+      // rule actually allows: this is not decoration on a repeated action, it
+      // is the one moment the strip has something new to say.
+      //
+      // 200 ms, and the band is the argument. Under about 150 ms a crossfade
+      // reads as the same instant swap with a smear on it; over about 300 ms
+      // the two sets of names are legibly on screen together and it reads as a
+      // glitch rather than a change. 200 sits in the middle and is the same
+      // number the rest of this app uses for a state change.
+      //
+      // KEYED ON WHAT IS DRAWN, not on the rider's station id. `located`
+      // belongs in the key because losing a fix redraws the dot, and the names
+      // belong in it because a through-service splice can change the whole
+      // window without the middle station moving.
+      child: AnimatedSwitcher(
+        duration: reduced ? Duration.zero : const Duration(milliseconds: 200),
+        // The outgoing window fades on the same curve as the incoming one, so
+        // neither set of names is ever the brighter of the two.
+        switchInCurve: Curves.easeInOut,
+        switchOutCurve: Curves.easeInOut,
+        child: KeyedSubtree(
+          key: ValueKey(
+            '${stations.join('|')}#$current'
+            '#${widget.located}'
+            '#${widget.window.continuesBefore}${widget.window.continuesAfter}',
+          ),
+          child: _window(stations, current, reduced),
+        ),
+      ),
+    );
+  }
 
-          return Stack(
-            clipBehavior: Clip.none,
-            children: [
-              // THE HALO IS ITS OWN LAYER, UNDER THE RAIL.
-              //
-              // It is the only thing on this widget that moves, and it is about
-              // 26 px across. Painting it inside the rail's own painter meant
-              // the rail, five dots and the gradient were all rebuilt sixty
-              // times a second for it, and without a boundary that repaint
-              // could reach the rest of Screen 1. Split and bounded, the moving
-              // part costs one small layer and the static part is painted once.
-              Positioned.fill(
-                child: RepaintBoundary(
-                  child: AnimatedBuilder(
-                    animation: _glow,
-                    builder: (context, _) => CustomPaint(
-                      painter: _GlowPainter(
-                        stops: stations.length,
-                        current: current,
-                        located: widget.located,
-                        railY: LineStrip.railY,
-                        breath: reduced ? 0.5 : _glow.value,
-                      ),
+  /// One window's worth of strip: rail, halo, dots and labels.
+  ///
+  /// Split out of [build] so [AnimatedSwitcher] has a whole subtree to swap.
+  Widget _window(List<String> stations, int current, bool reduced) {
+    return
+    // LayoutBuilder is safe here despite FillOrScroll's IntrinsicHeight: the
+    // SizedBox above answers a height intrinsic from its own fixed value and
+    // never asks its child, so the builder is not queried for one.
+    LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final slot = width / stations.length;
+        // Nearly two slots, because the neighbours are on the other side of
+        // the rail and cannot be run into. Held just under 2 so two labels on
+        // the SAME side, which are two slots apart, still keep a gap.
+        final labelWidth = slot * 1.9;
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // THE HALO IS ITS OWN LAYER, UNDER THE RAIL.
+            //
+            // It is the only thing on this widget that moves, and it is about
+            // 26 px across. Painting it inside the rail's own painter meant
+            // the rail, five dots and the gradient were all rebuilt sixty
+            // times a second for it, and without a boundary that repaint
+            // could reach the rest of Screen 1. Split and bounded, the moving
+            // part costs one small layer and the static part is painted once.
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: AnimatedBuilder(
+                  animation: _glow,
+                  builder: (context, _) => CustomPaint(
+                    painter: _GlowPainter(
+                      stops: stations.length,
+                      current: current,
+                      located: widget.located,
+                      railY: LineStrip.railY,
+                      breath: reduced ? 0.5 : _glow.value,
                     ),
                   ),
                 ),
               ),
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _RailPainter(
-                    stops: stations.length,
-                    current: current,
-                    located: widget.located,
-                    railY: LineStrip.railY,
-                    continuesBefore: widget.window.continuesBefore,
-                    continuesAfter: widget.window.continuesAfter,
-                  ),
+            ),
+            Positioned.fill(
+              child: CustomPaint(
+                painter: _RailPainter(
+                  stops: stations.length,
+                  current: current,
+                  located: widget.located,
+                  railY: LineStrip.railY,
+                  continuesBefore: widget.window.continuesBefore,
+                  continuesAfter: widget.window.continuesAfter,
                 ),
               ),
-              for (final (i, name) in stations.indexed)
-                _positionedLabel(
-                  index: i,
-                  name: name,
-                  current: current,
-                  slot: slot,
-                  width: width,
-                  labelWidth: labelWidth,
-                ),
-            ],
-          );
-        },
-      ),
+            ),
+            for (final (i, name) in stations.indexed)
+              _positionedLabel(
+                index: i,
+                name: name,
+                current: current,
+                slot: slot,
+                width: width,
+                labelWidth: labelWidth,
+              ),
+          ],
+        );
+      },
     );
   }
 
