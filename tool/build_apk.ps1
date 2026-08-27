@@ -28,9 +28,19 @@
 # When Play delivery arrives it wants an app bundle, which solves the same
 # problem its own way. Revisit this then, not before.
 #
-# Signing is unchanged and still the DEBUG KEY (android/app/build.gradle.kts).
-# So every rebuild a tester gets must come from THIS machine, and uninstalling
-# wipes their ride history.
+# SIGNING CHANGED ON 27 AUG 2026. This script builds the RELEASE type, and the
+# release type now signs with the Play UPLOAD KEY when android/key.properties
+# is present (it is, on this machine). Before that date it signed with the
+# debug key.
+#
+# WHAT THAT COSTS THE FOUR RIDERS WHO ALREADY HOLD A BUILD: a debug-signed app
+# cannot be replaced in place by an upload-signed one. Android refuses the
+# install on a signature mismatch. So the NEXT APK this script sends them
+# forces an uninstall, and uninstalling WIPES THEIR RIDE HISTORY. Say so in the
+# mail, or they lose their first week without warning.
+#
+# Builds still come from THIS machine only: the keystore is not in the repo and
+# is not in CI.
 
 param(
   [ValidateSet("arm64-v8a", "armeabi-v7a")]

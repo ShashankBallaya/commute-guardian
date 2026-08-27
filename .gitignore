@@ -69,3 +69,10 @@ tool/.sarvam_key
 # analytics are both off and the app runs normally. See docs/sentry.md and
 # docs/analytics.md.
 secrets.json
+
+# The Play upload key. The keystore itself lives OUTSIDE this repository
+# (see android/key.properties). Committing either one hands anybody who can
+# read the repo the ability to publish as us.
+/android/key.properties
+*.jks
+*.keystore
