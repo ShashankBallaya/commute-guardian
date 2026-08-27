@@ -179,6 +179,67 @@ swaps the chain, the geofences, the overshoot pins and the wake targets while a
 ride is live, it needs hysteresis so a tunnel wobble cannot trigger it, and the
 new route must be persisted or a resume silently reverts it.
 
+## 27 AUG, LATER: THE M-INDICATOR WAY, AND THE TWO DEFECTS SEPARATED
+
+The owner briefly considered a smarter DEFAULT instead of a picker: break the tie
+by preferring interchanges with higher footfall, or "line by line, interchange by
+interchange". Testing that against the two known cases split the problem in a way
+worth keeping.
+
+**THERE ARE TWO DEFECTS HERE, NOT ONE.**
+
+  A. THE TIEBREAK. Two routes, same number of changes, tie broken on station
+     count. This is Ghansoli.
+  B. THE EXCLUSION. Low-frequency lines are never searched unless a station is
+     otherwise UNREACHABLE. This is Vasai to Kalyan.
+
+**Footfall fixes A and does nothing for B:**
+
+    Ghansoli -> CSMT    app changes at Sanpada (minor)
+                        rider wants Thane (one of the biggest)   FIXES IT
+    V3, V5, Bandra      app already changes at Dadar (huge)      already right
+    Vasai -> Kalyan     app changes at Dadar, THE BIGGEST
+                        rider wants Kopar (small)                ENTRENCHES IT
+
+Vasai to Kalyan is not a tiebreak at all. The MEMU is never in the running to be
+tied against, so no ranking rule can reach it.
+
+**THE OWNER'S DECISION, and it resolves both at once:**
+
+> "Let's put the judgment on to the rider itself and go the M-indicator way to
+> let the user decide which route they prefer even it costs them"
+
+**Showing the routes fixes B as well as A**, because B stops being a ranking
+problem and becomes a visibility one. We never have to decide whether an hourly
+train is worth it. We show it, labelled hourly, and she decides.
+
+**THE FAST-TRAIN IDEA SURVIVES, DEMOTED.** It is worth recording because it is
+better than footfall and the data already exists in the owner's head rather than
+in a dataset he would have to source. The real signal is not crowd volume, it is
+**whether fast trains stop there**, which is why Thane beats Sanpada and Dadar
+beats Parel. It is a short, stable, hand-curated list of about 25 stations. His
+own words, already quoted in `journey_planner.dart` from the Parel fix:
+
+> the common thing in Mumbai is to go to the biggest station, because there you
+> get both fast and slow
+
+Its job is now much smaller: it decides **which route is highlighted for a rider
+who does not look**, not which route she takes. Low stakes, so it can come later
+or never.
+
+**ENGINEERING CALLS TAKEN RATHER THAN ASKED**, because they are implementation
+and not product. All revisitable:
+
+  - Enumerate routes at the best change count AND best-plus-one. m-Indicator's
+    own Vasai list does exactly this: one 1-change route, four 2-change routes,
+    then another 1-change route.
+  - **Cap the list at six**, which is what m-Indicator showed for the worst case
+    we have seen. Not a principle, just a number that matches the reference.
+  - Dedupe by the SET OF INTERCHANGES, so one ride relabelled cannot appear
+    twice.
+  - Sort by stops.
+  - Keep the two structural filters: no doubling back, no revisiting a station.
+
 ## Consequences
 
 **The chosen route must be persisted and survive a resume.** Today the route is
