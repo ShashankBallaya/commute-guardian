@@ -240,6 +240,63 @@ and not product. All revisitable:
   - Sort by stops.
   - Keep the two structural filters: no doubling back, no revisiting a station.
 
+## WHY A PICKER IS NOT A NEW CONCEPT TO TEACH
+
+Buying a ticket on this network already asks "via kahan se", because **the fare
+depends on the route**. Every commuter has answered that question at a counter or
+in UTS. So the picker is not a new idea being introduced to a rider; it is a
+question they already know how to answer, asked by an app that then does
+something useful with the answer.
+
+m-Indicator tells them the route. The ticket tells them the price. **Nobody wakes
+them on it.** That is the gap this app is in, and the owner put the scope in one
+sentence worth keeping:
+
+> "our problem only is to wake them up at the interchange and the destination
+> that's it"
+
+That is literally what `WakeEscalation` targets: every interchange the route
+requires, then the destination. It also explains why route choice matters at all.
+**The route decides where the interchanges are**, and the interchanges are half
+of what the app promised to wake them for.
+
+## STORAGE: COMPUTE ON DEMAND, DO NOT SHIP A ROUTE TABLE
+
+Asked directly whether the app can store many permutations of a route. Measured
+on the development desktop:
+
+    one plan, cold                       25 ms
+    one plan, warm median               1.1 ms
+    p90                                  36 ms
+    worst seen                           89 ms
+    ALL 16,002 ordered station pairs    135 seconds
+
+**A picker showing six routes costs about 200 ms in the worst case**, on a screen
+that appears once per ride. Compute them when she asks.
+
+Precomputing every pair is technically fine as a build-time artifact, about two
+minutes and a couple of megabytes beside a 13.5 MB clip pack. It buys nothing and
+it creates a real hazard: **the station JSON is GENERATED from OSM by
+`tool/build_stations.py`**, so a shipped route table becomes a second source of
+truth that has to be regenerated in lockstep. Miss that once and the app offers a
+route through a station that was renamed. That is exactly what happened when
+Dadar was split on 25 Aug and 14 clips went stale in one commit.
+
+**What IS stored is the single route she chose, for the ride she is on.** Small,
+and mandatory: without it a kill hands her the other route on resume and wakes
+her against a chain she is not on.
+
+## EXPECTED FATE OF LAYER 4
+
+Once the picker exists, self-rerouting loses most of its value, because the main
+reason a rider ends up off-route today is that **the app guessed**, and the
+picker removes the guessing. What remains is a rider changing her mind mid-ride,
+or a diversion, which layer 2 (telling her) probably covers.
+
+Keep it parked and expect never to build it. It has already paid for itself: it
+is the reason the chosen route is stored as a first-class thing, which the picker
+needs anyway.
+
 ## Consequences
 
 **The chosen route must be persisted and survive a resume.** Today the route is
