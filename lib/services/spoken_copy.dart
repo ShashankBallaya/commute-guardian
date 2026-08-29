@@ -150,16 +150,16 @@ class SpokenCopy {
   }) => switch (language) {
     AppLanguage.english =>
       'You have reached $station. Get off the train and walk across to '
-          '$walkTo, then ${_platformThen(platform)}board the $line train '
-          'towards $towards to continue to your destination.',
+          '$walkTo, then board the $line train towards $towards'
+          '${_platformFrom(platform)}.',
     AppLanguage.hindi =>
       'आप $station पहुँच गए हैं। ट्रेन से उतरें और पैदल चलकर $walkTo पहुँचें, '
-          'फिर ${_platformThen(platform)}$line ट्रेन में चढ़ें, जो $towards की '
-          'ओर जाती है, ताकि आप अपने गंतव्य तक पहुँच सकें।',
+          'फिर ${_platformFrom(platform)}$towards की ओर जाने वाली $line ट्रेन '
+          'में चढ़ें।',
     AppLanguage.marathi =>
       'आपण $station येथे पोहोचलात. ट्रेनमधून उतरा आणि पायी चालत $walkTo येथे '
-          'जा, त्यानंतर ${_platformThen(platform)}$line ट्रेनमध्ये चढा, जी '
-          '$towards च्या दिशेने जाते, आणि आपले गंतव्य गाठा.',
+          'जा, त्यानंतर ${_platformFrom(platform)}$towards च्या दिशेने जाणारी '
+          '$line ट्रेन घ्या.',
   };
 
   /// The far half of a walk interchange, once the rider has actually crossed
@@ -230,6 +230,30 @@ class SpokenCopy {
   /// "go to platform number 9, 10, or 10 A, then ", or nothing when the
   /// platform is unknown. Sparse by design: an interchange with no platform
   /// in the data still announces the change.
+  /// The platform as a phrase that attaches to "board the X train", rather
+  /// than as a step of its own.
+  ///
+  /// [interchangeWalk] used [_platformThen] until 29 Aug 2026 and read "walk
+  /// across to Dadar Western, THEN go to platform number 2 or 4, THEN board the
+  /// Western train towards Churchgate to continue to your destination". Two
+  /// "then"s turned one instruction into a three-step list, and at the app's
+  /// measured 2.6 words a second (30 words of welcome in 11,571 ms on the
+  /// 28 Aug ride) that sentence ran 13.5 seconds. It plays as the train draws
+  /// into Dadar, over platform noise, while the rider has to stand up and reach
+  /// a door. The number is worth its two seconds; the second "then" is not.
+  ///
+  /// English attaches it as a SUFFIX and the other two as a PREFIX, because
+  /// that is where each language wants it. Each branch places the fragment
+  /// itself; this only says what the fragment is.
+  String _platformFrom(String? platform) {
+    if (platform == null) return '';
+    return switch (language) {
+      AppLanguage.english => ' from platform $platform',
+      AppLanguage.hindi => 'प्लेटफ़ॉर्म नंबर $platform से ',
+      AppLanguage.marathi => 'प्लॅटफॉर्म क्रमांक $platform वरून ',
+    };
+  }
+
   String _platformThen(String? platform) {
     if (platform == null) return '';
     return switch (language) {

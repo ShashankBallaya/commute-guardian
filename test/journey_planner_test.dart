@@ -312,11 +312,17 @@ void main() {
       // 4. Both numbers are offered because the app does not know whether the
       // rider boards a fast or a slow train and by the 12 Jul decision never
       // will.
+      // ONE "then", not two. The platform arrived on 29 Aug as a step of its
+      // own ("walk across to X, THEN go to platform 1 or 3, THEN board...")
+      // and turned one instruction into a three-step list running 13.5 seconds
+      // at the app's measured 2.6 words a second, spoken while the train draws
+      // into Dadar. It attaches to the boarding instruction now, and the
+      // trailing "to continue to your destination" went with it.
       expect(
         journey.arrivalAnnouncementsIn()['dadar'],
         'You have reached Dadar Central. Get off the train and walk across to '
-        'Dadar Western, then go to platform number 1 or 3, then board the '
-        'Western train towards Dahanu Road to continue to your destination.',
+        'Dadar Western, then board the Western train towards Dahanu Road '
+        'from platform 1 or 3.',
       );
       // The far half is a confirmation the rider hears once they are across.
       expect(
