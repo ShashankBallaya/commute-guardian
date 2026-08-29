@@ -1573,6 +1573,26 @@
       "prabhadevi"
     ]
   ],
+  "walkCrossings": {
+    "dadar|dadar_western": [
+      [
+        19.01712,
+        72.842532
+      ],
+      [
+        19.018298,
+        72.843318
+      ],
+      [
+        19.01868,
+        72.843602
+      ],
+      [
+        19.019751,
+        72.844495
+      ]
+    ]
+  },
   "endpointOnlyWalkInterchanges": [
     [
       "parel",

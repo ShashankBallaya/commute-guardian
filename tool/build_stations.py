@@ -393,6 +393,36 @@ INTERCHANGE_PLATFORMS = {
     "trans_harbour_thane_vashi": {"thane": "9, 10, or 10 A"},
 }
 
+# The rails a rider physically crosses to get from one half of a walk interchange
+# to the other, as an ordered run of points along the track. Curated from the
+# ground, never from OSM: this is a line drawn where a person crosses, not a
+# mapped feature.
+#
+# WHAT IT IS FOR. Both halves of a walk pair sit behind 450 m fences whose
+# centres are 207 m apart, so proximity cannot tell them apart: on the 28 Aug
+# 2026 ride the phone never came closer than 88 m to the Dadar Western node,
+# because the rider waited at the south end of the platform. Which SIDE of the
+# rails the rider stands on separates them cleanly, and the same ride measured
+# the separation: 139 fixes on the Central platform never passed +1 m, and 238
+# fixes at Dadar Western never came below +58 m. Nothing at all lands in
+# between, which is what makes the test safe.
+#
+# The line must stay short and local. Extended up the corridor it stops
+# describing the rails (the approaching train read 148 m on the wrong side near
+# Sion), so the app only asks this question near the pair.
+WALK_CROSSINGS = {
+    # The Central slow lines through Dadar, owner-supplied 29 Aug 2026.
+    ("dadar", "dadar_western"): [
+        (19.017120, 72.842532),
+        (19.018298, 72.843318),
+        (19.018680, 72.843602),
+        (19.019751, 72.844495),
+    ],
+    # Parel to Prabhadevi has no line yet. Until it does that pair keeps the
+    # older behaviour, which is to announce the far half as soon as the rider
+    # reaches the near one.
+}
+
 # Pairs of lines one physical train continues across, so crossing their shared
 # junction is NOT a change of train and must never be announced as one. This is
 # deliberately NOT inferred from SHORT_NAMES: the Kasara branch, the trunk and the
@@ -701,6 +731,8 @@ def main() -> int:
                   for lid, name, ids in LINES],
         "throughServices": [list(pair) for pair in THROUGH_SERVICES],
         "walkInterchanges": [list(pair) for pair in WALK_INTERCHANGES],
+        "walkCrossings": {"|".join(pair): [list(pt) for pt in line]
+                          for pair, line in WALK_CROSSINGS.items()},
         "endpointOnlyWalkInterchanges":
             [list(pair) for pair in ENDPOINT_ONLY_WALK_INTERCHANGES],
     }

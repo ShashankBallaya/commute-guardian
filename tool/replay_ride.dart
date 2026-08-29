@@ -105,6 +105,21 @@ void main(List<String> args) {
       for (final pair in (doc['walkInterchanges'] as List? ?? const []))
         (pair as List).cast<String>(),
     ],
+    endpointOnlyWalkInterchanges: [
+      for (final pair
+          in (doc['endpointOnlyWalkInterchanges'] as List? ?? const []))
+        (pair as List).cast<String>(),
+    ],
+    walkCrossings: {
+      for (final entry in (doc['walkCrossings'] as Map? ?? const {}).entries)
+        entry.key as String: [
+          for (final point in entry.value as List)
+            (
+              ((point as List)[0] as num).toDouble(),
+              (point[1] as num).toDouble(),
+            ),
+        ],
+    },
   ).plan(originId: originId, destinationId: destinationId);
 
   stdout.writeln('Journey: ${journey.chain.map((s) => s.name).join(' -> ')}\n');

@@ -162,6 +162,28 @@ class SpokenCopy {
           '$towards च्या दिशेने जाते, आणि आपले गंतव्य गाठा.',
   };
 
+  /// The far half of a walk interchange, once the rider has actually crossed
+  /// to it. It is a CONFIRMATION, not an arrival: the rider walked here, so
+  /// "now approaching" would be nonsense, and what they need to hear is that
+  /// they are on the right side of the bridge and which train to take.
+  ///
+  /// The platform number is deliberately absent. [interchangeWalk] has already
+  /// said it, a minute earlier, at the moment the rider had to decide where to
+  /// walk. Repeating it here would lengthen the one announcement that competes
+  /// with a train pulling in.
+  String walkArrived({
+    required String station,
+    required String line,
+    required String towards,
+  }) => switch (language) {
+    AppLanguage.english =>
+      'You are at $station. Take the $line train towards $towards.',
+    AppLanguage.hindi =>
+      'आप $station पर हैं। $towards की ओर जाने वाली $line ट्रेन लें।',
+    AppLanguage.marathi =>
+      'आपण $station येथे आहात. $towards च्या दिशेने जाणारी $line ट्रेन घ्या.',
+  };
+
   /// Change trains where both services are spoken the same way (the Kasara
   /// branch onto the Karjat branch: both are just "Central"). Named by
   /// direction, because "change here to the Central line" while sitting on a

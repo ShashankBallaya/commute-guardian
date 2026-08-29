@@ -18,6 +18,7 @@ class StationRepository {
     required this.throughServices,
     required this.walkInterchanges,
     required this.endpointOnlyWalkInterchanges,
+    required this.walkCrossings,
   });
 
   final Map<String, Station> stationsById;
@@ -35,6 +36,14 @@ class StationRepository {
   /// (Parel to Prabhadevi). See [JourneyPlanner.endpointOnlyWalkInterchanges].
   final List<List<String>> endpointOnlyWalkInterchanges;
 
+  /// The rails a rider crosses between the halves of a walk interchange, keyed
+  /// `nearId|farId` in the same order as [walkInterchanges], as an ordered run
+  /// of points along the track. See [JourneyPlanner.walkCrossings], and
+  /// `WALK_CROSSINGS` in `tool/build_stations.py` for what the line is and the
+  /// measurements behind it. Sparse: a pair with no line keeps the older
+  /// behaviour.
+  final Map<String, List<(double, double)>> walkCrossings;
+
   /// Plans rides over this network. See [JourneyPlanner].
   late final JourneyPlanner planner = JourneyPlanner(
     stationsById: stationsById,
@@ -42,6 +51,7 @@ class StationRepository {
     throughServices: throughServices,
     walkInterchanges: walkInterchanges,
     endpointOnlyWalkInterchanges: endpointOnlyWalkInterchanges,
+    walkCrossings: walkCrossings,
   );
 
   static const assetPath = 'assets/stations/mumbai_suburban.json';
@@ -78,6 +88,16 @@ class StationRepository {
             in (json['endpointOnlyWalkInterchanges'] as List? ?? const []))
           (pair as List).cast<String>(),
       ],
+      walkCrossings: {
+        for (final entry in (json['walkCrossings'] as Map? ?? const {}).entries)
+          entry.key as String: [
+            for (final point in entry.value as List)
+              (
+                ((point as List)[0] as num).toDouble(),
+                (point[1] as num).toDouble(),
+              ),
+          ],
+      },
     );
   }
 

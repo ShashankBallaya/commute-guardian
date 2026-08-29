@@ -20,6 +20,7 @@ class JourneyPlanner {
     this.throughServices = const [],
     this.walkInterchanges = const [],
     this.endpointOnlyWalkInterchanges = const [],
+    this.walkCrossings = const {},
   });
 
   final Map<String, Station> stationsById;
@@ -38,6 +39,18 @@ class JourneyPlanner {
   /// Shahad -> Borivali around via the hourly Vasai MEMU. Walking across costs
   /// one change, like any other interchange.
   final List<List<String>> walkInterchanges;
+
+  /// The rails a rider physically crosses between the halves of a walk
+  /// interchange, keyed `nearId|farId` in the same order as
+  /// [walkInterchanges]. Curated from the ground; see `WALK_CROSSINGS` in
+  /// `tool/build_stations.py`.
+  ///
+  /// The planner does not route with this. It only hands it to the ride, where
+  /// [RideProgress] uses which SIDE of the rails the rider stands on to tell
+  /// the two halves apart, because 450 m fences 207 m apart cannot. Sparse on
+  /// purpose: a pair with no line announces its far half on arrival at the
+  /// near one, which is what every pair did before.
+  final Map<String, List<(double, double)>> walkCrossings;
 
   /// Walk interchanges a rider only uses when they are ALREADY standing at one
   /// end of them, never as a through interchange on a longer journey.
@@ -382,6 +395,9 @@ class JourneyPlanner {
               stationsById[_directionTerminalId(legs[i])]!.spokenName,
           isSameNamedService: !walked && onto.shortName == from.shortName,
           walkToStationName: walkTo,
+          walkCrossing: walked
+              ? _crossingFor(legs[i - 1].toId, legs[i].fromId)
+              : null,
           platform: onto.platforms[legs[i].fromId],
         ),
       );
@@ -522,6 +538,14 @@ class JourneyPlanner {
   /// train change is described when the line name alone cannot disambiguate it
   /// ("change to Central" while already on Central says nothing; "board the
   /// train towards Karjat" does).
+  /// The crossing line for a walk pair, whichever way round the rider takes it.
+  /// The data is keyed in [walkInterchanges] order and a journey can use the
+  /// pair in either direction, so both keys are tried. The line itself is the
+  /// same rails either way; only which side means "arrived" flips, and
+  /// [RideProgress] derives that from the station nodes.
+  List<(double, double)>? _crossingFor(String nearId, String farId) =>
+      walkCrossings['$nearId|$farId'] ?? walkCrossings['$farId|$nearId'];
+
   String _directionTerminalId(_Leg leg) {
     final ids = linesById[leg.lineId]!.stationIds;
     final from = ids.indexOf(leg.fromId);

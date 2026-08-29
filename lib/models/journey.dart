@@ -13,6 +13,7 @@ class Interchange {
     required this.towardsStationName,
     required this.isSameNamedService,
     this.walkToStationName,
+    this.walkCrossing,
     this.platform,
   });
 
@@ -28,6 +29,18 @@ class Interchange {
   /// A [SpokenName] rather than a string because the planner resolves it at
   /// Start, and the language the ride is announced in can change after that.
   final SpokenName? walkToStationName;
+
+  /// The rails the rider physically crosses to reach [walkToStationName], as
+  /// an ordered run of points along the track. Null for an ordinary
+  /// same-station change, and null for a walk pair with no line curated yet.
+  ///
+  /// It exists because proximity cannot tell the two halves of a walk pair
+  /// apart: their fences are 450 m and their centres 207 m, and on the 28 Aug
+  /// 2026 ride the phone never came within 88 m of the Dadar Western node
+  /// because the rider waited at the south end of the platform. Which SIDE of
+  /// the rails the rider stands on separates them with nothing in between.
+  final List<(double, double)>? walkCrossing;
+
   final String fromLineId;
   final String toLineId;
 
@@ -218,6 +231,27 @@ class Journey {
         );
       }
       announcements[interchange.stationId] = text;
+
+      // THE FAR HALF OF A WALK PAIR gets a line of its own, and it is a
+      // confirmation rather than an arrival: the rider walked there, so the
+      // default "Now approaching Dadar Western" is wrong twice over, in tense
+      // and in what it is for. RideProgress holds it back until the rider is
+      // provably across the rails, so hearing it means being on the right
+      // platform.
+      //
+      // The far half is the chain slot straight after the near one. That is
+      // the same invariant [RideProgress.walkInterchangeStationIds] rests on:
+      // the planner puts both halves on the chain, in walking order.
+      if (walkTo != null) {
+        final near = chain.indexWhere((s) => s.id == interchange.stationId);
+        if (near >= 0 && near + 1 < chain.length) {
+          announcements[chain[near + 1].id] = copy.walkArrived(
+            station: chain[near + 1].nameIn(language),
+            line: interchange.toLineShortName,
+            towards: interchange.towardsStationName.inLanguage(language),
+          );
+        }
+      }
     }
 
     final destination =

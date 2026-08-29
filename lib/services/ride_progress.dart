@@ -37,6 +37,7 @@ class RideProgress {
     this.approachRadiusM = const {},
     this.arrivalAnnouncements = const {},
     this.walkInterchangeStationIds = const {},
+    this.walkCrossings = const {},
     this.maxAccuracyM = 150,
     this.language = AppLanguage.english,
   });
@@ -56,6 +57,11 @@ class RideProgress {
     walkInterchangeStationIds: {
       for (final interchange in journey.interchanges)
         if (interchange.walkToStationName != null) interchange.stationId,
+    },
+    walkCrossings: {
+      for (final interchange in journey.interchanges)
+        if (interchange.walkCrossing != null)
+          interchange.stationId: interchange.walkCrossing!,
     },
     language: language,
   );
@@ -98,6 +104,43 @@ class RideProgress {
   /// reached: see [_behindItsWalkPair]. The chain passes through the pair, in
   /// order, and never through one half of it.
   final Set<String> walkInterchangeStationIds;
+
+  /// The rails the rider crosses to reach the far half of a walk pair, keyed
+  /// by the station they alight at, as an ordered run of points along the
+  /// track. See [Interchange.walkCrossing].
+  ///
+  /// WHY A LINE AND NOT A FENCE. The far half's own fence cannot be used: on
+  /// the 28 Aug 2026 ride the phone never came within 88 m of the Dadar
+  /// Western node, because the rider waited at the south end of a 250 m
+  /// platform, so any circle small enough to mean "here" would have missed
+  /// him. Which SIDE of the rails he stood on separated the two halves with
+  /// nothing in between: 139 fixes on the Central platform never passed +1 m
+  /// and 238 fixes at Dadar Western never came below +58 m.
+  ///
+  /// A pair with no line keeps the older behaviour, which is to announce the
+  /// far half as soon as the near one is reached.
+  final Map<String, List<(double, double)>> walkCrossings;
+
+  /// How far past the rails, toward the far half, the rider must be before the
+  /// far half is theirs. Sits in the middle of the empty band the ride
+  /// measured (+1 to +58), so it is about 29 m clear of both clusters, against
+  /// fixes accurate to 14 m.
+  static const walkCrossingBoundaryM = 30.0;
+
+  /// The accuracy this one decision needs. [maxAccuracyM] admits 150 m fixes,
+  /// which say nothing at all against a 30 m boundary.
+  static const walkCrossingMaxAccuracyM = 50.0;
+
+  /// How near the pair the rider must be for the crossing line to still
+  /// describe the rails.
+  ///
+  /// A STRAIGHT LINE STOPS BEING THE TRACK once you leave the station. Run up
+  /// the corridor, the Dadar line puts the approaching train 148 m on the
+  /// WRONG side near Sion, because the real alignment curves and the line does
+  /// not. The question is only ever asked within sight of the pair.
+  static const walkCrossingRangeM = 400.0;
+
+  static const _metresPerDegree = 111320.0;
 
   final double maxAccuracyM;
 
@@ -193,7 +236,7 @@ class RideProgress {
     // arriving at, and it is what makes the heads-up announcement fire on time
     // instead of the far half stealing it.
     var n = _nearestIndex(lat, lng);
-    if (_behindItsWalkPair(n)) n -= 1;
+    if (_behindItsWalkPair(n, lat, lng, accuracyM)) n -= 1;
     final nearest = chain[n];
     final nearestDist = nearest.distanceM(lat, lng);
 
@@ -353,10 +396,65 @@ class RideProgress {
   /// and 205 m of platform offset is not a train ride. The block lifts the
   /// moment the near half is announced, which is when the rider gets off and
   /// starts walking, and from there the pair announces in chain order.
-  bool _behindItsWalkPair(int index) =>
-      index > 0 &&
-      walkInterchangeStationIds.contains(chain[index - 1].id) &&
-      !_announcedArrivals.contains(chain[index - 1].id);
+  bool _behindItsWalkPair(int index, double lat, double lng, double accuracyM) {
+    if (index == 0) return false;
+    final nearId = chain[index - 1].id;
+    if (!walkInterchangeStationIds.contains(nearId)) return false;
+    // Still on the train, or on the near platform: the pair is the near half.
+    if (!_announcedArrivals.contains(nearId)) return true;
+    return !_hasCrossedTo(index, nearId, lat, lng, accuracyM);
+  }
+
+  /// Whether the rider has crossed the rails to the far half at [index].
+  ///
+  /// True with no line curated for the pair, which is the older behaviour: the
+  /// far half follows the near one straight away. False, not true, when the
+  /// fix cannot answer (too coarse, or too far from the pair), because an
+  /// unanswered question must not be read as "they have crossed".
+  bool _hasCrossedTo(
+    int index,
+    String nearId,
+    double lat,
+    double lng,
+    double accuracyM,
+  ) {
+    final rails = walkCrossings[nearId];
+    if (rails == null || rails.length < 2) return true;
+    if (accuracyM > walkCrossingMaxAccuracyM) return false;
+    final far = chain[index];
+    if (far.distanceM(lat, lng) > walkCrossingRangeM) return false;
+
+    // Which side "across" is, taken from the station nodes rather than stored,
+    // so one line serves both directions: the rails are the same either way
+    // and only the far half changes.
+    final farSide = _sideOfRails(rails, far.lat, far.lng);
+    if (farSide == 0) return true;
+    final toward = farSide < 0 ? -1.0 : 1.0;
+    return (_sideOfRails(rails, lat, lng) - toward * walkCrossingBoundaryM) *
+            toward >=
+        0;
+  }
+
+  /// Signed distance in metres from the rails, positive to the left of the
+  /// line's own direction. Sign alone is what matters, and it is compared
+  /// against the far station's, so which way the points were listed is
+  /// irrelevant.
+  ///
+  /// Uses the first and last point: the four Dadar points sit within 8 m of
+  /// their own end-to-end line over 358 m, so the run is a straight rail and
+  /// the ends describe it.
+  double _sideOfRails(List<(double, double)> rails, double lat, double lng) {
+    final (aLat, aLng) = rails.first;
+    final (bLat, bLng) = rails.last;
+    final cosLat = math.cos(_toRad(aLat));
+    final bx = (bLng - aLng) * cosLat * _metresPerDegree;
+    final by = (bLat - aLat) * _metresPerDegree;
+    final px = (lng - aLng) * cosLat * _metresPerDegree;
+    final py = (lat - aLat) * _metresPerDegree;
+    final length = math.sqrt(bx * bx + by * by);
+    if (length == 0) return 0;
+    return (bx * py - by * px) / length;
+  }
 
   /// Index of the chain station nearest the given fix.
   int _nearestIndex(double lat, double lng) {

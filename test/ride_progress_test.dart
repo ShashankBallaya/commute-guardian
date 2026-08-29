@@ -131,6 +131,32 @@ RideProgress _dadarReturnRide() => RideProgress(
   walkInterchangeStationIds: const {'dadar_western'},
 );
 
+/// The Central slow lines through Dadar, the four points the owner supplied on
+/// 29 Aug 2026 after riding it. Ordered south-west to north-east, the way the
+/// track runs toward Matunga.
+const _dadarRails = [
+  (19.017120, 72.842532),
+  (19.018298, 72.843318),
+  (19.018680, 72.843602),
+  (19.019751, 72.844495),
+];
+
+RideProgress _dadarRideWithRails() => RideProgress(
+  chain: _dadarChain,
+  destinationStationId: 'lower_parel',
+  approachRadiusM: const {'dadar': 1200, 'lower_parel': 1000},
+  arrivalAnnouncements: const {
+    'dadar':
+        'You have reached Dadar Central. Get off here and walk across the '
+        'foot overbridge to Dadar Western.',
+    'dadar_western':
+        'You are at Dadar Western. Take the Western train towards Churchgate.',
+    'lower_parel': 'You have arrived at your destination, Lower Parel.',
+  },
+  walkInterchangeStationIds: const {'dadar'},
+  walkCrossings: const {'dadar': _dadarRails},
+);
+
 void main() {
   group('standing in a station is not the same as being past it', () {
     // THE 9 AUG 2026 RIDE FOUND THIS ON THE SCREEN, not in a log. The train sat
@@ -830,6 +856,139 @@ void main() {
       expect(approaching.map((a) => a.stationId), ['dadar_western']);
       expect(approaching.single.kind, AnnouncementKind.approach);
       expect(ride.reachedIndex, 1);
+    });
+  });
+
+  group('the far half is not yours until you have crossed the rails', () {
+    // The owner's own idea, and the 28 Aug ride measured it. Proximity cannot
+    // separate two platforms behind 450 m fences 207 m apart: the phone never
+    // came within 88 m of the Dadar Western node, because he waited at the
+    // south end of the platform. WHICH SIDE OF THE RAILS he stood on separated
+    // them with nothing in between. 139 fixes on the Central platform never
+    // passed +1 m, and 238 fixes at Dadar Western never came below +58 m, so
+    // the boundary sits at +30 m with about 29 m clear on each side.
+
+    /// The run in from Matunga and the arrival at Dadar Central, replayed from
+    /// the ride so every test below starts where the rider really was.
+    RideProgress arrivedAtDadarCentral() {
+      final ride = _dadarRideWithRails();
+      ride.onFix(lat: 19.02999, lng: 72.85197, accuracyM: 14); // Matunga
+      ride.onFix(lat: 19.02292, lng: 72.84690, accuracyM: 76); // 19:56:17
+      ride.onFix(lat: 19.02005, lng: 72.84518, accuracyM: 20); // 19:56:45
+      return ride;
+    }
+
+    test('a train still drawing in does not reach the far platform', () {
+      // 19:56:39, 311 m from Dadar Western and nearer to it than to Dadar
+      // Central, which is exactly how the far half used to steal the arrival.
+      // It is 31 m on the CENTRAL side of the rails, so it has crossed nothing.
+      final ride = _dadarRideWithRails();
+      ride.onFix(lat: 19.02999, lng: 72.85197, accuracyM: 14);
+      ride.onFix(lat: 19.02292, lng: 72.84690, accuracyM: 76);
+
+      final drawingIn = ride.onFix(lat: 19.02066, lng: 72.84552, accuracyM: 13);
+
+      expect(
+        drawingIn.map((a) => a.stationId),
+        isNot(contains('dadar_western')),
+      );
+    });
+
+    test('standing on the Central platform is not being across', () {
+      // 20:00:37, on foot but still 10 m short of the boundary.
+      final ride = arrivedAtDadarCentral();
+
+      final notYet = ride.onFix(lat: 19.01728, lng: 72.84254, accuracyM: 25);
+
+      expect(notYet, isEmpty);
+      expect(ride.reachedIndex, 2, reason: 'still Dadar Central');
+    });
+
+    test('crossing the rails is what announces Dadar Western', () {
+      // 20:02:45, over the bridge and on the Western platform.
+      final ride = arrivedAtDadarCentral();
+      ride.onFix(lat: 19.01728, lng: 72.84254, accuracyM: 25);
+
+      final across = ride.onFix(lat: 19.01826, lng: 72.84234, accuracyM: 14);
+
+      expect(across.single.stationId, 'dadar_western');
+      expect(
+        across.single.text,
+        startsWith('You are at Dadar Western'),
+        reason: 'a confirmation, not an arrival: the rider walked here',
+      );
+      expect(ride.reachedIndex, 3);
+    });
+
+    test('a fix too coarse to answer does not answer', () {
+      // The general gate admits 150 m fixes. Against a 30 m boundary that is
+      // noise, and reading it as "they have crossed" would announce the far
+      // platform to a rider still on the near one.
+      final ride = arrivedAtDadarCentral();
+
+      final coarse = ride.onFix(lat: 19.01826, lng: 72.84234, accuracyM: 120);
+
+      expect(coarse, isEmpty);
+      expect(ride.reachedIndex, 2);
+    });
+
+    test('the rails do not describe the track two kilometres away', () {
+      // Extended up the corridor the line stops being the rails: the real
+      // alignment curves and a straight line does not, which put the
+      // approaching train 148 m on the wrong side near Sion. So the question
+      // is only asked within range of the pair.
+      final ride = arrivedAtDadarCentral();
+
+      // A fix out at Sion, well past the range bound.
+      final farAway = ride.onFix(
+        lat: 19.0465213,
+        lng: 72.8632834,
+        accuracyM: 14,
+      );
+
+      expect(farAway.map((a) => a.stationId), isNot(contains('dadar_western')));
+    });
+
+    test('a pair with no rails curated keeps the older behaviour', () {
+      // Parel to Prabhadevi has no line yet, and must not go silent because of
+      // it: the far half follows the near one straight away, as every pair did
+      // before today.
+      final ride = _dadarRide(); // same chain, no walkCrossings
+      ride.onFix(lat: 19.02999, lng: 72.85197, accuracyM: 14);
+      ride.onFix(lat: 19.02292, lng: 72.84690, accuracyM: 76);
+      ride.onFix(lat: 19.02005, lng: 72.84518, accuracyM: 20);
+
+      final next = ride.onFix(lat: 19.01704, lng: 72.84283, accuracyM: 20);
+
+      expect(ride.reachedIndex, greaterThanOrEqualTo(2));
+      expect(next.map((a) => a.stationId), isNot(contains('prabhadevi')));
+    });
+
+    test('the rails serve both directions from one line', () {
+      // Coming up the Western line the far half is Dadar Central, on the OTHER
+      // side of the same rails. Which side means "across" is taken from the
+      // station nodes, so the curated line never has to say.
+      final ride = RideProgress(
+        chain: _dadarReturnChain,
+        destinationStationId: 'matunga',
+        approachRadiusM: const {'dadar_western': 1200, 'matunga': 1000},
+        arrivalAnnouncements: const {
+          'dadar_western': 'You have reached Dadar Western. Walk across.',
+          'dadar': 'You are at Dadar Central. Take the Central train.',
+        },
+        walkInterchangeStationIds: const {'dadar_western'},
+        walkCrossings: const {'dadar_western': _dadarRails},
+      );
+      ride.onFix(lat: 19.0074717, lng: 72.8358965, accuracyM: 20); // Prabhadevi
+      // Reaching Dadar Western itself.
+      ride.onFix(lat: 19.01826, lng: 72.84234, accuracyM: 14);
+      expect(ride.reachedIndex, 2);
+
+      // Now on the Central platform, 31 m the other side of the rails.
+      final across = ride.onFix(lat: 19.01704, lng: 72.84283, accuracyM: 20);
+
+      expect(across.single.stationId, 'dadar');
+      expect(ride.reachedIndex, 3);
     });
   });
 }
