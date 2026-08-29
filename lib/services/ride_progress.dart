@@ -36,6 +36,7 @@ class RideProgress {
     this.overshootStations = const [],
     this.approachRadiusM = const {},
     this.arrivalAnnouncements = const {},
+    this.walkInterchangeStationIds = const {},
     this.maxAccuracyM = 150,
     this.language = AppLanguage.english,
   });
@@ -52,6 +53,10 @@ class RideProgress {
     overshootStations: journey.overshootStations,
     approachRadiusM: journey.approachRadiusM,
     arrivalAnnouncements: journey.arrivalAnnouncementsIn(language),
+    walkInterchangeStationIds: {
+      for (final interchange in journey.interchanges)
+        if (interchange.walkToStationName != null) interchange.stationId,
+    },
     language: language,
   );
 
@@ -69,6 +74,31 @@ class RideProgress {
   final List<Station> overshootStations;
   final Map<String, int> approachRadiusM;
   final Map<String, String> arrivalAnnouncements;
+
+  /// The interchanges this route reaches ON FOOT, keyed by the station the
+  /// rider alights at. Both halves of such a pair sit on [chain], so the slot
+  /// after one of these is its OTHER HALF across the foot overbridge, not a
+  /// station further along the line. [WakeEscalation] carries the same set for
+  /// the same reason.
+  ///
+  /// THE CHAIN CANNOT BE PROJECTED THROUGH A WALK PAIR, and the 28 Aug 2026
+  /// ride is why. Dadar Central sits 205 m SOUTH of Dadar Western (the Central
+  /// platforms end further south, which the owner confirmed from the ground),
+  /// so on a Kalyan to Churchgate plan the leg into Dadar Western is the walk,
+  /// pointing NORTH, while the train arrives heading south. Every fix on the
+  /// approach from Matunga was therefore "beyond" Dadar Western along its own
+  /// inbound leg, and 450 m fences 205 m apart meant the train was inside the
+  /// far fence before it reached the near platform. Both phones spoke "You
+  /// have passed Dadar Central" and "You have passed Dadar Western" at
+  /// 19:56:17, 12 and 23 seconds BEFORE entering either fence, to a rider who
+  /// still had to get off at Dadar. The real arrival was deduped into silence,
+  /// which is the same damage the 18 Jul Thane false positive did.
+  ///
+  /// So the pair answers as ONE PLACE, its near half, until that half is
+  /// reached: see [_behindItsWalkPair]. The chain passes through the pair, in
+  /// order, and never through one half of it.
+  final Set<String> walkInterchangeStationIds;
+
   final double maxAccuracyM;
 
   /// What the announcements are spoken in. Decides both the template and the
@@ -154,7 +184,16 @@ class RideProgress {
 
     final result = <Announcement>[];
 
-    final n = _nearestIndex(lat, lng);
+    // A WALK PAIR IS ONE PLACE until the rider alights at its near half. Both
+    // halves sit on the chain 205 m apart behind 450 m fences, so on the run
+    // in to Dadar the FAR half reads as nearest for the last half kilometre,
+    // which is a platform across a bridge from the one the train is drawing
+    // into. Answering as the near half keeps every question below (approach,
+    // arrival, projection) pointed at the platform the rider is actually
+    // arriving at, and it is what makes the heads-up announcement fire on time
+    // instead of the far half stealing it.
+    var n = _nearestIndex(lat, lng);
+    if (_behindItsWalkPair(n)) n -= 1;
     final nearest = chain[n];
     final nearestDist = nearest.distanceM(lat, lng);
 
@@ -306,6 +345,19 @@ class RideProgress {
     );
   }
 
+  /// Whether [index] is the far half of a walk interchange whose near half the
+  /// train has not reached yet, and so cannot be claimed by any evidence.
+  ///
+  /// Asks about the ARRIVAL, not about proximity: a rider standing on the
+  /// Dadar Central platform is already well inside the Dadar Western fence,
+  /// and 205 m of platform offset is not a train ride. The block lifts the
+  /// moment the near half is announced, which is when the rider gets off and
+  /// starts walking, and from there the pair announces in chain order.
+  bool _behindItsWalkPair(int index) =>
+      index > 0 &&
+      walkInterchangeStationIds.contains(chain[index - 1].id) &&
+      !_announcedArrivals.contains(chain[index - 1].id);
+
   /// Index of the chain station nearest the given fix.
   int _nearestIndex(double lat, double lng) {
     var best = 0;
@@ -340,6 +392,12 @@ class RideProgress {
 
     // The chain origin has no inbound leg, so fall back to its outbound one.
     // Safe: the rider boards at the origin, and the first fix only localizes.
+    //
+    // A walk pair's inbound leg is the WALK, and that is the right leg to use
+    // for it: the far half is only genuinely behind a rider who has crossed
+    // the bridge. It reads correctly here because the far half is unreachable
+    // until the near one is announced (see [_behindItsWalkPair]), so this is
+    // never asked about a train that is merely approaching the pair.
     final Station from;
     final Station to;
     if (index > 0) {
