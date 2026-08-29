@@ -232,6 +232,10 @@ void main(List<String> args) {
     final speedMps = double.tryParse(m.group(5) ?? '') ?? 0;
 
     final announcements = ride.onFix(lat: lat, lng: lng, accuracyM: accuracyM);
+    // The same call the service makes right after RideProgress, and in the same
+    // order: the ladder's cursor has to be told where the train actually is or
+    // a ride joined past an interchange keeps a ladder that can never arm.
+    printWake(wake.localize(ride.reachedIndex), at);
     printHealth(
       health.onFix(
         at,

@@ -325,6 +325,60 @@ class WakeEscalation {
     return const [];
   }
 
+  /// Move the cursor past every critical station the train is provably beyond,
+  /// given [RideProgress.reachedIndex]. Returns notes for the ride log; it never
+  /// makes a sound.
+  ///
+  /// THE 28 AUG 2026 RIDE IS WHY THIS EXISTS. The OS killed the app between
+  /// Prabhadevi and Mahalaxmi, eight minutes after the rider had changed trains
+  /// at Dadar. The resumed ride rebuilt this engine from the journey, cursor at
+  /// zero, targeting the Dadar change that was already behind the train. The
+  /// cursor only ever moved in [_standDown], which needs a LIVE ladder to
+  /// resolve, and a ladder for a station the train can never reach again will
+  /// never arm. So it stuck there, and CHURCHGATE NEVER RANG. The 3T beside
+  /// him, never killed, woke correctly at Marine Lines: the announcements were
+  /// perfect on both phones and only the alarm was dead, which is the worst
+  /// shape a failure can take in this app.
+  ///
+  /// This is the same stuck cursor `docs/adr/0004` describes, reached by a far
+  /// likelier path. That ADR needed the rider to take a different route. This
+  /// needs nothing of the rider at all: the exact planned journey, one OS kill
+  /// after a change, and the alarm is gone for the rest of the ride. It matters
+  /// more again once the iOS relaunch lifeline can resume a ride WITHOUT the
+  /// rider touching the phone, because then nobody is awake to notice.
+  ///
+  /// It skips at the CEILING, not at the target, so it agrees with the one in
+  /// [onStationEvent]: at a walk interchange the rider standing on the near
+  /// platform is already inside the far one's fence, and cutting the ladder
+  /// there would silence it while they still have a bridge to cross.
+  List<WakeAction> localize(int reachedIndex) {
+    // A live ladder is the ceiling's business, not this one: it must end with
+    // a StopTone and a HardStop, which only [onStationEvent] can give it.
+    if (reachedIndex < 0 || _ladderLive || _inCall) return const [];
+    final notes = <WakeAction>[];
+    while (_hasTarget) {
+      // THE STOP IS NEVER SKIPPED, stated here rather than inferred from the
+      // chain's shape. Today the chain ends at the destination, so its ceiling
+      // falls off the end and the loop would stop anyway. That is a property of
+      // the planner, not of this engine, and the day a chain carries a station
+      // past the destination this loop would quietly skip the one ladder the
+      // app exists for.
+      if (_targetIsDestination) break;
+      final ceiling = _ceilingIndex;
+      if (ceiling <= 0 || ceiling >= chain.length || ceiling > reachedIndex) {
+        break;
+      }
+      notes.add(
+        WakeNote(
+          'the ${_targets[_cursor]} ladder is behind the train, skipped so the '
+          'next critical station can arm',
+        ),
+      );
+      _standDown();
+    }
+    return notes;
+  }
+
   /// One raw GPS fix. Only ever starts a ladder (the ETA leg of decision
   /// 5's first-of-three trigger, which covers a jumped trigger fence); rung
   /// progression stays [onTick]'s job.
@@ -349,6 +403,43 @@ class WakeEscalation {
     // the rider's conversation.
     if (!_inCall && etaS <= leadTimeS) {
       return _startLadder(now);
+    }
+
+    // THE DESTINATION IS NOT NEGOTIABLE, whatever the plan says.
+    //
+    // Every other guard here trusts the cursor, and the cursor trusts the
+    // plan. `docs/adr/0004`: a rider whose plan carries a change and who takes
+    // another route never resolves that ladder, so the cursor never reaches
+    // their stop and there is no alarm at all. [localize] closes the case
+    // where the CHAIN proves the train moved on, but a rider who left the
+    // chain entirely gives it nothing to read.
+    //
+    // So the stop itself is a trigger, independent of the cursor: within lead
+    // time of where they asked to be woken, AND closer to it than to whatever
+    // the plan is still waiting for, the alarm is theirs. The second half is
+    // what stops a change that is merely still ahead from being abandoned.
+    if (!_inCall && !_targetIsDestination) {
+      final destination = chain.firstWhere(
+        (s) => s.id == destinationStationId,
+        orElse: () => _target,
+      );
+      final toDestination = _distanceM(
+        lat,
+        lng,
+        destination.lat,
+        destination.lng,
+      );
+      if (toDestination / speedMps <= leadTimeS &&
+          toDestination < _distanceM(lat, lng, _target.lat, _target.lng)) {
+        _cursor = _targets.length - 1;
+        return [
+          const WakeNote(
+            'the stop is closer than the change the plan is still waiting on, '
+            'so the alarm goes to the stop',
+          ),
+          ..._startLadder(now),
+        ];
+      }
     }
     return const [];
   }

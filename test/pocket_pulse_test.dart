@@ -288,7 +288,14 @@ void main() {
     /// repair: the check must name the thing it means, not the first text that
     /// looks like it.
     String? platformAnd(String source) {
-      for (final m in RegExp(r'_pulseVibrate = ([^;]+);').allMatches(source)) {
+      // \s* around the '=', not a literal space. On 29 Aug 2026 dart format
+      // wrapped this assignment onto two lines (it was 81 characters) and the
+      // guard reported the parameter unassigned against code that was
+      // perfectly correct. A guard that fails on line wrapping is testing the
+      // formatter, not the rule.
+      for (final m in RegExp(
+        r'_pulseVibrate\s*=\s*([^;]+);',
+      ).allMatches(source)) {
         final rhs = m.group(1)!;
         if (rhs.contains('pulseVibrate')) return rhs;
       }

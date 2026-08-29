@@ -479,7 +479,8 @@ class GeofenceChainService {
     // honours the request from the background is the entire question the bench
     // exists to answer, and PulseOutput.buzz logs each attempt separately so
     // the log can be read either way.
-    _pulseVibrate = pulseVibrate && (Platform.isAndroid || onIosVibrate != null);
+    _pulseVibrate =
+        pulseVibrate && (Platform.isAndroid || onIosVibrate != null);
     _pocketPulse = PocketPulse(
       intervalS: pulseIntervalS,
       startedAt: DateTime.now(),
@@ -2023,6 +2024,17 @@ class GeofenceChainService {
           accuracyM: location.accuracy,
         ) ??
         const <Announcement>[];
+
+    // THE WAKE LADDER IS TOLD WHERE THE TRAIN IS, not just where it is going.
+    // Its cursor walks the critical stations in order and only ever advanced
+    // when a ladder RESOLVED, so a ride that starts or resumes past an
+    // interchange kept a ladder that could never arm and never reached the
+    // rider's stop. That is what cost Churchgate its alarm on 28 Aug 2026 after
+    // an OS kill and a resume. RideProgress is the one projector, so it is what
+    // answers "where is the train": see WakeEscalation.localize.
+    _handleWakeActions(
+      _wakeEscalation?.localize(_rideProgress?.reachedIndex ?? -1) ?? const [],
+    );
 
     // ONE definition of "usable", RideProgress's own accuracy ceiling, read off
     // the engine rather than copied. A second copy of that number here would

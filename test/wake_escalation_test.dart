@@ -947,7 +947,180 @@ void main() {
       },
     );
   });
+
+  group('A LADDER BEHIND THE TRAIN MUST NOT HOLD THE ONES AHEAD', () {
+    // THE 28 AUG 2026 RIDE. The OS killed the app between Prabhadevi and
+    // Mahalaxmi, eight minutes after the rider had already changed trains at
+    // Dadar. He reopened it and tapped resume, the ride rebuilt itself from the
+    // journey with the cursor at zero, and it spent the rest of the trip
+    // waiting for a Dadar change that was already behind the train. CHURCHGATE
+    // NEVER RANG. The 3T in the same pocket, never killed, woke him at Marine
+    // Lines. The announcements were perfect on both phones. Only the alarm was
+    // dead, which is the one failure this app cannot have.
+
+    test('a ride joined past an interchange still wakes at the stop', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const ['thane'],
+        destinationStationId: 'digha',
+      );
+
+      // The train is already at Digha's doorstep, well past Thane, which is
+      // what a resumed ride looks like to a freshly built engine.
+      final notes = wake.localize(8);
+      expect(notes.single, isA<WakeNote>());
+
+      // Digha is the destination and Airoli is past it, so the trigger is the
+      // station before: Thane. Without the skip this does nothing at all.
+      final actions = wake.onStationEvent(_arrival('thane'), _t0);
+
+      expect(actions, hasLength(1));
+      expect(
+        (actions.single as Speak).text,
+        startsWith('Your stop, Digha Gaon, is next.'),
+      );
+    });
+
+    test('and without the skip it is silent, which is the bug', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const ['thane'],
+        destinationStationId: 'digha',
+      );
+
+      // No localize call: the cursor sits on Thane forever.
+      expect(wake.onStationEvent(_arrival('thane'), _t0), isEmpty);
+    });
+
+    test('a train short of the interchange keeps its interchange ladder', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const ['thane'],
+        destinationStationId: 'digha',
+      );
+
+      // At Kalwa, one before Thane. Nothing is behind the train yet.
+      expect(wake.localize(6), isEmpty);
+
+      final actions = wake.onStationEvent(_arrival('kalwa'), _t0);
+      expect(
+        (actions.single as Speak).text,
+        startsWith('Your train change at Thane is next.'),
+      );
+    });
+
+    test('a WALK interchange is not skipped from its own near platform', () {
+      // The rider standing on Dadar Western is already inside Dadar Central's
+      // fence, 207 m away. Skipping there would drop the alarm at the exact
+      // moment they still have a bridge to cross, which is why the skip uses
+      // the same ceiling the hard stop does.
+      final wake = WakeEscalation(
+        chain: _dadarChain,
+        interchangeStationIds: const ['dadar_western'],
+        destinationStationId: 'sion',
+        walkInterchangeStationIds: const {'dadar_western'},
+      );
+
+      // reachedIndex 2 is Dadar Central, the far half of the pair.
+      expect(wake.localize(2), isEmpty, reason: 'the walk is not over');
+
+      // Matunga, past the whole pair, is where it may finally go.
+      expect(wake.localize(3), hasLength(1));
+    });
+
+    test('a live ladder is left to the ceiling, not silently skipped', () {
+      // Standing a live ladder down here would drop the tone without a
+      // StopTone, leaving the alarm sounding with nothing to answer it.
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const ['thane'],
+        destinationStationId: 'digha',
+      );
+      wake.onStationEvent(_arrival('kalwa'), _t0);
+      expect(wake.isLadderLive, isTrue);
+
+      expect(wake.localize(9), isEmpty);
+      expect(wake.isLadderLive, isTrue, reason: 'the ceiling ends this one');
+    });
+
+    test('the destination itself is never skipped', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+
+      // Every index there is, including past the end of the chain.
+      for (var i = 0; i <= _chain.length; i++) {
+        wake.localize(i);
+      }
+
+      final actions = wake.onStationEvent(_arrival('thane'), _t0);
+      expect(
+        (actions.single as Speak).text,
+        startsWith('Your stop, Digha Gaon, is next.'),
+      );
+    });
+  });
+
+  group('THE STOP OUTRANKS THE PLAN, docs/adr/0004', () {
+    // The other half of the same hole, and the one the Ghansoli tester found: a
+    // rider whose plan carries a change and who takes a different line never
+    // resolves that ladder, and the chain gives localize nothing to read
+    // because she has left it. Being near her stop has to be enough on its own.
+
+    test('nearing the stop arms it even with a change unresolved', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const ['thane'],
+        destinationStationId: 'digha',
+      );
+
+      // 800 m short of Digha at 20 m/s, and nowhere near Thane. The cursor is
+      // still on Thane and no station event will ever move it.
+      final actions = wake.onFix(
+        lat: 19.1837,
+        lng: 72.9944301,
+        accuracyM: 20,
+        speedMps: 20,
+        now: _t0,
+      );
+
+      expect(actions.first, isA<WakeNote>());
+      expect(
+        (actions.last as Speak).text,
+        startsWith('Your stop, Digha Gaon, is next.'),
+      );
+    });
+
+    test('a change that is merely still ahead is not abandoned', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const ['thane'],
+        destinationStationId: 'digha',
+      );
+
+      // Right at Thane, which is 2.1 km from Digha. At 30 m/s the DESTINATION
+      // is inside the 90 s lead time, so the override could fire here. It must
+      // not: the change is closer, the rider has not left the plan, and the
+      // ladder that arms is the one for the change.
+      final actions = wake.onFix(
+        lat: 19.1864830,
+        lng: 72.9757664,
+        accuracyM: 20,
+        speedMps: 30,
+        now: _t0,
+      );
+
+      expect(actions.whereType<WakeNote>(), isEmpty);
+      expect(
+        (actions.single as Speak).text,
+        startsWith('Your train change at Thane is next.'),
+      );
+    });
+  });
 }
+
 /// The rider's own wake toggle, 12 Aug 2026. It suspends through the SAME door
 /// as a call because it wants the same behaviour, and differs in exactly one
 /// way: no catch-up on the way back.
