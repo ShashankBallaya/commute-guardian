@@ -383,14 +383,43 @@ SHORT_NAMES = {
 }
 
 # Which platform to walk to when CHANGING ONTO a line at a given station, keyed
-# line id -> station id -> spoken platform text. Curated, not from OSM (OSM does
-# not model which platform a service departs from reliably). Sparse on purpose:
-# an interchange with no entry here still announces the line change, just without
-# the platform sentence. Only fill in what has been confirmed on the ground.
+# line id -> station id -> DIRECTION -> spoken platform text. Curated, not from
+# OSM (OSM does not model which platform a service departs from reliably).
+# Sparse on purpose: an interchange with no entry here still announces the line
+# change, just without the platform sentence. Only fill in what has been
+# confirmed on the ground, because a wrong platform read to a half-asleep rider
+# is worse than no platform at all.
+#
+# THE DIRECTION KEY IS THE END OF THE LINE the rider is travelling toward, which
+# is what JourneyPlanner._directionTerminalId already computes for the "towards
+# Churchgate" half of the sentence. Thane got away without one because Trans
+# Harbour only leaves Thane in one direction; Dadar does not, and the Western
+# line there is platform 1 or 3 northbound against 2 or 4 southbound. One key
+# per station cannot hold both.
+#
+# EVERY ENTRY NAMES BOTH THE SLOW AND THE FAST PLATFORM, on purpose. The app
+# does not know which train the rider boarded and by the 12 Jul 2026 decision
+# never will: no timetable, and no wrong-train warning. So it offers the pair
+# and lets the rider pick, which is what the Thane line has always done.
 INTERCHANGE_PLATFORMS = {
-    # Confirmed on the 11 and 12 Jul 2026 field rides.
-    "trans_harbour_thane_panvel": {"thane": "9, 10, or 10 A"},
-    "trans_harbour_thane_vashi": {"thane": "9, 10, or 10 A"},
+    # Confirmed on the 11 and 12 Jul 2026 field rides. Trans Harbour only leaves
+    # Thane one way, so both directions read the same.
+    "trans_harbour_thane_panvel": {"thane": {"panvel": "9, 10, or 10 A"}},
+    "trans_harbour_thane_vashi": {"thane": {"vashi": "9, 10, or 10 A"}},
+    # Dadar, owner-supplied 29 Aug 2026 and confirmed by him a second time: 9 is
+    # the CSMT slow, and 9 A and 10 are two separate platforms, not a typo.
+    "western_churchgate_dahanu": {
+        "dadar_western": {
+            "churchgate": "2 or 4",          # 2 slow, 4 fast
+            "dahanu_road": "1 or 3",         # 1 slow, 3 fast (Borivali way)
+        },
+    },
+    "central_csmt_kalyan": {
+        "dadar": {
+            "csmt": "9 or 12",               # 9 slow, 12 fast
+            "kalyan": "8, 9 A, or 10",       # 8 slow, 9 A and 10 fast
+        },
+    },
 }
 
 # The rails a rider physically crosses to get from one half of a walk interchange

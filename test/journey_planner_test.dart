@@ -306,11 +306,22 @@ void main() {
       // names them Dadar Central and Dadar Western, so the station speaks for
       // itself, in every language.
       expect(change.walkToStationName?.hi, 'दादर वेस्टर्न');
+      // THE PLATFORM IS IN THE SENTENCE SINCE 29 Aug 2026, and it is keyed by
+      // direction: this journey is heading north, so it is the Borivali-side
+      // pair, 1 or 3. A Churchgate-bound rider off the same platform gets 2 or
+      // 4. Both numbers are offered because the app does not know whether the
+      // rider boards a fast or a slow train and by the 12 Jul decision never
+      // will.
       expect(
         journey.arrivalAnnouncementsIn()['dadar'],
         'You have reached Dadar Central. Get off the train and walk across to '
-        'Dadar Western, then board the Western train towards Dahanu Road to '
-        'continue to your destination.',
+        'Dadar Western, then go to platform number 1 or 3, then board the '
+        'Western train towards Dahanu Road to continue to your destination.',
+      );
+      // The far half is a confirmation the rider hears once they are across.
+      expect(
+        journey.arrivalAnnouncementsIn()['dadar_western'],
+        'You are at Dadar Western. Take the Western train towards Dahanu Road.',
       );
     },
   );
@@ -671,6 +682,57 @@ void main() {
       expect(_ids(resumed.chain), _ids(first.chain));
       expect(resumed.destinationStationId, first.destinationStationId);
       expect(resumed.walkOnStationId, 'prabhadevi');
+    });
+  });
+
+  group('THE PLATFORM DEPENDS ON WHICH WAY YOU ARE GOING, 29 Aug 2026', () {
+    // Owner-supplied from the platforms themselves. Thane never needed a
+    // direction key because Trans Harbour only leaves Thane one way. Dadar is
+    // four different answers at one station, so the old station-only key would
+    // have had to pick one and be wrong half the time.
+    //
+    //   Churchgate direction   2 slow, 4 fast
+    //   Borivali direction     1 slow, 3 fast
+    //   CSMT direction         9 slow, 12 fast
+    //   Kalyan direction       8 slow, 9 A and 10 fast
+
+    String? platformFor(String origin, String destination) => _planner()
+        .plan(originId: origin, destinationId: destination)
+        .interchanges
+        .single
+        .platform;
+
+    test('Central to Western, southbound, is the Churchgate pair', () {
+      expect(platformFor('kalyan', 'churchgate'), '2 or 4');
+    });
+
+    test('Central to Western, northbound, is the Borivali pair', () {
+      expect(platformFor('kalyan', 'borivali'), '1 or 3');
+    });
+
+    test('Western to Central, northbound, is the Kalyan pair', () {
+      // 9 A and 10 are two separate platforms, confirmed twice by the owner,
+      // and 9 belongs to the other direction entirely.
+      expect(platformFor('borivali', 'kalyan'), '8, 9 A, or 10');
+    });
+
+    test('Western to Central, southbound, is the CSMT pair', () {
+      expect(platformFor('churchgate', 'byculla'), '9 or 12');
+    });
+
+    test('a station with nothing confirmed still announces the change', () {
+      // Sparse is the point. Kurla has no curated platform, and the sentence
+      // must still tell the rider to change, just without a number.
+      final journey = _planner().plan(
+        originId: 'churchgate',
+        destinationId: 'panvel',
+      );
+      final change = journey.interchanges.last;
+      expect(change.platform, isNull);
+      expect(
+        journey.arrivalAnnouncementsIn()[change.stationId],
+        isNot(contains('platform')),
+      );
     });
   });
 }

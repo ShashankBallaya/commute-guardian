@@ -1305,7 +1305,12 @@
         "thakurli",
         "kalyan"
       ],
-      "platforms": {},
+      "platforms": {
+        "dadar": {
+          "csmt": "9 or 12",
+          "kalyan": "8, 9 A, or 10"
+        }
+      },
       "lowFrequency": false
     },
     {
@@ -1391,7 +1396,12 @@
         "vangaon",
         "dahanu_road"
       ],
-      "platforms": {},
+      "platforms": {
+        "dadar_western": {
+          "churchgate": "2 or 4",
+          "dahanu_road": "1 or 3"
+        }
+      },
       "lowFrequency": false
     },
     {
@@ -1477,7 +1487,9 @@
         "panvel"
       ],
       "platforms": {
-        "thane": "9, 10, or 10 A"
+        "thane": {
+          "panvel": "9, 10, or 10 A"
+        }
       },
       "lowFrequency": false
     },
@@ -1497,7 +1509,9 @@
         "vashi"
       ],
       "platforms": {
-        "thane": "9, 10, or 10 A"
+        "thane": {
+          "vashi": "9, 10, or 10 A"
+        }
       },
       "lowFrequency": false
     },

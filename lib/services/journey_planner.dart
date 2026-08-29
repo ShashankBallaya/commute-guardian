@@ -398,7 +398,13 @@ class JourneyPlanner {
           walkCrossing: walked
               ? _crossingFor(legs[i - 1].toId, legs[i].fromId)
               : null,
-          platform: onto.platforms[legs[i].fromId],
+          // Keyed by direction as well as station: at Dadar the Western
+          // line is platform 1 or 3 going north and 2 or 4 going south, and
+          // the terminal is the same one the sentence already says "towards".
+          platform: onto.platformAt(
+            legs[i].fromId,
+            towardsStationId: _directionTerminalId(legs[i]),
+          ),
         ),
       );
     }
