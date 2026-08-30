@@ -3,6 +3,7 @@
 #
 #   powershell -ExecutionPolicy Bypass -File tool\build_apk.ps1
 #   powershell -ExecutionPolicy Bypass -File tool\build_apk.ps1 -Abi armeabi-v7a
+#   powershell -ExecutionPolicy Bypass -File tool\build_apk.ps1 -Aab
 #
 # The ExecutionPolicy flag is not optional on this machine: unsigned local
 # scripts are blocked by default (same as tool\docs.ps1).
@@ -25,8 +26,16 @@
 # wrong again in a new way. This is where the 3T's mysterious "2002" came from:
 # `+2`, split, arm64. Building one ABI leaves the number alone.
 #
-# When Play delivery arrives it wants an app bundle, which solves the same
-# problem its own way. Revisit this then, not before.
+# APP BUNDLES: PASS -Aab. Play takes a bundle, not an APK, and this mode exists
+# so a bundle gets the same sha stamping, the same secrets.json and the same md5
+# report an APK gets. A bundle built by hand gets none of that, and hand-built
+# Android artifacts are how every APK before 22 Aug 2026 shipped DARK: Sentry
+# and Aptabase compiled out, and not one event from a real ride.
+#
+# -Abi IS IGNORED WITH -Aab, and the versionCode trap above does not apply to a
+# bundle. The rewrite comes from --split-per-abi, which a bundle never uses:
+# Play splits per device at delivery instead, so a pubspec saying 4004 reaches
+# Play as 4004.
 #
 # SIGNING CHANGED ON 27 AUG 2026. This script builds the RELEASE type, and the
 # release type now signs with the Play UPLOAD KEY when android/key.properties
@@ -43,6 +52,7 @@
 # is not in CI.
 
 param(
+  [switch]$Aab,
   [ValidateSet("arm64-v8a", "armeabi-v7a")]
   [string]$Abi = "arm64-v8a",
   [string]$OutDir = "$env:USERPROFILE\Downloads"
@@ -82,27 +92,49 @@ if (Test-Path secrets.json) {
   Write-Host "No secrets.json. Crash reporting and analytics will be OFF." -ForegroundColor Yellow
 }
 
-Write-Host "Building $version+$buildNumber ($sha) for $Abi ..." -ForegroundColor Cyan
-$target = $targets[$Abi]
-& flutter build apk --release --target-platform $target @defines
-if ($LASTEXITCODE -ne 0) { throw "flutter build apk failed with $LASTEXITCODE." }
+if ($Aab -and $PSBoundParameters.ContainsKey("Abi")) {
+  Write-Host "-Abi is ignored with -Aab: a bundle carries every ABI." -ForegroundColor Yellow
+}
 
-$built = "build\app\outputs\flutter-apk\app-release.apk"
-if (-not (Test-Path $built)) { throw "No APK at $built." }
+if ($Aab) {
+  Write-Host "Building $version+$buildNumber ($sha) as an app bundle ..." -ForegroundColor Cyan
+  & flutter build appbundle --release @defines
+  if ($LASTEXITCODE -ne 0) { throw "flutter build appbundle failed with $LASTEXITCODE." }
 
-$target = Join-Path $OutDir "commute_guardian-$Abi-$sha.apk"
-Copy-Item $built $target -Force
+  $built = "build\app\outputs\bundle\release\app-release.aab"
+  if (-not (Test-Path $built)) { throw "No AAB at $built." }
+
+  $out = Join-Path $OutDir "commute_guardian-$sha.aab"
+} else {
+  Write-Host "Building $version+$buildNumber ($sha) for $Abi ..." -ForegroundColor Cyan
+  $target = $targets[$Abi]
+  & flutter build apk --release --target-platform $target @defines
+  if ($LASTEXITCODE -ne 0) { throw "flutter build apk failed with $LASTEXITCODE." }
+
+  $built = "build\app\outputs\flutter-apk\app-release.apk"
+  if (-not (Test-Path $built)) { throw "No APK at $built." }
+
+  $out = Join-Path $OutDir "commute_guardian-$Abi-$sha.apk"
+}
+Copy-Item $built $out -Force
 
 # The hash is how the last two mis-shipped builds were caught. Compare it with
 # the previous one before sending: two different shas with the same hash means
 # the build did not rebuild.
-$hash = (Get-FileHash $target -Algorithm MD5).Hash.ToLower()
-$size = [math]::Round((Get-Item $target).Length / 1MB, 1)
+$hash = (Get-FileHash $out -Algorithm MD5).Hash.ToLower()
+$size = [math]::Round((Get-Item $out).Length / 1MB, 1)
 
 Write-Host ""
-Write-Host "  $target" -ForegroundColor Green
+Write-Host "  $out" -ForegroundColor Green
 Write-Host "  md5 $hash"
 Write-Host "  $size MB"
 Write-Host "  Settings will read: Commute Guardian $version ($buildNumber) $sha"
-Write-Host "  Android will install versionCode $buildNumber. If those two ever"
-Write-Host "  differ, something split the APK per ABI. See pubspec.yaml."
+if ($Aab) {
+  # Play refuses a second upload carrying a versionCode it has already seen,
+  # and the message it gives says nothing about pubspec.yaml.
+  Write-Host "  Play will read versionCode $buildNumber, and REFUSES a second"
+  Write-Host "  upload with that number. Bump pubspec.yaml before the next one."
+} else {
+  Write-Host "  Android will install versionCode $buildNumber. If those two ever"
+  Write-Host "  differ, something split the APK per ABI. See pubspec.yaml."
+}

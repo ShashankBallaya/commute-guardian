@@ -264,6 +264,15 @@ def main():
     branding = os.path.join(REPO, "assets", "branding")
     os.makedirs(branding, exist_ok=True)
     write(master, os.path.join(branding, "app_icon_master.png"))
+    # Google Play wants its own 512 square, and it is the one icon a REVIEWER
+    # sees before any device does. Generated here rather than exported by hand
+    # for the same reason as every other size: a hand-resized copy drifts from
+    # the master and nobody notices until the listing looks wrong beside the
+    # installed app.
+    write(
+        master.resize((512, 512), Image.LANCZOS),
+        os.path.join(branding, "play_store_icon_512.png"),
+    )
     build_android(master)
     build_ios(master)
     print("\nDone. Rebuild both apps; icons are not hot-reloadable.")
