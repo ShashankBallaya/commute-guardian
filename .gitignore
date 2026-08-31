@@ -52,6 +52,7 @@ CLAUDE.md
 # Third-party agent skills (installed via `npx skills`), kept local only
 .agents/
 .claude/
+.codex/
 skills-lock.json
 
 # OSM query cache for tool/build_stations.py (regenerate with the script)
