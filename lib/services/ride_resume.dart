@@ -64,11 +64,17 @@ class InterruptedRide {
 
 /// How long after its start a ride may still be offered back.
 ///
-/// A CSMT run is 27 stations and about 100 minutes; three hours covers that
-/// with room for a train held outside a terminus, and stops well short of
-/// offering to resume this morning's commute at dinner. Owner's call, 17 Aug
-/// 2026, and it is one constant precisely so it is cheap to change.
-const resumeWindow = Duration(hours: 3);
+/// Owner's call, 31 Aug 2026: NINETY MINUTES, down from three hours.
+///
+/// The trade he took, with the cost named: a CSMT run is 27 stations and about
+/// 100 minutes, so a long ride killed in its final stretch now falls OUTSIDE
+/// the window and is neither offered back nor silently relaunched. That is the
+/// last ten minutes of the longest rides on the line, which is also when the
+/// wake matters most. Against it, ninety minutes stops the app offering to
+/// resume a commute that ended long ago, and since C1 this constant no longer
+/// gates only a prompt: inside the window a killed ride can resume UNASKED.
+/// It is one constant precisely so it is cheap to change back.
+const resumeWindow = Duration(minutes: 90);
 
 /// Whether the store is describing a ride that was interrupted, and which one.
 ///
