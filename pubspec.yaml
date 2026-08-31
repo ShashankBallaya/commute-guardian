@@ -35,7 +35,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # Bump this line for every build a tester is given. The script reads it, gradle
 # reads it (`versionCode = flutter.versionCode`), and the app reads it back
 # through BuildInfo, so all three agree by construction.
-version: 1.0.0+4004
+version: 1.0.0+4005
 
 environment:
   sdk: ^3.12.2
