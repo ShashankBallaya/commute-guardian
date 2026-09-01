@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/widgets/line_strip.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// Against the REAL bundled network, like the planner tests: the window rule's
@@ -227,4 +228,138 @@ void main() {
       expect(find.text('Kalwa'), findsOneWidget);
     });
   });
+
+  group('THE FADE IS PAINTED, not just decided, 1 Sep 2026', () {
+    // C10. The window rule above only proves a BOOLEAN. Whether the rail
+    // actually fades is a question about a CustomPainter, and no test here
+    // could see it: the 30 Aug store screenshot was measured by hand instead
+    // (rail contrast falls from 26 to 0 over the last 110 px). These two read
+    // the painted pixels, so a refactor that drops the gradient fails here
+    // rather than on a rider's phone at Kalyan.
+
+    const width = 400.0;
+    const height = 120.0;
+    // Five stops across 400 px: dots at 40, 120, 200, 280, 360.
+    const lastDotX = 360;
+
+    Future<List<double>> railRow(WidgetTester tester, LineWindow window) async {
+      final key = GlobalKey();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: RepaintBoundary(
+                key: key,
+                child: ColoredBox(
+                  color: const Color(0xFF000000),
+                  child: SizedBox(
+                    width: width,
+                    height: height,
+                    child: LineStrip(window: window),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final boundary =
+          key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+      // runAsync, because toImage waits on the real engine and a widget test's
+      // fake async never lets that future complete: without it the test hangs
+      // instead of failing, which cost ten minutes on 1 Sep.
+      var imageWidth = 0;
+      final data = (await tester.runAsync(() async {
+        final image = await boundary.toImage();
+        imageWidth = image.width;
+        return image.toByteData();
+      }))!;
+      final w = imageWidth;
+      final h = height.round();
+      double lum(int x, int y) {
+        final i = (y * w + x) * 4;
+        return 0.2126 * data.getUint8(i) +
+            0.7152 * data.getUint8(i + 1) +
+            0.0722 * data.getUint8(i + 2);
+      }
+
+      // THE RAIL IS THE ROW THAT IS LIT RIGHT ACROSS THE WIDGET. Picking the
+      // brightest row instead finds a label: text is far brighter than a
+      // hairline at 16 percent, and it cost two failing runs on 1 Sep.
+      var railY = 0;
+      var best = -1;
+      for (var y = 0; y < h; y++) {
+        var lit = 0;
+        for (var x = 0; x < w; x += 2) {
+          if (lum(x, y) > 1) lit++;
+        }
+        if (lit > best) {
+          best = lit;
+          railY = y;
+        }
+      }
+      return [for (var x = 0; x < w; x++) lum(x, railY)];
+    }
+
+    testWidgets('the rail fades out past the last dot when the line goes on', (
+      tester,
+    ) async {
+      // Kalyan from the trunk: the strip stops there because Kasara and Karjat
+      // both leave it, but the line itself carries on.
+      final row = await railRow(
+        tester,
+        const LineWindow(
+          stationNames: ['Diva', 'Kopar', 'Dombivli', 'Thakurli', 'Kalyan'],
+          currentIndex: 4,
+          continuesBefore: true,
+          continuesAfter: true,
+        ),
+      );
+
+      final atDot = row[lastDotX - 8];
+      final justPast = row[lastDotX + 10];
+      final atEdge = row[row.length - 2];
+
+      expect(atDot, greaterThan(2), reason: 'rail is drawn at the last dot');
+      expect(
+        justPast,
+        greaterThan(0.5),
+        reason: 'the rail carries on past the last dot',
+      );
+      expect(
+        justPast,
+        lessThan(atDot),
+        reason: 'and it is already fading there',
+      );
+      // Not zero at the last pixel: the gradient's final stop is transparent
+      // AT the edge, so the pixel before it still carries a trace. What
+      // matters is that it is nearly gone and still falling.
+      expect(atEdge, lessThan(justPast), reason: 'still falling at the edge');
+      expect(atEdge, lessThan(2), reason: 'and all but spent');
+    });
+
+    testWidgets('the rail stops dead at a real terminus', (tester) async {
+      // CSMT. A fade here would promise a stretch of Mumbai that does not
+      // exist.
+      final row = await railRow(
+        tester,
+        const LineWindow(
+          stationNames: ['Byculla', 'Sandhurst Road', 'Masjid', 'CSMT', 'Kurla'],
+          currentIndex: 3,
+          continuesBefore: true,
+          continuesAfter: false,
+        ),
+      );
+
+      expect(row[lastDotX - 8], greaterThan(2), reason: 'rail up to the dot');
+      expect(
+        row[lastDotX + 10],
+        lessThan(0.5),
+        reason: 'NOTHING is drawn past a terminus',
+      );
+    });
+  });
+
 }
