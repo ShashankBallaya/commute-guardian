@@ -55,6 +55,10 @@ CLAUDE.md
 .codex/
 skills-lock.json
 
+# Local config for the impeccable design hook (its own suppressions and
+# reasons). Local like the skill in .agents/ that reads it.
+.impeccable/
+
 # OSM query cache for tool/build_stations.py (regenerate with the script)
 tool/.osm_cache.json
 

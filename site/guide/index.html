@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap">
+<title>How to use it - Commute Guardian</title>
+<meta name="description" content="A plain guide to Commute Guardian: how to set it up, what you hear on the train, how the alarm works, and what to do if it goes wrong.">
+<style>
+  /* Same system as / and /privacy/: Instrument Sans over the system stack, no
+     colours of our own, and color-scheme does light and dark for us. Anything
+     added here is added to all three pages or not at all. */
+  :root { color-scheme: light dark; }
+  body {
+    max-width: 44rem; margin: 0 auto; padding: 2.5rem 1.25rem 5rem;
+    font: 16px/1.65 "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { font-size: 1.75rem; margin-bottom: .25rem; }
+  h2 { font-size: 1.15rem; margin-top: 2.25rem; }
+  h3 { font-size: 1rem; margin-top: 1.5rem; margin-bottom: .3rem; }
+  .date { opacity: .7; font-size: .9rem; margin-top: 0; }
+  .lede { font-size: 1.05rem; }
+  .muted { opacity: .7; font-size: .95rem; }
+  ul, ol { padding-left: 1.2rem; }
+  li { margin: .35rem 0; }
+  code { font-size: .9em; }
+  /* What the phone says out loud. Set apart because it is speech, not prose. */
+  blockquote {
+    margin: .75rem 0; padding: .1rem 0 .1rem .9rem;
+    border-left: 2px solid rgba(128,128,128,.45);
+  }
+  blockquote p { margin: .3rem 0; }
+  blockquote .when {
+    display: block; font-size: .8rem; opacity: .65;
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .95rem; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid rgba(128,128,128,.35); vertical-align: top; }
+  hr { border: 0; border-top: 1px solid rgba(128,128,128,.35); margin: 2.5rem 0; }
+</style>
+</head>
+<body>
+
+<h1>How to use Commute Guardian</h1>
+<p class="date">For closed testers. Last updated 2 September 2026.</p>
+
+<p class="lede">Commute Guardian names every station in your earphones and wakes
+you before your stop. You start it, put the phone away, and stop looking out of
+the window. This page is everything you need, in the order you will meet it.</p>
+
+<h2>The whole thing in five lines</h2>
+<ul>
+  <li>You tell it where you are going. It works out the rest.</li>
+  <li>Put the phone in your pocket or bag. You never have to look at it.</li>
+  <li>It says each station out loud as you pass it.</li>
+  <li>About two stations before yours it wakes you, and keeps getting louder until you answer.</li>
+  <li>It needs no internet during the ride, and your location never leaves your phone.</li>
+</ul>
+
+<hr>
+
+<h2>Set it up once</h2>
+<p>Ten minutes, at home, on wifi. Not on the platform.</p>
+
+<h3>1. Install it</h3>
+<!-- NO OPT-IN LINK ON THIS PAGE, DELIBERATELY. There is no Google Group, so
+     the closed-testing opt-in link only works for an address already on the
+     tester list. Printed publicly it sends strangers to a dead end. The links
+     go out by mail, one person at a time. -->
+<p>I send you two links by mail. Open both on the phone, signed in with the
+same Google account you gave me.</p>
+<ol>
+  <li>The first one adds you to the test. Press <code>Become a tester</code>.</li>
+  <li>The second one is the Play Store page. Install from there.</li>
+</ol>
+<p class="muted">If Play says the app was not found, wait a few minutes after
+joining and reload. If I sent you an APK file to install by hand at any point,
+uninstall that one first, and know that the journeys saved in it go with it.</p>
+
+<h3>2. Answer the questions it asks on first open</h3>
+<table>
+  <tr><th>What it asks for</th><th>Why it matters to you</th></tr>
+  <tr>
+    <td>Location, all the time</td>
+    <td>This is the whole app. Without it nothing is announced and nothing wakes
+        you. Android asks a second time on its own screen. Choose
+        <code>Allow all the time</code>. It is easy to miss.</td>
+  </tr>
+  <tr>
+    <td>Notifications</td>
+    <td>The ride controls live in your notification shade, so you can end a
+        journey without unlocking the phone.</td>
+  </tr>
+  <tr>
+    <td>Battery, on some phones</td>
+    <td>Xiaomi, Redmi, realme, oppo, vivo and a few others put background apps
+        to sleep. If yours is one of them the app shows the exact steps for your
+        brand. Please do them, or a ride can die quietly in your pocket.</td>
+  </tr>
+</table>
+
+<h3>3. Two things about your earphones</h3>
+<p>The voice and the alarm go to your earphones first. With no earphones
+connected, everything plays out loud on the phone speaker instead.</p>
+<ul>
+  <li>Your media volume must not be at zero. The alarm rides on it.</li>
+  <li>If your earphones run out of battery mid-journey, the sound moves to the
+      speaker. Worth knowing before you rely on it.</li>
+</ul>
+
+<hr>
+
+<h2>Your first ride</h2>
+<p>Start it on the platform, or as you sit down. Everything after step 5
+happens without you.</p>
+<ol>
+  <li><strong>Press <code>New journey</code>.</strong> The home screen has one
+      main button.</li>
+  <li><strong>Type where you are going.</strong> The box says
+      <code>Where to?</code>. Type a few letters and pick your station. You do
+      not tell it where you are now. It finds that itself.</li>
+  <li><strong>Let it find you.</strong> It needs a few seconds to get a GPS fix
+      and work out which way you are going. Under a station roof this can be
+      slow, so it offers <code>Set my station</code> if you would rather just
+      tell it.</li>
+  <li><strong>Read the short list, then press <code>Start the ride</code>.</strong>
+      Before starting it names anything that could stop it waking you: earphones
+      not connected, or the volume too low.</li>
+  <li><strong>Wait three seconds.</strong> It says your route out loud and shows
+      <code>Cancel</code>, so a wrong tap costs nothing. Ignore it and the ride
+      begins.</li>
+  <li><strong>Put the phone away and lock it.</strong> This is the point. You do
+      not need to keep the app open, and you do not need to keep checking.</li>
+</ol>
+
+<hr>
+
+<h2>What you will hear</h2>
+<p>Every announcement is in English for now.</p>
+<blockquote>
+  <span class="when">As you reach a station</span>
+  <p>Now approaching Dombivli.</p>
+</blockquote>
+<blockquote>
+  <span class="when">Once you are past it</span>
+  <p>You have passed Dombivli.</p>
+</blockquote>
+<blockquote>
+  <span class="when">If your route needs a train change</span>
+  <p>Your train change at Dadar is next.</p>
+</blockquote>
+<p class="muted">If naming every station is too much, there is a switch in
+Settings. Turned off, it announces only your own stop and any train change.</p>
+
+<h2>When it wakes you</h2>
+<p>This is the part the whole app exists for, so it is deliberately hard to
+sleep through. About two stations before yours, it speaks first, politely.</p>
+<blockquote>
+  <span class="when">The check in</span>
+  <p>Your stop, Kalyan, is next. Tap your earphones, or press the I am awake
+     button, to show you are awake.</p>
+</blockquote>
+<p>If you do not answer, it becomes an alarm that gets louder every fifteen
+seconds, and vibrates.</p>
+<blockquote>
+  <span class="when">The alarm</span>
+  <p>Wake up! Wake up. Your stop, Kalyan, is next.</p>
+</blockquote>
+
+<h3>How to stop it</h3>
+<ul>
+  <li>Press <code>I'm awake</code>. It is a large button and the only one on the
+      screen, so you can hit it half asleep and in the dark.</li>
+  <li>Or press play or pause on your earphones, without taking the phone out at
+      all.</li>
+</ul>
+<p class="muted">The back button will not dismiss it, on purpose. The alarm
+keeps sounding until you actually answer, and it gives up one station past
+yours so it is not still shouting at you on the platform.</p>
+
+<h2>When you arrive</h2>
+<p>The app does not switch off the moment you arrive. It stays on while you get
+off, and offers two buttons.</p>
+<ul>
+  <li><code>Extend 10 min</code> keeps Travel Mode on if you have a walk, a
+      bridge or a second train ahead.</li>
+  <li><code>End now</code> finishes the journey. Red always means a ride is
+      ending, and it never means anything else in this app.</li>
+</ul>
+<p>It also asks whether to save the route. Say yes and the same journey is one
+tap from the home screen next time. Your past rides are under History.</p>
+<p class="muted">To end a journey early, while it is still running, press and
+hold <code>End journey</code> on the ride screen. A hold and not a tap, so a
+knock in your pocket cannot end a ride you are asleep on.</p>
+
+<h2>Pocket Pulse, if you want it</h2>
+<p>A separate and optional thing. It plays a short quiet sound every few
+minutes, so you know your phone is still with you without taking it out.</p>
+<ul>
+  <li>It is off until you switch it on, in Settings.</li>
+  <li>Every 2, 3, 5 or 10 minutes. Crowd mode is every 45 seconds, for a packed
+      train.</li>
+  <li>With no earphones connected it plays out loud, which is worth remembering
+      in a quiet carriage.</li>
+  <li><code>Hear it now</code> in Settings plays it once so you know the sound.</li>
+</ul>
+
+<h2>Settings worth knowing</h2>
+<table>
+  <tr><th>Setting</th><th>What it does</th></tr>
+  <tr><td>Travel Mode readiness</td><td>A list of what the app needs in order to wake you with the phone locked. Check it once, and again if a ride ever goes wrong.</td></tr>
+  <tr><td>Name every station</td><td>On by default. Off announces only your stop and any train change.</td></tr>
+  <tr><td>Share anonymous usage</td><td>On by default. Never your location, and never where you travel. Turn it off freely. See the <a href="/privacy/">privacy policy</a>.</td></tr>
+  <tr><td>Send the last ride log</td><td>The most useful button on the page during this test. See below.</td></tr>
+</table>
+
+<hr>
+
+<h2>If something goes wrong</h2>
+<p>It probably will at some point. That is what a test is for, and a failure I
+hear about is worth more to me than a ride that went fine.</p>
+
+<h3>Do this first</h3>
+<p>Open Settings and press <code>Send the last ride log</code>, the same day if
+you can. It carries what the app actually did, second by second, which no
+description can. Nothing is sent unless you press it.</p>
+
+<h3>Then tell me four things</h3>
+<ul>
+  <li>Where you got on, and where you were going.</li>
+  <li>What you expected to hear, and what you heard instead.</li>
+  <li>Roughly what time it happened.</li>
+  <li>Whether your earphones were connected.</li>
+</ul>
+
+<p><strong>The one report I need most: you did not get woken.</strong> Tell me
+even if you think it was your fault, and even if you got off fine anyway. A nap
+that worked is also worth a message.</p>
+
+<h2>Honest limits, today</h2>
+<ul>
+  <li><strong>Central and Western lines only.</strong> Suburban stations. No
+      metro yet.</li>
+  <li><strong>English only</strong> for the spoken lines, for now.</li>
+  <li><strong>It uses battery.</strong> It watches GPS for your whole journey.
+      Start a long ride with a decent charge. I am still measuring the real
+      number, so I am not going to quote you one I cannot prove.</li>
+  <li><strong>It cannot read the railway's system.</strong> There is no live
+      train data behind it. It only knows where your phone is, which is exactly
+      why it still works when the network does not.</li>
+  <li><strong>Dadar is the hardest station on the line</strong> and gets the
+      most attention from me. If anything odd happens there, that is the report
+      I want most.</li>
+</ul>
+
+<p class="muted">Questions, complaints and half formed thoughts all welcome, and
+nothing you send is too small.
+<a href="mailto:commuteguardian@gmail.com">commuteguardian@gmail.com</a>
+&middot; <a href="/">Home</a> &middot; <a href="/privacy/">Privacy policy</a></p>
+
+</body>
+</html>
