@@ -36,6 +36,13 @@ void main() {
     final screenSource = File(
       'lib/screens/travel_mode_screen.dart',
     ).readAsStringSync();
+    // CLAUDE.md IS GITIGNORED AND UNTRACKED (.gitignore:50), so it exists on
+    // the owner's machine and nowhere else. CI checks out a tree without it.
+    // The claim is still worth guarding, because the owner's machine is the
+    // only place that line is ever edited, but this half of the guard is a
+    // DESK guard and CI proves nothing about it. Say so rather than let a
+    // green CI run imply cover it does not give.
+    final claudeMd = File('CLAUDE.md');
 
     test('the engine arms exactly one station before the critical one', () {
       expect(
@@ -87,12 +94,36 @@ void main() {
       }
     });
 
+    test('CLAUDE.md CLAIMS THE SAME NUMBER THE ENGINE KEEPS', () {
+      // The third home of this claim, and the one that drifted longest: the
+      // locked monetization line said "the pre-warning at two stations" from
+      // 30 Jul to 4 Sep 2026. It sets the FREE TIER, so it is a pricing claim
+      // as well as a safety one, and the owner was once argued out of shipping
+      // exactly the tier the engine was already giving.
+      if (!claudeMd.existsSync()) {
+        markTestSkipped('CLAUDE.md is not in the checkout (gitignored)');
+        return;
+      }
+      final claimed = _claimedInClaudeMd(claudeMd.readAsStringSync());
+      expect(
+        claimed,
+        _engineOffset(engineSource),
+        reason:
+            'CLAUDE.md sells a pre-warning at $claimed station(s) and the '
+            'ladder arms ${_engineOffset(engineSource)} out. The doc moves, '
+            'never the engine.',
+      );
+    });
+
     test('the files the guard reads are really there', () {
       // Every regex below finds nothing in an empty string, so a moved or
       // renamed file would turn this whole guard green by doing nothing.
       expect(engineSource, contains('class WakeEscalation'));
       expect(screenSource, contains('enum WakeChoice'));
       expect(_wakeChoiceMembers(screenSource), isNotEmpty);
+      if (claudeMd.existsSync()) {
+        expect(claudeMd.readAsStringSync(), contains('pre-warning at'));
+      }
     });
   });
 
@@ -175,6 +206,26 @@ void main() {
       );
     });
 
+    test('the CLAUDE.md claim is read in words, and read once', () {
+      // The doc writes the number in words, not digits, and it is the only
+      // place the phrase may appear: two of them is a doc arguing with itself.
+      expect(_claimedInClaudeMd('the pre-warning at one station**.'), 1);
+      expect(_claimedInClaudeMd('**the pre-warning at two stations**.'), 2);
+      expect(
+        () => _claimedInClaudeMd(
+          'Plus sells the CHOICE of pre-warning '
+          'distance.',
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(
+        () => _claimedInClaudeMd(
+          'pre-warning at one station, and the pre-warning at two stations',
+        ),
+        throwsA(isA<StateError>()),
+      );
+    });
+
     test('a count word is matched as a WORD inside the identifier', () {
       // `onlyDestination` holds neither "one" nor "two", and a bare substring
       // test on the lowercased name would be the 8 Aug 2026 bug again.
@@ -246,6 +297,32 @@ int _engineOffset(String source) {
     plural: match.group(2) == 'stations',
     text: match.group(0)!.replaceAll("'", '').trim(),
   );
+}
+
+/// The number of stations of warning CLAUDE.md sells to the free tier.
+///
+/// Written in words there, not digits, and it must appear exactly once: a
+/// locked decision that states its own number twice is a decision arguing with
+/// itself. Deliberately does NOT match "the CHOICE of pre-warning distance",
+/// which is the Plus line and names no count.
+int _claimedInClaudeMd(String source) {
+  final matches = RegExp(
+    r'pre-warning at ([a-z]+) stations?',
+  ).allMatches(source).toList();
+  if (matches.length != 1) {
+    throw StateError(
+      'expected exactly one "pre-warning at N station(s)" claim in CLAUDE.md, '
+      'found ${matches.length}',
+    );
+  }
+  final claimed = _countWordIn(matches.single.group(1)!);
+  if (claimed == null) {
+    throw StateError(
+      'CLAUDE.md says "pre-warning at ${matches.single.group(1)} station", '
+      'which names no number this guard understands',
+    );
+  }
+  return claimed;
 }
 
 /// The member names of `enum WakeChoice`, comments removed.
