@@ -66,7 +66,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// Still a field rather than a constant, because it is the seam Plus lands on
   /// and because it must survive the screen being popped and re-pushed within a
   /// ride. It must never become a second way to change leadTimeS.
-  WakeChoice wakeChoice = WakeChoice.lastTwoStations;
+  WakeChoice wakeChoice = WakeChoice.oneStationBefore;
 
   /// Whether the alarm is armed for THIS ride. Screen 4's shield pill owns it.
   ///

@@ -187,18 +187,30 @@ class TravelModeScreen extends StatelessWidget {
 
 /// When the wake alert fires. REPORTED BY THE SCREEN, not chosen on it.
 ///
-/// Fixed at [lastTwoStations] today, which is the free tier's promise, and the
-/// screen states it rather than offering it (see [_WakeCard]). Choosing it is a
-/// Guardian Plus surface per the locked monetization design: free gets the
-/// two-station warning, Plus sells the CHOICE and never adequacy. When Plus
-/// exists it belongs in Settings, before a ride, not on the screen a
+/// Fixed at [oneStationBefore] today, which is what the engine actually does,
+/// and the screen states it rather than offering it (see [_WakeCard]). Choosing
+/// the distance is a Guardian Plus surface per the locked monetization design:
+/// free gets the pre-warning, Plus sells the CHOICE and never adequacy. When
+/// Plus exists it belongs in Settings, before a ride, not on the screen a
 /// half-asleep rider is holding.
+///
+/// IT WAS CALLED lastTwoStations UNTIL 4 SEP 2026, AND THE NAME WAS A CLAIM
+/// NOBODY CHECKED. WakeEscalation arms at chain[targetIndex - 1], the station
+/// IMMEDIATELY before the critical one, and has since it was written: the
+/// design locked one station in three separate decisions. The name, the
+/// sentence on the card and CLAUDE.md's monetization line all drifted to two.
+/// The engine is the one that is right, because an early ladder does not annoy,
+/// it SPENDS the alarm: on the 21 Aug 2026 ride an early wake near Diva was
+/// acknowledged, and that acknowledgement resolved Kalyan so the real alarm
+/// could never fire. wake_copy_guard_test.dart now reads both sides and fails
+/// when they disagree. CLAUDE.md still says two stations and is the owner's
+/// line to settle.
 ///
 /// It has never touched leadTimeS, which stays locked at 90 s, nor the rule
 /// that one acknowledgement stands the ladder down permanently.
 enum WakeChoice {
-  /// Warned with two stations to go, then again at the destination.
-  lastTwoStations,
+  /// Warned at the station before the destination, then again on arrival.
+  oneStationBefore,
 
   /// Only the destination.
   onlyDestination,
@@ -696,7 +708,7 @@ class _ChainRow extends StatelessWidget {
 /// All three go away by removing the control rather than repairing it, and the
 /// removal is the correct product answer independently: CHOOSING the pre-warning
 /// distance is a Guardian Plus surface by the locked monetization design, where
-/// free gets the two-station warning and Plus sells the choice. It reappears in
+/// free gets the pre-warning and Plus sells the choice. It reappears in
 /// Settings when Plus exists, not on the screen a half-asleep rider is holding.
 ///
 /// What is left is the thing the rider actually wants at this moment, which is
@@ -704,6 +716,12 @@ class _ChainRow extends StatelessWidget {
 /// [choice] still drives the wording, so the card cannot drift from the rule in
 /// force, and it is the Phase 3 seam in the same shape [TravelModeScreen.etaLine]
 /// already uses.
+///
+/// THE SENTENCE DRIFTED ANYWAY, WHICH IS WHY IT NOW HAS A GUARD. It said "2
+/// stations before" from the day the control was written until 4 Sep 2026, and
+/// the ladder has always armed one station out. Nothing compared the two, so
+/// nothing failed. wake_copy_guard_test.dart reads the count out of this file
+/// and the offset out of wake_escalation.dart, and fails when they disagree.
 class _WakeCard extends StatelessWidget {
   const _WakeCard({
     required this.choice,
@@ -738,12 +756,19 @@ class _WakeCard extends StatelessWidget {
   /// was a constant that never looked at the chain. Owner found it 13 Aug 2026
   /// at the desk. On a route this short the ladder arms at the destination's
   /// own approach fence, so "as you approach" is what actually happens.
+  ///
+  /// AND, ABOVE ALL, IT MUST AGREE WITH THE ENGINE. That 13 Aug fix corrected
+  /// the two-station CHAIN case and never the COUNT, which stayed at two while
+  /// WakeEscalation armed at one. Corrected 4 Sep 2026 and now guarded by
+  /// wake_copy_guard_test.dart, which parses the number out of the line below.
+  /// Keep the digit and the words "station"/"stations before" here: the guard
+  /// reads them.
   String get _line => switch (wakeEnabled) {
     false => 'Off for this journey. Stations are still announced.',
     true => switch (choice) {
-      WakeChoice.lastTwoStations when chainLength <= 2 =>
+      WakeChoice.oneStationBefore when chainLength <= 2 =>
         'as you approach $destinationName',
-      WakeChoice.lastTwoStations => '2 stations before $destinationName',
+      WakeChoice.oneStationBefore => '1 station before $destinationName',
       WakeChoice.onlyDestination => 'at $destinationName',
     },
   };

@@ -297,7 +297,7 @@ void main() {
 
           journey: journey,
           reachedIndex: at.value,
-          wakeChoice: WakeChoice.lastTwoStations,
+          wakeChoice: WakeChoice.oneStationBefore,
           etaLine: 'Arriving around 19:24',
           onEndJourney: () {},
         ),

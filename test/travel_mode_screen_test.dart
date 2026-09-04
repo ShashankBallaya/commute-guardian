@@ -26,7 +26,7 @@ void main() {
     WidgetTester tester, {
     required int reachedIndex,
     bool atStation = false,
-    WakeChoice choice = WakeChoice.lastTwoStations,
+    WakeChoice choice = WakeChoice.oneStationBefore,
     String? etaLine,
     bool wakeEnabled = true,
     List<bool>? wakeTaps,
@@ -77,10 +77,14 @@ void main() {
     expect(find.text('stations to go'), findsNothing);
   });
 
-  group('a route with no station two before the destination', () {
+  group('a route with no station before the destination but the origin', () {
     // Shahad to Ambivli, adjacent on the Kasara branch. Reported by the owner
     // 13 Aug 2026: the card promised "2 stations before Ambivli" on a route
-    // whose whole length is two stations.
+    // whose whole length is two stations. The count was corrected from two to
+    // one on 4 Sep 2026, and this case survives the correction: at chain
+    // length 2 the station before the destination is the ORIGIN, which
+    // WakeEscalation refuses as a trigger, so the ladder arms on the
+    // destination's own approach fence instead.
     Future<void> pumpShort(WidgetTester tester) async {
       final short = repo.planner.plan(
         originId: 'shahad',
@@ -102,7 +106,7 @@ void main() {
             journey: short,
             reachedIndex: 0,
             atStation: true,
-            wakeChoice: WakeChoice.lastTwoStations,
+            wakeChoice: WakeChoice.oneStationBefore,
             onEndJourney: () {},
           ),
         ),
@@ -116,17 +120,18 @@ void main() {
       await pumpShort(tester);
 
       expect(find.text('2 stations before Ambivli'), findsNothing);
+      expect(find.text('1 station before Ambivli'), findsNothing);
       expect(find.text('as you approach Ambivli'), findsOneWidget);
     });
 
-    testWidgets('and a route that IS long enough still says two', (
+    testWidgets('and a route that IS long enough names the station count', (
       tester,
     ) async {
       // The same control on the ordinary Thane to Kalyan ride, so the fix is
       // a narrowing and not a blanket rewording.
       await pump(tester, reachedIndex: 0);
 
-      expect(find.text('2 stations before Kalyan'), findsOneWidget);
+      expect(find.text('1 station before Kalyan'), findsOneWidget);
     });
   });
 
@@ -174,7 +179,7 @@ void main() {
     testWidgets('it names the rule and the stop, in words', (tester) async {
       await pump(tester, reachedIndex: 2);
       expect(find.text('Wake me up'), findsOneWidget);
-      expect(find.text('2 stations before Kalyan'), findsOneWidget);
+      expect(find.text('1 station before Kalyan'), findsOneWidget);
     });
 
     testWidgets('the other rule reads differently, so it cannot drift', (
@@ -182,7 +187,7 @@ void main() {
     ) async {
       await pump(tester, reachedIndex: 2, choice: WakeChoice.onlyDestination);
       expect(find.text('at Kalyan'), findsOneWidget);
-      expect(find.text('2 stations before Kalyan'), findsNothing);
+      expect(find.text('1 station before Kalyan'), findsNothing);
     });
 
     testWidgets('NO TAPPABLE SEGMENTS SURVIVE', (tester) async {
@@ -268,7 +273,7 @@ void main() {
           onCrowdMode: _ignore,
           journey: longest,
           reachedIndex: 2,
-          wakeChoice: WakeChoice.lastTwoStations,
+          wakeChoice: WakeChoice.oneStationBefore,
           onEndJourney: () {},
         ),
       ),
@@ -309,10 +314,12 @@ void main() {
     ) async {
       // The first build on the device showed "Wake-up off" directly above
       // "Wake me up, 2 stations before Kalyan", in the two places a rider looks
-      // before pocketing the phone.
+      // before pocketing the phone. (The count reads one since 4 Sep 2026;
+      // both are checked here so the row cannot agree with a stale pill.)
       await pump(tester, reachedIndex: 1, wakeEnabled: false);
 
       expect(find.text('2 stations before Kalyan'), findsNothing);
+      expect(find.text('1 station before Kalyan'), findsNothing);
       expect(
         find.text('Off for this journey. Stations are still announced.'),
         findsOneWidget,

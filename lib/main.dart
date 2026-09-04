@@ -256,7 +256,7 @@ class _RideDebugScreenState extends ConsumerState<RideDebugScreen>
     }
     if (!mounted) return;
 
-    var choice = WakeChoice.lastTwoStations;
+    var choice = WakeChoice.oneStationBefore;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (context) => StatefulBuilder(
