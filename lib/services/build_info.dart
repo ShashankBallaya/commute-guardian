@@ -35,7 +35,7 @@ class BuildInfo {
 
   static const buildNumber = String.fromEnvironment(
     'BUILD_NUMBER',
-    defaultValue: '4005',
+    defaultValue: '4006',
   );
 
   static bool get isNamedBuild => sha.isNotEmpty;
