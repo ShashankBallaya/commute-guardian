@@ -1031,6 +1031,219 @@ void main() {
     expect(find.byKey(const Key('resume_ride_card')), findsNothing);
     expect(service.commands, isNot(contains('clearRideInFlight')));
   });
+
+  testWidgets('SCREEN 4 REFUSES A BACK PRESS WHILE THE RIDE IS RUNNING', (
+    tester,
+  ) async {
+    // Reported from the 5 Sep 2026 Kalyan to Chembur ride, and it cost a ride.
+    // A tester holding the phone pressed back on Screen 4 near Dombivli,
+    // landed on Screen 1, and went exploring. The RIDE was never in danger, it
+    // runs in the service isolate and kept announcing stations. But he could
+    // not find his way back to the ride screen, decided the app was broken,
+    // and force-stopped it from the switcher. THAT ended the ride for real:
+    // the 3T log stops mid-stream at Thane with no shutdown line at all.
+    //
+    // So the back gesture is refused while a ride is live. The refusal is not
+    // silent, because a dead-feeling button is what produced the force-stop.
+    final service = FakeRideServiceClient(
+      running: false,
+      rideInFlight: true,
+      originId: 'shahad',
+      destinationId: 'thane',
+      startedAt: DateTime.now().subtract(const Duration(minutes: 20)),
+    );
+    _grantPermissions(tester);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          stationRepositoryProvider.overrideWith(
+            (ref) async => StationRepository.parse(
+              File(StationRepository.assetPath).readAsStringSync(),
+            ),
+          ),
+          fixAcquirerProvider.overrideWithValue(
+            () async => throw StateError('no GPS'),
+          ),
+          appDatabaseProvider.overrideWith((ref) {
+            final db = AppDatabase.inMemory();
+            ref.onDispose(db.close);
+            return db;
+          }),
+          onboardingSeenProvider.overrideWith((ref) async => true),
+          rideServiceClientProvider.overrideWithValue(service),
+        ],
+        child: const CommuteGuardianDebugApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('resume_ride_card')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('End journey'),
+      findsOneWidget,
+      reason: 'the fixture is only meaningful from Screen 4 on a live ride',
+    );
+
+    // The rider's back gesture. maybePop is what the platform back button and
+    // the iOS edge-swipe both come through, so this is the real path and not a
+    // stand-in for it.
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('End journey'),
+      findsOneWidget,
+      reason: 'a live ride may not be left by an accidental back press',
+    );
+    expect(
+      find.text('Travel Mode is running. Hold End journey to stop.'),
+      findsOneWidget,
+      reason: 'and the refusal SAYS SO, or the app just looks broken',
+    );
+  });
+
+  testWidgets('and End journey still closes it, because that is not a pop', (
+    tester,
+  ) async {
+    // The other half, and the one that would make the lock a trap. Both
+    // automatic exits from Screen 4 use removeRoute, which PopScope does not
+    // see. If this ever fails, the refusal has grown teeth it was never meant
+    // to have and a rider cannot end their own ride.
+    final service = FakeRideServiceClient(
+      running: false,
+      rideInFlight: true,
+      originId: 'shahad',
+      destinationId: 'thane',
+      startedAt: DateTime.now().subtract(const Duration(minutes: 20)),
+    );
+    _grantPermissions(tester);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          stationRepositoryProvider.overrideWith(
+            (ref) async => StationRepository.parse(
+              File(StationRepository.assetPath).readAsStringSync(),
+            ),
+          ),
+          fixAcquirerProvider.overrideWithValue(
+            () async => throw StateError('no GPS'),
+          ),
+          appDatabaseProvider.overrideWith((ref) {
+            final db = AppDatabase.inMemory();
+            ref.onDispose(db.close);
+            return db;
+          }),
+          onboardingSeenProvider.overrideWith((ref) async => true),
+          rideServiceClientProvider.overrideWithValue(service),
+        ],
+        child: const CommuteGuardianDebugApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('resume_ride_card')));
+    await tester.pumpAndSettle();
+    expect(find.text('End journey'), findsOneWidget);
+
+    // HELD FOR THE WHOLE FILL, 1200 ms, not longPress. Flutter's longPress
+    // lands at ~500 ms and this control refuses it on purpose, so that a phone
+    // brushed in a pocket cannot end a ride. Using it here would have tested
+    // the refusal rather than the exit.
+    final hold = await tester.startGesture(
+      tester.getCenter(find.byKey(const Key('end_journey'))),
+    );
+    await tester.pump(const Duration(milliseconds: 1300));
+    await hold.up();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('End journey'),
+      findsNothing,
+      reason: 'the rider held End journey and the ride screen let them out',
+    );
+
+    // Ending a ride schedules work that outlives the screen (the battery read
+    // and the history write behind finishRide). Left pending, the binding
+    // fails the test on teardown for a timer that is doing its job, so it is
+    // drained here rather than silenced.
+    await tester.pumpAndSettle(const Duration(seconds: 5));
+  });
+
+  testWidgets('A RESUME FINDING A LIVE RIDE PUTS THE RIDER BACK ON SCREEN 4', (
+    tester,
+  ) async {
+    // The safety net under the lock. Refusing the back gesture stops the rider
+    // LEAVING Screen 4, and `_restoreRunningRide` catches a UI that comes up
+    // cold mid-ride. Neither covers a UI that is already up, on Screen 1, when
+    // the service is running a ride: Android recreating the activity is the
+    // known way in (15 Jul 2026, the blanked route), and on iOS there is no
+    // ongoing notification to find the way back with, which is what turned a
+    // stray tap into a force-stop on the 5 Sep 2026 ride.
+    //
+    // So a resume asks the same question a cold start asks.
+    final service = FakeRideServiceClient(running: false);
+    _grantPermissions(tester);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          stationRepositoryProvider.overrideWith(
+            (ref) async => StationRepository.parse(
+              File(StationRepository.assetPath).readAsStringSync(),
+            ),
+          ),
+          fixAcquirerProvider.overrideWithValue(
+            () async => throw StateError('no GPS'),
+          ),
+          appDatabaseProvider.overrideWith((ref) {
+            final db = AppDatabase.inMemory();
+            ref.onDispose(db.close);
+            return db;
+          }),
+          onboardingSeenProvider.overrideWith((ref) async => true),
+          rideServiceClientProvider.overrideWithValue(service),
+        ],
+        child: const CommuteGuardianDebugApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text('End journey'),
+      findsNothing,
+      reason: 'the fixture starts with no ride and the rider on Screen 1',
+    );
+
+    // The service is running a ride this UI never saw start.
+    service.running = true;
+    service.originId = 'shahad';
+    service.destinationId = 'thane';
+    service.startedAt = DateTime.now().subtract(const Duration(minutes: 12));
+
+    // A real backgrounding and return. Resumed to resumed is not a transition
+    // and fires nothing, so the phone's actual sequence is used, hidden
+    // included: AppLifecycleListener asserts on a jump from inactive straight
+    // to paused, which is how this test first failed.
+    for (final state in const [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('End journey'),
+      findsOneWidget,
+      reason: 'a running ride the rider cannot reach is a ride they will kill',
+    );
+  });
 }
 
 /// Answers permission_handler's channel as a phone whose rider has already

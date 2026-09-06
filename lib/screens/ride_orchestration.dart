@@ -138,6 +138,12 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// Watches for the app coming back to the foreground. See [_onResumed].
   AppLifecycleListener? _lifecycle;
 
+  /// Screen 4's route, kept only so a resume can ask whether the rider still
+  /// has one. Never used to navigate: `isActive` goes false by itself when
+  /// either automatic exit removes the route, so nothing has to remember to
+  /// clear this.
+  Route<void>? _travelModeRoute;
+
   void initOrchestration() {
     _serviceEvents = service.events.listen(_onServiceEvent);
     // Forces the alerts notifier to exist before the first frame, so a ladder
@@ -180,13 +186,34 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // Alerts FIRST. A stuck alert screen is the one state the rider cannot get
     // out of by themselves, and the whole ride is behind it.
     unawaited(ref.read(rideAlertsProvider.notifier).resync());
-    unawaited(ref.read(liveRideProvider.notifier).refresh());
+    final refreshed = ref.read(liveRideProvider.notifier).refresh();
+    unawaited(refreshed);
     // AND THE READINESS CARD, because a resume is the ONLY honest moment to
     // re-read it. Settings' Fix buttons send the rider to a system page, and
     // `openAppSettings` returns the instant that page launches rather than when
     // the rider comes back, so invalidating there re-reads the value they have
     // not changed yet. Coming back is the event, and this is where it lands.
     ref.invalidate(travelReadinessProvider);
+    // AND PUT THE RIDER BACK ON THE RIDE IF THEY ARE NOT ON IT.
+    //
+    // A cold start already does this through [_restoreRunningRide]. A resume
+    // did not, and the gap is a UI that is already up, on Screen 1, while the
+    // service runs a ride: Android recreating the activity is the known way in
+    // (15 Jul 2026, the blanked route). It cost a ride on 5 Sep 2026, where a
+    // tester who could not reach the ride screen force-stopped the app to
+    // escape, which is the one action that really does end a ride.
+    //
+    // Guarded on the route rather than on a flag, because the route knows: both
+    // automatic exits remove it and `isActive` answers honestly afterwards.
+    // Without the guard every resume would stack a second Screen 4 on the first.
+    //
+    // Sequenced AFTER the refresh, not merely started after it. The refresh is
+    // the whole reason this side knows a ride exists, and reading the provider
+    // before it lands returns the stale answer the suspended UI already had,
+    // which is precisely "no ride".
+    if (!(_travelModeRoute?.isActive ?? false)) {
+      unawaited(refreshed.then((_) => _restoreRunningRide()));
+    }
   }
 
   /// Opens Screen 5 the moment the ride reaches its destination.
@@ -1031,6 +1058,31 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     );
   }
 
+  /// Says no to a back press on a running ride, and says why.
+  ///
+  /// SILENCE IS WHAT MAKES AN APP LOOK BROKEN. A refusal with no feedback is
+  /// indistinguishable from a dead button, and the rider's next move is to
+  /// force-stop the app, which is exactly what happened on the 5 Sep 2026 ride:
+  /// a tester left Screen 4 by accident, could not find his way back, killed
+  /// the app from the switcher, and called it "a very buggy app". Killing the
+  /// app is the one action that really does end a ride, so the quiet refusal
+  /// would have cost the very thing the lock protects.
+  ///
+  /// The wording names the control that IS the way out, and matches the button
+  /// on the screen behind it ("End journey", subtitle "hold to confirm").
+  void _refuseLeavingRide(BuildContext context) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    // Hide first: a rider tapping back three times should see one message
+    // steadily, not a queue of three that outlives their curiosity.
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Travel Mode is running. Hold End journey to stop.'),
+      ),
+    );
+  }
+
   /// Screen 4, for a ride that is actually running.
   ///
   /// Opened only when the service really started: liveRideProvider is the
@@ -1041,6 +1093,12 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// the service wound down on its own. Without that, a rider whose ride
   /// auto-ended would be left looking at a countdown for a journey that had
   /// stopped.
+  ///
+  /// AND IT CANNOT BE LEFT BY ACCIDENT WHILE THE RIDE RUNS. See the PopScope
+  /// below: on 5 Sep 2026 a tester pressed back on a live ride, landed on
+  /// Screen 1, and could not get back. The ride itself was never in danger, it
+  /// runs in the service isolate, but the rider could not see that and killed
+  /// the app to escape, which ended the ride for real.
   Future<void> showTravelMode() async {
     if (!mounted) return;
     if (ref.read(liveRideProvider).valueOrNull == null) return;
@@ -1083,7 +1141,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
           // route itself watches is the only thing that redraws this screen.
           final settings =
               ref.watch(appSettingsProvider).valueOrNull ?? const AppSettings();
-          return TravelModeScreen(
+          final screen = TravelModeScreen(
             journey: journey,
             wakeEnabled: wakeEnabled,
             // setState on the HOST is enough here ONLY because this route is
@@ -1132,9 +1190,32 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
               await finishRide();
             },
           );
+
+          // THE LOCK. `canPop` follows the RIDE, not the screen: with no live
+          // ride this route behaves normally, which is what keeps the design
+          // preview in main.dart escapable and stops the bench drifting from
+          // the product the way the Sarvam switches did in August.
+          //
+          // IT CANNOT TRAP ANYBODY. Both automatic exits above use
+          // `removeRoute`, and removing a route is not popping it, so neither
+          // the ride ending nor End journey is affected by this refusal. The
+          // refusal is aimed at the rider's back gesture and at nothing else,
+          // the same division of labour WakeAlertScreen already uses.
+          //
+          // On iOS this also disables the edge-swipe, which is the point: that
+          // gesture is how the same accident happens on an iPhone, and there
+          // is no ongoing notification there to find the way back with.
+          return PopScope(
+            canPop: live == null,
+            onPopInvokedWithResult: (didPop, _) {
+              if (!didPop) _refuseLeavingRide(routeContext);
+            },
+            child: screen,
+          );
         },
       ),
     );
+    _travelModeRoute = route;
     await Navigator.of(context).push<void>(route);
   }
 
