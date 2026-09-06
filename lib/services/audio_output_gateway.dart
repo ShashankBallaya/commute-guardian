@@ -1,6 +1,5 @@
 import 'package:audio_session/audio_session.dart';
 
-
 /// Where the rider's audio would actually come out right now.
 ///
 /// A SEAM for the same reason [PermissionsGateway] is one: the plugin does not
@@ -45,16 +44,31 @@ class AudioOutputGateway {
   /// this returns true, which suppresses the warning rather than showing a
   /// rider a problem we cannot actually confirm. A false alarm before every
   /// ride would train them to tap past the screen that matters.
-  Future<bool> earphonesConnected() async {
+  Future<bool> earphonesConnected() async =>
+      await earphonesConnectedOrUnknown() ?? true;
+
+  /// The same probe WITHOUT the fail-open, for callers that record rather than
+  /// warn. Null means the platform would not say.
+  ///
+  /// FAILING OPEN IS RIGHT FOR A WARNING AND WRONG FOR A LOG, and the two had
+  /// been the same call. [earphonesConnected] answers true when the probe
+  /// throws, times out or lists no devices, because a false alarm before every
+  /// ride teaches a rider to tap past the screen that matters. Writing that
+  /// same true into the ride log prints "output earphones" for a phone nobody
+  /// asked, which fabricates the exact fact the log was added to establish:
+  /// after the 5 Sep ride, "he heard nothing" could not be told from "he was on
+  /// his speaker in a moving carriage". A diagnostic that guesses is the
+  /// ambiguity it was meant to end.
+  Future<bool?> earphonesConnectedOrUnknown() async {
     try {
       final session = await AudioSession.instance;
       final devices = await session
           .getDevices(includeInputs: false)
           .timeout(const Duration(seconds: 2));
-      if (devices.isEmpty) return true;
+      if (devices.isEmpty) return null;
       return devices.any((device) => _reachesEars(device.type));
     } catch (_) {
-      return true;
+      return null;
     }
   }
 

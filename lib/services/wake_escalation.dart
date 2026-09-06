@@ -229,6 +229,22 @@ class WakeEscalation {
   /// the ladder: mid-call the rider needs none of those.
   bool get isLadderLive => _ladderLive;
 
+  /// Whether the rider is being ASKED to prove they are awake, which is not the
+  /// same question as whether a ladder is sounding.
+  ///
+  /// THE SHELL MUST KEY ITS CONTROLS ON THIS, NOT ON [isLadderLive]. A call
+  /// suspends the audio ladder and moves the alarm to vibration, so
+  /// [isLadderLive] goes false while the phone is still buzzing in a pocket.
+  /// The notification's "I'm awake" button and the wake alert screen are both
+  /// built from that flag, so keying them on liveness would take the only
+  /// control that answers the alarm away at the exact moment the alarm is
+  /// running. Caught in review before it shipped; on a locked phone mid-call an
+  /// earphone tap would have been the only way out.
+  ///
+  /// It also decides whether an ack COUNTS as the rider being woken, which is
+  /// how wake success is measured across the beta.
+  bool get isAsking => _ladderLive || _nextBuzzAt != null;
+
   /// Which rung the ladder is on, 1-based, or 0 before it starts.
   ///
   /// Exposed for the wake alert screen, which steps its glow with the sound so
@@ -640,10 +656,16 @@ class WakeEscalation {
     // The tone only starts at rung 1; an ack still in the check-in window
     // has nothing to silence.
     final toneWasPlaying = _ladderLive && _rung >= 1;
+    // NOT A WORD INTO A LIVE CALL. Every other ack path answers out loud, and
+    // that is right: the rider has just proved they are awake and deserves to
+    // hear it land. Mid-call it would be the app shouting into somebody's
+    // conversation, on the same contended session that produced the 21 Aug
+    // bug. The buzzing stops, which is the confirmation that matters.
+    final confirmAloud = !_inCall;
     _standDown();
     return [
       if (toneWasPlaying) const StopTone(),
-      Speak(FixedLine.goodAwake.render(language: language)),
+      if (confirmAloud) Speak(FixedLine.goodAwake.render(language: language)),
     ];
   }
 

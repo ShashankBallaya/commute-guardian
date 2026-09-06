@@ -545,7 +545,13 @@ class RideServiceClient {
     }
   }
 
-  /// One short system vibration, iOS only, and it is a BENCH not a feature yet.
+  /// One short system vibration, iOS only.
+  ///
+  /// NO LONGER A BENCH. It was written as one, and ADR 0003 then measured an
+  /// iPhone buzzing 7 of 7 times from a locked pocket. Since 6 Sep 2026 this is
+  /// a load-bearing path: when a call suspends the wake ladder the alarm moves
+  /// to vibration, and on iOS this method is how it reaches the hardware. It is
+  /// the alarm's ONLY channel for the length of that call.
   ///
   /// Rides the same service-to-main-to-native hop the ladder tone uses, because
   /// the service isolate cannot reach a channel registered on the main engine
@@ -898,10 +904,17 @@ class RideServiceClient {
       key: mediaVolumeKey,
       value: await mediaVolume() ?? -1.0,
     );
-    await FlutterForegroundTask.saveData(
-      key: earphonesAtStartKey,
-      value: await const AudioOutputGateway().earphonesConnected(),
-    );
+    // OrUnknown, not the fail-open probe: an unreadable route must reach the log
+    // as "unknown", never as "earphones". The key is simply not written when
+    // nobody knows, and the service already reads a missing key as unknown.
+    final earphones = await const AudioOutputGateway()
+        .earphonesConnectedOrUnknown();
+    if (earphones != null) {
+      await FlutterForegroundTask.saveData(
+        key: earphonesAtStartKey,
+        value: earphones,
+      );
+    }
 
     final result = await FlutterForegroundTask.startService(
       serviceId: 1,

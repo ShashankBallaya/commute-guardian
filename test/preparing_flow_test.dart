@@ -744,6 +744,9 @@ class _EarphonesIn implements AudioOutputGateway {
 
   @override
   Future<bool> earphonesConnected() async => true;
+
+  @override
+  Future<bool?> earphonesConnectedOrUnknown() async => true;
 }
 
 /// Records what the commit window said, and says nothing itself.

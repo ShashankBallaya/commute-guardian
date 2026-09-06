@@ -571,6 +571,58 @@ void main() {
       expect(wake.onTick(_t0.add(WakeEscalation.rungInterval)), isEmpty);
     });
 
+    test('THE RIDER MUST STILL HAVE SOMETHING TO PRESS', () {
+      // Found by review, not by the ride, and it would have shipped. The
+      // notification's "I'm awake" button and the wake alert screen are both
+      // built from the engine's liveness, and a call sets _ladderLive false.
+      // So the alarm would buzz a pocketed phone while the only control that
+      // answers it had just been removed from the notification. On a locked
+      // phone, mid-call, an earphone tap would have been the ONLY way out.
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+      wake.onStationEvent(_arrival('thane'), _t0);
+      expect(wake.isAsking, isTrue);
+
+      wake.onCallStateChanged(
+        inCall: true,
+        now: _t0.add(const Duration(seconds: 20)),
+      );
+
+      expect(
+        wake.isLadderLive,
+        isFalse,
+        reason: 'the audio ladder really is suspended',
+      );
+      expect(
+        wake.isAsking,
+        isTrue,
+        reason: 'but the rider is still being asked, so the button must stay',
+      );
+    });
+
+    test('and answering it does not talk over the call', () {
+      // The ack speaks "Good, you are awake" on every other path. Into a live
+      // call that is the app shouting into somebody's conversation, and it is
+      // the same contended-session ground as the 21 Aug bug. The buzz stops;
+      // the confirmation waits.
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+      wake.onStationEvent(_arrival('thane'), _t0);
+      final callAt = _t0.add(const Duration(seconds: 20));
+      wake.onCallStateChanged(inCall: true, now: callAt);
+
+      final acked = wake.acknowledge(callAt.add(const Duration(seconds: 5)));
+
+      expect(acked.whereType<Speak>(), isEmpty);
+      expect(wake.isAsking, isFalse, reason: 'answered is answered');
+    });
+
     test('acknowledging during the call stops the buzzing', () {
       // The rider felt it, on a call, and answered. Nothing may keep buzzing
       // after that: an alarm that outlives its acknowledgement is the

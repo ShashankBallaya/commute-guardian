@@ -1700,8 +1700,10 @@ class GeofenceChainService {
   /// that arrives when no ladder is live still leaves a trace.
   void wakeAck({String? source}) {
     _log('WAKE ack from ${source ?? 'unknown'}.');
-    // Only an ack that answers a LIVE ladder counts as the rider being woken.
-    // A tap when nothing is sounding is a tap.
+    // Only an ack that answers a ladder the rider was actually being ASKED by
+    // counts as being woken. A tap when nothing is running is a tap. This
+    // reads the mirrored flag, which now follows isAsking, so an ack given
+    // while a call has the alarm on vibration counts like any other.
     if (_wakeLadderLive) _wakeAnsweredThisRide = true;
     _handleWakeActions(
       _wakeEscalation?.acknowledge(DateTime.now()) ?? const [],
@@ -1753,7 +1755,12 @@ class GeofenceChainService {
       }
     }
 
-    final live = _wakeEscalation?.isLadderLive ?? false;
+    // isAsking, NOT isLadderLive, and the difference is a control the rider can
+    // reach. A call moves the alarm to vibration and takes the audio ladder
+    // down with it, so keying the notification button and the alert screen on
+    // liveness would remove the only way to answer at the moment the phone is
+    // buzzing in a pocket. See WakeEscalation.isAsking.
+    final live = _wakeEscalation?.isAsking ?? false;
     final rung = _wakeEscalation?.rung ?? 0;
     // THE RUNG IS PART OF THE CHANGE, not just liveness. The wake alert screen
     // steps its glow with the sound, and a ladder that climbs from rung 1 to 3
