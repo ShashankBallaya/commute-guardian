@@ -366,6 +366,8 @@ class GeofenceChainService {
     // Measured by the UI at Start and carried through the store. A LOG LINE,
     // never a decision: nothing in the ride reads it.
     double? alarmVolume,
+    double? mediaVolume,
+    bool? earphonesAtStart,
     // Whether Screen 3's commit window already said the two station names out
     // loud. Shortens the welcome so a rider is not told their route twice in
     // five seconds. False on every path without a window.
@@ -403,6 +405,20 @@ class GeofenceChainService {
     _log(
       'Alarm volume at start: '
       '${alarmVolume == null || alarmVolume < 0 ? 'unavailable' : '${(alarmVolume * 100).round()}%'}',
+    );
+    // THE OTHER HALF OF "I HEARD NOTHING". The line above covers the tone; this
+    // one covers everything the app SAYS, which rides the media stream, and
+    // where the sound was going to come out. Both are diagnostics: they are
+    // read off a log after a ride nobody heard, and neither changes the ride.
+    _log(
+      'Audio at start: media volume '
+      '${mediaVolume == null || mediaVolume < 0 ? 'unavailable' : '${(mediaVolume * 100).round()}%'}'
+      ', output '
+      '${earphonesAtStart == null
+          ? 'unknown'
+          : earphonesAtStart
+          ? 'earphones'
+          : 'phone speaker'}',
     );
 
     final repo = await StationRepository.load();

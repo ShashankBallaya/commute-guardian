@@ -7,6 +7,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import '../foreground/geofence_task_handler.dart';
 import '../models/app_settings.dart';
 import 'alarm_volume_answer.dart';
+import 'audio_output_gateway.dart';
 import 'wind_down.dart';
 
 /// One thing that happened on the other side of the isolate boundary.
@@ -516,6 +517,34 @@ class RideServiceClient {
     }
   }
 
+  /// The MEDIA slider, 0.0 to 1.0, or null where the platform will not say.
+  ///
+  /// A DIAGNOSTIC, NEVER A WARNING, and the difference from [alarmVolume] is
+  /// the whole reason both exist. The ladder tone rides the alarm stream and
+  /// this number cannot touch it, so it must never gate a claim about whether
+  /// the alarm can be heard.
+  ///
+  /// What it explains is everything the app SAYS. Station announcements and the
+  /// spoken wake lines are speech, and speech rides the media stream. On 5 Sep
+  /// 2026 a tester heard no announcements and no spoken wake while his log
+  /// recorded "Alarm volume at start: 100%", and nothing in six logs across
+  /// three phones could tell a muted media slider from a broken app.
+  ///
+  /// ANDROID ONLY TODAY. iOS has no per-stream read behind this channel and
+  /// guessing one would be worse than the silence it replaces, so it answers
+  /// null there and the log says "unavailable" rather than inventing a number.
+  Future<double?> mediaVolume() async {
+    try {
+      final value = await _mediaAckChannel
+          .invokeMethod<double>('getMediaVolume')
+          .timeout(const Duration(seconds: 2));
+      if (value == null || value.isNaN || value < 0) return null;
+      return value.clamp(0.0, 1.0);
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// One short system vibration, iOS only, and it is a BENCH not a feature yet.
   ///
   /// Rides the same service-to-main-to-native hop the ladder tone uses, because
@@ -680,7 +709,8 @@ class RideServiceClient {
       await FlutterForegroundTask.getData<int>(key: rideStartBatteryKey),
     ),
     rideInFlight:
-        await FlutterForegroundTask.getData<bool>(key: rideInFlightKey) ?? false,
+        await FlutterForegroundTask.getData<bool>(key: rideInFlightKey) ??
+        false,
     wakeLadderLive:
         await FlutterForegroundTask.getData<bool>(key: wakeLadderLiveKey) ??
         false,
@@ -856,6 +886,21 @@ class RideServiceClient {
     await FlutterForegroundTask.saveData(
       key: alarmVolumeKey,
       value: await alarmVolume() ?? -1.0,
+    );
+    // THE TWO NUMBERS THAT ANSWER "I HEARD NOTHING", measured here for the same
+    // reason the alarm volume is: the channel and the audio session both answer
+    // on the main engine, and the service has its own.
+    //
+    // -1 and the route string carry "the platform would not say" explicitly,
+    // because the store holds primitives and a null is indistinguishable from a
+    // key an OS-recreated service never received.
+    await FlutterForegroundTask.saveData(
+      key: mediaVolumeKey,
+      value: await mediaVolume() ?? -1.0,
+    );
+    await FlutterForegroundTask.saveData(
+      key: earphonesAtStartKey,
+      value: await const AudioOutputGateway().earphonesConnected(),
     );
 
     final result = await FlutterForegroundTask.startService(

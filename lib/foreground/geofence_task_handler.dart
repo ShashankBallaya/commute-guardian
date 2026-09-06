@@ -178,6 +178,22 @@ const announceEveryStationServiceKey = 'announce_every_station_ride';
 /// this number over the ladder's.
 const alarmVolumeKey = 'alarm_volume_at_start';
 
+/// The media slider at ride start, and whether audio was going to earphones.
+///
+/// THE INSTRUMENT THE 5 SEP 2026 RIDE DID NOT HAVE. A tester heard no station
+/// announcements and no spoken wake, on a phone whose log said the alarm volume
+/// was 100 percent. Speech rides the media stream and the tone rides the alarm
+/// stream, so those are different questions, and the log could only answer one
+/// of them. Nothing in six logs across three phones could separate a muted
+/// slider, a phone playing to its own speaker in a 90 km/h carriage, and a real
+/// fault in the app.
+///
+/// Diagnostics only. Neither gates anything, and neither may: the preflight
+/// already owns the decision to warn a rider, and a second opinion arriving
+/// mid-ride would be a warning nobody can act on with the phone in a pocket.
+const mediaVolumeKey = 'media_volume_at_start';
+const earphonesAtStartKey = 'earphones_at_start';
+
 /// The rider's analytics opt-out, `AppSettings.shareAnonymousUsage`.
 ///
 /// Crosses the isolate boundary through the STORE for the same reason the
@@ -394,9 +410,8 @@ class GeofenceTaskHandler extends TaskHandler {
         FlutterForegroundTask.saveData(key: wakeClimbingKey, value: climbing);
         _updateNotificationButtons();
       },
-      onIosVibrate: () => FlutterForegroundTask.sendDataToMain({
-        'vibrate': true,
-      }),
+      onIosVibrate: () =>
+          FlutterForegroundTask.sendDataToMain({'vibrate': true}),
       onIosToneCommand: (command, volume) {
         FlutterForegroundTask.sendDataToMain({
           'toneCommand': command,
@@ -483,6 +498,14 @@ class GeofenceTaskHandler extends TaskHandler {
           true,
       alarmVolume: await FlutterForegroundTask.getData<double>(
         key: alarmVolumeKey,
+      ),
+      mediaVolume: await FlutterForegroundTask.getData<double>(
+        key: mediaVolumeKey,
+      ),
+      // NULL, not false, for a missing key. False would assert the rider was on
+      // their speaker, which is a claim, and an older store has no opinion.
+      earphonesAtStart: await FlutterForegroundTask.getData<bool>(
+        key: earphonesAtStartKey,
       ),
       // Defaults FALSE for a missing key, which is the safe side here too: an
       // older store costs the rider a repeated pair of station names, never a

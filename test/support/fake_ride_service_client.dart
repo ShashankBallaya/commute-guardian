@@ -95,6 +95,14 @@ class FakeRideServiceClient implements RideServiceClient {
   @override
   Future<double?> alarmVolume() async => alarmVolumeValue;
 
+  /// The media slider, a DIAGNOSTIC only: it is written to the store at ride
+  /// start and read back off the log. Null by default, matching a platform
+  /// that will not say, so nothing existing changes shape.
+  double? mediaVolumeValue;
+
+  @override
+  Future<double?> mediaVolume() async => mediaVolumeValue;
+
   /// What [raiseAlarmVolume] hands back: the rider's own volume, or null when
   /// nothing was raised (already loud enough, not iOS, or refused).
   double? raisedFrom;

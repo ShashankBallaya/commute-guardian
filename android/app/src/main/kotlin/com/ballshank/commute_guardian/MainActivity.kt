@@ -62,6 +62,7 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "getAlarmVolume" -> result.success(alarmVolume())
+                "getMediaVolume" -> result.success(mediaVolume())
                 else -> result.notImplemented()
             }
         }
@@ -137,6 +138,32 @@ class MainActivity : FlutterActivity() {
             val max = audio.getStreamMaxVolume(AudioManager.STREAM_ALARM)
             if (max <= 0) return null
             audio.getStreamVolume(AudioManager.STREAM_ALARM).toDouble() / max
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * The MEDIA slider, 0.0 to 1.0, or null when the platform will not say.
+     *
+     * FOR THE LOG, NOT FOR A WARNING, and the distinction is the same one
+     * alarmVolume() makes in the other direction. The ladder tone rides
+     * STREAM_ALARM and this number cannot touch it, so it must never gate a
+     * warning about whether the alarm can be heard.
+     *
+     * What it CAN explain is everything else the app says. Station
+     * announcements and the spoken wake lines are speech, and speech rides the
+     * media stream. On 5 Sep 2026 a tester heard no announcements and no
+     * spoken wake while his log recorded "Alarm volume at start: 100%", and
+     * there was no way to tell a muted media slider from a broken app. Reading
+     * this at ride start turns that question into a line in the log.
+     */
+    private fun mediaVolume(): Double? {
+        return try {
+            val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            if (max <= 0) return null
+            audio.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() / max
         } catch (e: Exception) {
             null
         }
