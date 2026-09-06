@@ -157,6 +157,32 @@ RideProgress _dadarRideWithRails() => RideProgress(
   walkCrossings: const {'dadar': _dadarRails},
 );
 
+/// Ghatkopar to Chembur over the Kurla change, the leg that produced the
+/// 5 Sep 2026 false pass. Coordinates transcribed from
+/// assets/stations/mumbai_suburban.json.
+///
+/// THE SHAPE THAT MATTERS is the Kurla to Tilak Nagar leg: 1167 m long and
+/// almost due east, with a northward component of barely 56 m. A fix far to
+/// the NORTH, on the Central main the rider never left, projects onto that
+/// sliver of northward leg and reads as "beyond Tilak Nagar".
+final _kurlaChain = <Station>[
+  _s('ghatkopar', 'Ghatkopar', 19.0856928, 72.9083668, 400),
+  _s('vidyavihar', 'Vidyavihar', 19.0795422, 72.8971169, 350),
+  _s('kurla', 'Kurla', 19.0652797, 72.8793805, 450),
+  _s('tilak_nagar', 'Tilak Nagar', 19.0657855, 72.8904702, 350),
+  _s('chembur', 'Chembur', 19.0626319, 72.9011399, 400),
+];
+
+RideProgress _kurlaRide() => RideProgress(
+  chain: _kurlaChain,
+  destinationStationId: 'chembur',
+  approachRadiusM: const {'kurla': 1200, 'chembur': 1000},
+  arrivalAnnouncements: const {
+    'kurla': 'You have reached Kurla. Change here to the Harbour line.',
+    'chembur': 'You have arrived at your destination, Chembur.',
+  },
+);
+
 void main() {
   group('standing in a station is not the same as being past it', () {
     // THE 9 AUG 2026 RIDE FOUND THIS ON THE SCREEN, not in a log. The train sat
@@ -990,5 +1016,69 @@ void main() {
       expect(across.single.stationId, 'dadar');
       expect(ride.reachedIndex, 3);
     });
+  });
+
+  group('THE 5 SEP 2026 FALSE PASS AT KURLA', () {
+    // A tester's Xiaomi, riding Ghatkopar toward Chembur with a change at
+    // Kurla, announced "You have passed Kurla" AND "You have passed Tilak
+    // Nagar" in the same second, from a fix that was 1510 m SHORT of Kurla and
+    // closing at 25 m/s. Both fixes below are real, lifted from the log.
+    //
+    // Nothing about the fix was poor: 10 m accuracy, steady speed, positions
+    // monotonic, and it sat 7 m from the Vidyavihar to Kurla leg it was
+    // actually travelling. The geometry did it. The Kurla to Tilak Nagar leg
+    // runs almost due east, so its northward component is tiny, and a fix
+    // 911 m north of it produced a positive dot product against that sliver.
+    //
+    // The cost was not cosmetic. Passing Kurla marks the interchange done, and
+    // the rider had a wake ladder up for that very change.
+    test('a fix short of the interchange passes NEITHER station', () {
+      final ride = _kurlaRide();
+
+      // Localised at Vidyavihar, 15:31:40 in the log, which is the last
+      // honest thing the ride knew.
+      ride.onFix(lat: 19.08001, lng: 72.89830, accuracyM: 31);
+      expect(ride.reachedIndex, 1, reason: 'the fixture starts at Vidyavihar');
+
+      // 15:32:26. 1510 m from Kurla, 911 m from Tilak Nagar, both fences
+      // untouched, and the train is still approaching Kurla.
+      final spoken = ride.onFix(lat: 19.07398, lng: 72.89041, accuracyM: 10);
+
+      expect(
+        spoken.map((a) => a.stationId),
+        isNot(contains('kurla')),
+        reason: 'the train was 1510 m short of Kurla and closing',
+      );
+      expect(
+        spoken.map((a) => a.stationId),
+        isNot(contains('tilak_nagar')),
+        reason: 'and it was never on the line Tilak Nagar sits on',
+      );
+      expect(
+        ride.reachedIndex,
+        1,
+        reason: 'the ride has got no further than Vidyavihar',
+      );
+    });
+
+    test(
+      'and the interchange is still announced when it is really reached',
+      () {
+        // The other half, or the fix would be a mute button. Same ride, carried
+        // on to Kurla's own fence.
+        final ride = _kurlaRide();
+        ride.onFix(lat: 19.08001, lng: 72.89830, accuracyM: 31);
+        ride.onFix(lat: 19.07398, lng: 72.89041, accuracyM: 10);
+
+        final spoken = ride.onFix(
+          lat: 19.0652797,
+          lng: 72.8793805,
+          accuracyM: 15,
+        );
+
+        expect(spoken.map((a) => a.stationId), contains('kurla'));
+        expect(ride.reachedIndex, 2);
+      },
+    );
   });
 }

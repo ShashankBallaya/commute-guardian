@@ -513,7 +513,78 @@ class RideProgress {
     final legY = to.lat - from.lat;
     final toFixX = (lng - here.lng) * cosLat;
     final toFixY = lat - here.lat;
-    return (legX * toFixX + legY * toFixY) > 0;
+
+    // HOW FAR BEYOND, AGAINST HOW FAR OFF THE TRACK. A bare `dot > 0` asks
+    // only which side of the station the fix falls on and says nothing about
+    // whether the fix is anywhere near the line. That is safe on a leg the
+    // train is really travelling and wrong on every other one.
+    //
+    // IT COST A RIDE ON 5 SEP 2026. Kurla to Tilak Nagar runs 1167 m almost
+    // due east, so its northward component is about 56 m. A rider who stayed
+    // on the Central main past Kurla sat 911 m NORTH of that leg, still 1510 m
+    // SHORT of Kurla and closing at 25 m/s. The northward sliver alone made
+    // the dot product positive, so one clean 10 m fix announced "You have
+    // passed Kurla" and "You have passed Tilak Nagar" together and marked the
+    // change done, while that rider had a wake ladder up for the change.
+    //
+    // So the claim has to be earned: the fix must lie further BEYOND the
+    // station, along its own inbound leg, than it lies OFF THE CORRIDOR, the
+    // corridor being this station's two legs, in and out.
+    //
+    // THE OUTBOUND LEG IS USED FOR DISTANCE ONLY, NEVER FOR DIRECTION, and the
+    // distinction is the whole reason the doubling-back trap above does not
+    // reopen. A fix short of Thane still scores NEGATIVE `beyond` against the
+    // inbound leg and is refused whatever the corridor says.
+    //
+    // MEASURED, NOT PICKED, on every "passed" announcement in the six logs of
+    // 5 Sep 2026 across three devices, plus the 13 Jul Kalwa backstop this
+    // suite already pins:
+    //   Kalwa      521 m beyond,  178 m off  -> past, and it really had passed
+    //   Kanjurmarg 3389 m beyond, 2092 m off -> past, a long blackout catch-up
+    //   Thakurli   3082 m beyond,   44 m off -> past
+    //   Kurla     -1510 m beyond,   14 m off -> NOT past, still approaching
+    //   TilakNagar   38 m beyond,  911 m off -> NOT past, wrong line entirely
+    // Every honest catch-up clears it and both false claims fail it. Measuring
+    // off the INBOUND leg alone would have failed Kalwa (521 against 797),
+    // because a train that has rounded a corner is off its old leg by design;
+    // a plain metre cap on the offset would have silenced the long catch-ups,
+    // which are exactly the announcements a GPS blackout makes valuable.
+    //
+    // All terms are in the same cosLat-scaled units, so this needs no
+    // conversion to metres and no constant.
+    final legLength = math.sqrt(legX * legX + legY * legY);
+    if (legLength == 0) return false;
+    final beyond = (legX * toFixX + legY * toFixY) / legLength;
+
+    var offCorridor = _offLeg(lat, lng, from, here);
+    if (index + 1 < chain.length) {
+      final next = chain[index + 1];
+      final out = _offLeg(lat, lng, here, next);
+      if (out < offCorridor) offCorridor = out;
+    }
+    return beyond > offCorridor;
+  }
+
+  /// Distance from a fix to the SEGMENT between two stations, in the same
+  /// cosLat-scaled units [_isPast] works in.
+  ///
+  /// Clamped to the segment rather than its infinite line: past either end the
+  /// honest answer is the distance to that end, and an unclamped line would
+  /// call a fix "on the corridor" from kilometres beyond where the track goes.
+  double _offLeg(double lat, double lng, Station a, Station b) {
+    final cosLat = math.cos(_toRad(a.lat));
+    final bx = (b.lng - a.lng) * cosLat;
+    final by = b.lat - a.lat;
+    final px = (lng - a.lng) * cosLat;
+    final py = lat - a.lat;
+    final lengthSquared = bx * bx + by * by;
+    if (lengthSquared == 0) return math.sqrt(px * px + py * py);
+    var t = (px * bx + py * by) / lengthSquared;
+    if (t < 0) t = 0;
+    if (t > 1) t = 1;
+    final dx = px - t * bx;
+    final dy = py - t * by;
+    return math.sqrt(dx * dx + dy * dy);
   }
 
   static double _toRad(double deg) => deg * math.pi / 180.0;
