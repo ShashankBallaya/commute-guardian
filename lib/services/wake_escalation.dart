@@ -212,6 +212,12 @@ class WakeEscalation {
   /// end knows to resume rather than wait for a trigger that already fired.
   bool _suspendedLadder = false;
 
+  /// When the next buzz is due while a call holds the audio.
+  ///
+  /// Null whenever nothing is buzzing, which is the common case: a rider
+  /// taking a call with no ladder live must feel nothing at all.
+  DateTime? _nextBuzzAt;
+
   /// Chain stations announced while the call was live, in order, for the
   /// hang-up catch-up ("the train passed X and Y").
   final List<String> _passedDuringCall = [];
@@ -472,6 +478,10 @@ class WakeEscalation {
     _ladderLive = false;
     _rung = 0;
     _nextTransitionAt = null;
+    // Nothing may keep buzzing past a stand-down, and a ladder answered during
+    // a call must not come back when the rider hangs up.
+    _nextBuzzAt = null;
+    _suspendedLadder = false;
     // An ETA computed against the old target must not count down toward
     // the next one.
     _lastFixAt = null;
@@ -528,14 +538,36 @@ class WakeEscalation {
       _suspendedLadder = _ladderLive;
       _passedDuringCall.clear();
       final toneWasPlaying = _ladderLive && _rung >= 1;
+      final wasLive = _ladderLive;
       _ladderLive = false;
       _rung = 0;
       _nextTransitionAt = null;
-      return [if (toneWasPlaying) const StopTone()];
+      // THE ALARM MOVES CHANNEL, IT DOES NOT GO OUT.
+      //
+      // "On a call means awake" is right about AUDIO and wrong about the whole
+      // phone. On 5 Sep 2026 a tester's ladder for the Kurla change went live,
+      // a call arrived 25 seconds later at rung 0, three seconds before the
+      // first tone was due, and the ladder stood down in silence. He missed the
+      // interchange and only learned of it from the post-call catch-up three
+      // minutes later.
+      //
+      // Vibration does not collide with a call, and `docs/adr/0003` measured an
+      // iPhone buzzing 7 of 7 times from a locked pocket, so it is a real
+      // channel on both platforms. Gated on the ladder having been LIVE, never
+      // on the call: a rider phoning a friend mid-journey with no alarm running
+      // must feel nothing.
+      _nextBuzzAt = wasLive ? now.add(rungInterval) : null;
+      return [
+        if (toneWasPlaying) const StopTone(),
+        if (wasLive) const Vibrate(),
+      ];
     }
     if (!_inCall) return const [];
     _inCall = false;
     _suspendedAt = null;
+    // The call is over, so the audio channel is back and the buzz stops being
+    // the whole alarm. Every branch below decides what sounds next.
+    _nextBuzzAt = null;
     // Forgetting what went by is the whole of "no catch-up": every branch
     // below reads this list, so clearing it here makes the firm-rung path and
     // the spoken catch-up disappear together, which is correct. A rider
@@ -600,10 +632,14 @@ class WakeEscalation {
   /// or the on-screen I'm-awake button. Stands the ladder down at whatever
   /// stage it is on.
   List<WakeAction> acknowledge(DateTime now) {
-    if (!_ladderLive) return const [];
+    // A ladder buzzing through a call is live to the RIDER even though
+    // [_ladderLive] is false, and they can answer it from the notification.
+    // Answered is answered: an alarm that outlives its acknowledgement is the
+    // 9 Aug 2026 trap, where the rider pressed "I'm awake" 66 times.
+    if (!_ladderLive && _nextBuzzAt == null) return const [];
     // The tone only starts at rung 1; an ack still in the check-in window
     // has nothing to silence.
-    final toneWasPlaying = _rung >= 1;
+    final toneWasPlaying = _ladderLive && _rung >= 1;
     _standDown();
     return [
       if (toneWasPlaying) const StopTone(),
@@ -623,6 +659,15 @@ class WakeEscalation {
       if (suspendedAt != null &&
           !now.isBefore(suspendedAt.add(interruptionResumeTimeout))) {
         return onCallStateChanged(inCall: false, now: now);
+      }
+      // The buzz keeps the ladder's own cadence rather than a slower one of
+      // its own: the rider is being asked the same question at the same rate,
+      // in the only channel the call leaves free. Escalation is still frozen,
+      // so no rung climbs and no tone is armed while the call runs.
+      final buzzAt = _nextBuzzAt;
+      if (buzzAt != null && !now.isBefore(buzzAt)) {
+        _nextBuzzAt = buzzAt.add(rungInterval);
+        return const [Vibrate()];
       }
       return const [];
     }

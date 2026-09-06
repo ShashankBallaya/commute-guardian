@@ -487,6 +487,113 @@ void main() {
     });
   });
 
+  group('A CALL MAY NOT SPEND THE ALARM IN SILENCE', () {
+    // 5 SEP 2026, AND IT COST A TESTER HIS INTERCHANGE. On his Xiaomi the
+    // ladder for the Kurla change went live at 15:31:40. A call arrived at
+    // 15:32:05 and the ladder stood down two milliseconds later, at rung 0,
+    // three seconds before the first tone was due. He heard one spoken
+    // sentence and then nothing, missed Kurla, and only learned of it from
+    // the post-call catch-up three minutes later.
+    //
+    // "On a call means awake" (locked decision 8) is right about AUDIO and
+    // wrong about the whole phone. Vibration does not collide with a call,
+    // and ADR 0003 measured an iPhone buzzing 7 of 7 times from a locked
+    // pocket, so it is a channel on both platforms. The alarm moves to it
+    // rather than going out.
+
+    test('a call moves a live ladder to vibration instead of ending it', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+      // Live, and still in the check-in window at rung 0, which is exactly
+      // where the real call landed.
+      wake.onStationEvent(_arrival('thane'), _t0);
+
+      final suspend = wake.onCallStateChanged(
+        inCall: true,
+        now: _t0.add(const Duration(seconds: 20)),
+      );
+
+      expect(
+        suspend.whereType<Vibrate>(),
+        hasLength(1),
+        reason: 'the one channel a call does not own',
+      );
+      expect(
+        suspend.whereType<Tone>(),
+        isEmpty,
+        reason: 'audio would blast into the conversation',
+      );
+      expect(
+        suspend.whereType<Speak>(),
+        isEmpty,
+        reason: 'and so would speech',
+      );
+    });
+
+    test('and it keeps buzzing on the ladder cadence for as long as the call '
+        'lasts', () {
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+      wake.onStationEvent(_arrival('thane'), _t0);
+      final callAt = _t0.add(const Duration(seconds: 20));
+      wake.onCallStateChanged(inCall: true, now: callAt);
+
+      final next = wake.onTick(callAt.add(WakeEscalation.rungInterval));
+      expect(next.whereType<Vibrate>(), hasLength(1));
+      expect(next.whereType<Tone>(), isEmpty);
+
+      final after = wake.onTick(callAt.add(WakeEscalation.rungInterval * 2));
+      expect(
+        after.whereType<Vibrate>(),
+        hasLength(1),
+        reason: 'a three minute call must not end in silence',
+      );
+    });
+
+    test('a call with NO ladder live stays completely quiet', () {
+      // The common case by far, and the reason this is gated on the ladder
+      // rather than on the call: a rider taking a call mid-journey with no
+      // alarm sounding must feel nothing at all.
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+
+      final suspend = wake.onCallStateChanged(inCall: true, now: _t0);
+      expect(suspend, isEmpty);
+      expect(wake.onTick(_t0.add(WakeEscalation.rungInterval)), isEmpty);
+    });
+
+    test('acknowledging during the call stops the buzzing', () {
+      // The rider felt it, on a call, and answered. Nothing may keep buzzing
+      // after that: an alarm that outlives its acknowledgement is the
+      // 9 Aug trap in a new costume.
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const [],
+        destinationStationId: 'digha',
+      );
+      wake.onStationEvent(_arrival('thane'), _t0);
+      final callAt = _t0.add(const Duration(seconds: 20));
+      wake.onCallStateChanged(inCall: true, now: callAt);
+
+      wake.acknowledge(callAt.add(const Duration(seconds: 5)));
+
+      expect(
+        wake.onTick(callAt.add(WakeEscalation.rungInterval)),
+        isEmpty,
+        reason: 'answered is answered, call or no call',
+      );
+    });
+  });
+
   group('calls suspend the wake clock', () {
     test(
       'a call starting mid-ladder stops the tone and freezes escalation',
@@ -505,12 +612,20 @@ void main() {
           inCall: true,
           now: _t0.add(const Duration(seconds: 30)),
         );
-        expect(suspend, hasLength(1));
-        expect(suspend.single, isA<StopTone>());
+        expect(suspend.whereType<StopTone>(), hasLength(1));
+        // AND IT MOVES TO VIBRATION rather than going out. Changed 6 Sep 2026
+        // after the ride where a call at rung 0 ended a live ladder in silence
+        // and the rider missed his interchange. See the group above.
+        expect(suspend.whereType<Vibrate>(), hasLength(1));
 
-        // The clock is frozen: rungs that would have fired stay silent.
+        // The clock is still frozen: no rung climbs, nothing is spoken, and
+        // no tone is armed. Nothing is due before the first buzz either.
         expect(wake.onTick(_t0.add(const Duration(seconds: 40))), isEmpty);
-        expect(wake.onTick(_t0.add(const Duration(minutes: 2))), isEmpty);
+
+        final during = wake.onTick(_t0.add(const Duration(minutes: 2)));
+        expect(during.whereType<Vibrate>(), hasLength(1));
+        expect(during.whereType<Tone>(), isEmpty);
+        expect(during.whereType<Speak>(), isEmpty);
       },
     );
 
@@ -568,8 +683,12 @@ void main() {
       final suspendAt = _t0.add(const Duration(seconds: 30));
       wake.onCallStateChanged(inCall: true, now: suspendAt);
 
-      // Still frozen inside the timeout window.
-      expect(wake.onTick(suspendAt.add(const Duration(minutes: 2))), isEmpty);
+      // Still frozen inside the timeout window: the buzz keeps asking, but
+      // nothing escalates and nothing sounds.
+      final during = wake.onTick(suspendAt.add(const Duration(minutes: 2)));
+      expect(during.whereType<Tone>(), isEmpty);
+      expect(during.whereType<Speak>(), isEmpty);
+      expect(during.whereType<Vibrate>(), hasLength(1));
 
       // At the timeout the engine assumes the ended event was lost and
       // resumes on its own: the check-in comes back and silence escalates
