@@ -6,6 +6,8 @@ import 'package:commute_guardian/main.dart';
 import 'package:commute_guardian/screens/home_screen.dart';
 import 'package:commute_guardian/screens/onboarding_screen.dart';
 import 'package:commute_guardian/screens/travel_mode_screen.dart';
+import 'package:commute_guardian/services/oem_guidance.dart';
+import 'package:commute_guardian/state/readiness_providers.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
 import 'package:flutter/material.dart';
@@ -28,12 +30,20 @@ void main() {
   Future<(FakePermissions, List<String>)> pump(
     WidgetTester tester, {
     bool android = true,
+    OemGuidance guidance = const OemGuidance(
+      family: OemFamily.none,
+      brandLabel: '',
+      steps: [],
+    ),
   }) async {
     final permissions = FakePermissions(android: android);
     final done = <String>[];
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [permissionsGatewayProvider.overrideWithValue(permissions)],
+        overrides: [
+          permissionsGatewayProvider.overrideWithValue(permissions),
+          oemGuidanceProvider.overrideWith((ref) async => guidance),
+        ],
         child: MaterialApp(
           home: OnboardingScreen(onDone: () => done.add('done')),
         ),
@@ -143,6 +153,93 @@ void main() {
         await tester.pumpAndSettle();
       }
     }
+  });
+
+  group('THE SECOND BATTERY LIST, BEFORE THE FIRST RIDE', () {
+    // 5 SEP 2026. A tester's Xiaomi ran the first ride with
+    // ignoringBatteryOptimizations=false and it stopped after 5m32s. The owner
+    // fixed it by hand from the phone's own settings, mid-platform, because
+    // nothing in the app had ever mentioned it.
+    //
+    // The guidance screen has existed since 26 Aug and is reachable from
+    // Settings. That is the wrong place: a rider meets this AFTER their first
+    // ride dies, and a ride lost to an OEM killer looks exactly like a bug in
+    // the geofence chain. So the phones that need it are told during
+    // onboarding, before there is anything to lose.
+    //
+    // It is INSTRUCTIONS, never a status. The autostart list has no API, so
+    // nothing here can be verified and nothing here may claim to be.
+
+    const xiaomi = OemGuidance(
+      family: OemFamily.xiaomi,
+      brandLabel: 'Xiaomi',
+      steps: ['Open Settings', 'Turn on Autostart'],
+    );
+
+    testWidgets('a phone with a second list is told, by name', (tester) async {
+      final (_, _) = await pump(tester, guidance: xiaomi);
+      await act(tester); // welcome
+      for (var i = 0; i < 4; i++) {
+        await tester.tap(find.byKey(const Key('onboarding_skip')));
+        await tester.pumpAndSettle();
+      }
+
+      expect(
+        find.byKey(const Key('onboarding_oem')),
+        findsOneWidget,
+        reason: 'a Xiaomi keeps a list the app cannot reach',
+      );
+      expect(
+        find.textContaining('Xiaomi'),
+        findsWidgets,
+        reason: 'the name on the back of the phone, not a generic warning',
+      );
+    });
+
+    testWidgets('and it comes BEFORE the ride, not after it', (tester) async {
+      final (_, _) = await pump(tester, guidance: xiaomi);
+      await act(tester);
+      for (var i = 0; i < 4; i++) {
+        await tester.tap(find.byKey(const Key('onboarding_skip')));
+        await tester.pumpAndSettle();
+      }
+      expect(find.byKey(const Key('onboarding_ready')), findsNothing);
+
+      await tester.tap(find.byKey(const Key('onboarding_skip')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('onboarding_ready')), findsOneWidget);
+    });
+
+    testWidgets('a phone with no second list is never shown one', (
+      tester,
+    ) async {
+      // A Pixel has nothing to do here, and a warning about a setting that
+      // does not exist on this phone teaches the rider to distrust the rest.
+      final (_, done) = await pump(tester);
+      await act(tester);
+      for (var i = 0; i < 4; i++) {
+        await tester.tap(find.byKey(const Key('onboarding_skip')));
+        await tester.pumpAndSettle();
+      }
+
+      expect(find.byKey(const Key('onboarding_oem')), findsNothing);
+      expect(find.byKey(const Key('onboarding_ready')), findsOneWidget);
+      await act(tester);
+      expect(done, ['done']);
+    });
+
+    testWidgets('refusing it still reaches the end, like every other step', (
+      tester,
+    ) async {
+      final (_, done) = await pump(tester, guidance: xiaomi);
+      await act(tester);
+      for (var i = 0; i < 5; i++) {
+        await tester.tap(find.byKey(const Key('onboarding_skip')));
+        await tester.pumpAndSettle();
+      }
+      await act(tester);
+      expect(done, ['done'], reason: 'refusing never traps anyone');
+    });
   });
 
   testWidgets('iOS skips the battery screen rather than promising nothing', (

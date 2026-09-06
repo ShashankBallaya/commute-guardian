@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/permissions_gateway.dart';
+import '../state/readiness_providers.dart';
 import '../state/ride_providers.dart';
+import 'oem_guidance_screen.dart';
 import '../theme/palette.dart';
 import '../theme/type_scale.dart';
 import '../widgets/mini_rail.dart';
@@ -31,11 +33,29 @@ class OnboardingScreen extends ConsumerStatefulWidget {
 }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
-  static const _stops = 6;
+  /// SEVEN SINCE 6 SEP 2026, when the OEM step was added.
+  ///
+  /// It counts steps a given phone may SKIP, and that is deliberate rather
+  /// than overlooked: iOS has skipped the battery step since the day it was
+  /// written and the rail has always counted it. A skip is instant, so the
+  /// rider sees the dot advance and never a screen that is not there, and the
+  /// alternative is a rail whose length depends on an async lookup that has
+  /// not answered on the first frame.
+  static const _stops = 7;
   int _step = 0;
   bool _busy = false;
 
   PermissionsGateway get _permissions => ref.read(permissionsGatewayProvider);
+
+  @override
+  void initState() {
+    super.initState();
+    // WARM THE PHONE LOOKUP FROM THE FIRST SCREEN, four taps before the step
+    // that needs it. It is a platform channel round trip, and asking for it at
+    // the moment of use meant the step read "still loading" and skipped itself
+    // silently, which is the same silence this whole step exists to end.
+    ref.read(oemGuidanceProvider);
+  }
 
   void _next() {
     if (_step == _stops - 1) {
@@ -95,6 +115,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
                             2 => _background(),
                             3 => _notifications(),
                             4 => _battery(),
+                            5 => _oem(),
                             _ => _ready(),
                           },
                         ],
@@ -191,6 +212,86 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       quiet: 'Not now',
       onQuiet: _next,
     );
+  }
+
+  /// The second battery list, the one Android has no API for.
+  ///
+  /// SHOWN HERE BECAUSE SETTINGS IS TOO LATE. The guidance screen has existed
+  /// since 26 Aug 2026 and Settings has always linked to it, but a rider only
+  /// goes looking after something has already gone wrong, and a ride lost to an
+  /// OEM killer looks exactly like a bug in the geofence chain. On 5 Sep 2026 a
+  /// tester's Xiaomi died 5m32s into its first ride and the owner fixed it by
+  /// hand from the phone's own settings, standing on a platform, because
+  /// nothing in the app had ever mentioned it.
+  ///
+  /// ONLY THE PHONES THAT NEED IT. On a Pixel this step does not exist:
+  /// warning somebody about a setting their phone does not have teaches them to
+  /// distrust the rest of what we say.
+  ///
+  /// IT IS INSTRUCTIONS, NEVER A STATUS. Nothing here can be read back, so
+  /// nothing here claims to have worked. Same rule that keeps it off the
+  /// readiness card.
+  Widget _oem() {
+    // UNANSWERED READS AS "NOTHING TO SAY", the same as an unknown phone, and
+    // the warm-up in initState is what makes that safe: the lookup starts five
+    // taps before this step and answers in about a millisecond on a real
+    // handset. Holding here instead would put a native call in front of a
+    // screen, which is the shape of the 10 Aug 2026 white screen, and this
+    // step is not worth that risk.
+    final guidance = ref.watch(oemGuidanceProvider).valueOrNull;
+    if (guidance == null || !guidance.needsAttention) {
+      // Unknown phone, iOS, or a brand with no second list. Skip rather than
+      // warn somebody about a setting their phone does not have.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _next());
+      return const SizedBox.shrink();
+    }
+    return _Panel(
+      key: const Key('onboarding_oem'),
+      heading: 'Your ${guidance.brandLabel} needs one more thing',
+      body:
+          '${guidance.brandLabel} phones keep a second list that decides which '
+          'apps may run in the background, and no app can set it for you. It '
+          'takes about a minute, and without it we can be stopped mid-journey.',
+      action: 'Show me how',
+      onAction: _showOemGuidance,
+      quiet: 'Not now',
+      onQuiet: _next,
+    );
+  }
+
+  Future<void> _showOemGuidance() async {
+    final guidance = ref.read(oemGuidanceProvider).valueOrNull;
+    if (guidance == null || !guidance.needsAttention) {
+      _next();
+      return;
+    }
+    final gateway = ref.read(oemGatewayProvider);
+    final database = ref.read(appDatabaseProvider);
+
+    // THE SAME SCREEN SETTINGS OPENS, not a second copy of the steps. The
+    // wording is quoted from each skin and a paraphrase is a rider who gives up
+    // halfway, so there must only ever be one place it lives.
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) => Consumer(
+          builder: (context, ref, _) => OemGuidanceScreen(
+            guidance: guidance,
+            acknowledged:
+                ref.watch(oemGuidanceDoneProvider).valueOrNull ?? false,
+            onBack: () => Navigator.of(context).maybePop(),
+            onOpenSetting: gateway.openAutoStart,
+            onAcknowledge: () async {
+              await database.markOemGuidanceDone();
+              ref.invalidate(oemGuidanceDoneProvider);
+              if (context.mounted) await Navigator.of(context).maybePop();
+            },
+          ),
+        ),
+      ),
+    );
+    // However they left it, done or not, onboarding carries on. Refusing never
+    // traps anyone, and this step can be finished later from Settings.
+    if (mounted) _next();
   }
 
   Widget _ready() => _Panel(
