@@ -292,8 +292,18 @@ void main() {
         destinationStationId: 'digha',
       );
 
-      // Last good fix near Mumbra: Digha ~213 s out at 15 m/s. Then the
+      // Last good fixES near Mumbra: Digha ~213 s out at 15 m/s. Two of them,
+      // a second apart, because a seed inside the coastable envelope must be
+      // corroborated before it may count down into a ladder. A real 1 Hz
+      // stream hands over dozens; the second is the one that seeds. Then the
       // GPS goes dark (the real 13 Jul Kalwa..Dombivli blackout pattern).
+      wake.onFix(
+        lat: 19.18979,
+        lng: 73.02325,
+        accuracyM: 20,
+        speedMps: 15,
+        now: _t0.subtract(const Duration(seconds: 1)),
+      );
       wake.onFix(
         lat: 19.18979,
         lng: 73.02325,
@@ -448,6 +458,15 @@ void main() {
         // crosses the 90 s lead window at 176 s of staleness, INSIDE the
         // 180 s coast. This is what dead reckoning is for.
         final wake = newWake();
+        // Two fixes: a 266 s seed is inside the coastable envelope, so it must
+        // be corroborated before it may coast into a ladder.
+        wake.onFix(
+          lat: 19.18979,
+          lng: 73.02325,
+          accuracyM: 20,
+          speedMps: 12,
+          now: _t0.subtract(const Duration(seconds: 1)),
+        );
         wake.onFix(
           lat: 19.18979,
           lng: 73.02325,
@@ -468,6 +487,13 @@ void main() {
         // 277 s seed crossing at 187 s of staleness, just outside the coast.
         // Nothing about this test differs except the number the bound tests.
         final wake = newWake();
+        wake.onFix(
+          lat: 19.18979,
+          lng: 73.02325,
+          accuracyM: 20,
+          speedMps: 11.5,
+          now: _t0.subtract(const Duration(seconds: 1)),
+        );
         wake.onFix(
           lat: 19.18979,
           lng: 73.02325,
@@ -1249,12 +1275,27 @@ void main() {
 
       // 800 m short of Digha at 20 m/s, and nowhere near Thane. The cursor is
       // still on Thane and no station event will ever move it.
-      final actions = wake.onFix(
+      //
+      // TWO FIXES, because this is the branch that can jump the cursor past
+      // every remaining change: the first one is held and says so in the log,
+      // and the second one, agreeing, is what arms the stop.
+      final held = wake.onFix(
         lat: 19.1837,
         lng: 72.9944301,
         accuracyM: 20,
         speedMps: 20,
         now: _t0,
+      );
+      expect(held.single, isA<WakeNote>());
+      expect((held.single as WakeNote).message, contains('holding for'));
+      expect(wake.isLadderLive, isFalse);
+
+      final actions = wake.onFix(
+        lat: 19.1837,
+        lng: 72.9944301,
+        accuracyM: 20,
+        speedMps: 20,
+        now: _t0.add(const Duration(seconds: 1)),
       );
 
       expect(actions.first, isA<WakeNote>());
@@ -1275,12 +1316,19 @@ void main() {
       // is inside the 90 s lead time, so the override could fire here. It must
       // not: the change is closer, the rider has not left the plan, and the
       // ladder that arms is the one for the change.
-      final actions = wake.onFix(
+      wake.onFix(
         lat: 19.1864830,
         lng: 72.9757664,
         accuracyM: 20,
         speedMps: 30,
         now: _t0,
+      );
+      final actions = wake.onFix(
+        lat: 19.1864830,
+        lng: 72.9757664,
+        accuracyM: 20,
+        speedMps: 30,
+        now: _t0.add(const Duration(seconds: 1)),
       );
 
       expect(actions.whereType<WakeNote>(), isEmpty);
@@ -1288,6 +1336,129 @@ void main() {
         (actions.single as Speak).text,
         startsWith('Your train change at Thane is next.'),
       );
+    });
+  });
+
+  _consecutiveFixTests();
+}
+
+/// C7a, the consecutive-fix gate.
+///
+/// [WakeEscalation.maxAccuracyM] and [WakeEscalation.minSpeedMps] judge one
+/// fix's QUALITY, and a fix can be confidently wrong: `accuracyM` is the OS's
+/// own estimate of itself. What makes that urgent is the destination override,
+/// which lets a single fix jump the cursor past every remaining change from
+/// anywhere on the route. An early ladder does not merely annoy, it SPENDS the
+/// alarm: the 21 Aug ride is the record of a rider woken near Diva, acking,
+/// and reaching Kalyan in silence because the ack resolved the ladder.
+void _consecutiveFixTests() {
+  group('THE CONSECUTIVE-FIX GATE, C7a', () {
+    WakeEscalation newWake() => WakeEscalation(
+      chain: _chain,
+      interchangeStationIds: const [],
+      destinationStationId: 'digha',
+    );
+
+    /// A fix sitting on Digha itself. Tight accuracy, train speed: it passes
+    /// every single-fix gate there is, and on a real ride at Kalyan it is a
+    /// lie 15.5 km wide.
+    List<WakeAction> wildFix(WakeEscalation wake, DateTime now) => wake.onFix(
+      lat: 19.1807762,
+      lng: 72.9944301,
+      accuracyM: 20,
+      speedMps: 15,
+      now: now,
+    );
+
+    /// An honest fix at Kalyan: about 1038 s from Digha, far outside the
+    /// coastable envelope, so it can neither arm nor seed anything.
+    List<WakeAction> honestFix(WakeEscalation wake, DateTime now) => wake.onFix(
+      lat: 19.2358216,
+      lng: 73.1308101,
+      accuracyM: 20,
+      speedMps: 15,
+      now: now,
+    );
+
+    test('ONE fix never arms the ladder, and the log says why', () {
+      final wake = newWake();
+
+      final held = wildFix(wake, _t0);
+
+      expect(wake.isLadderLive, isFalse);
+      expect(held.whereType<Speak>(), isEmpty);
+      expect(held.whereType<Tone>(), isEmpty);
+      expect(held.single, isA<WakeNote>());
+      expect(
+        (held.single as WakeNote).message,
+        'a fix puts digha inside the lead time, holding for 1 more fix to '
+        'agree',
+      );
+    });
+
+    test('and the second fix, agreeing, arms it: the gate is a gate, not an '
+        'off switch', () {
+      final wake = newWake();
+
+      wildFix(wake, _t0);
+      final armed = wildFix(wake, _t0.add(const Duration(seconds: 1)));
+
+      expect(wake.isLadderLive, isTrue);
+      expect(
+        (armed.single as Speak).text,
+        startsWith('Your stop, Digha Gaon, is next.'),
+      );
+    });
+
+    test('THE BYPASS THAT WOULD HAVE MADE THE GATE DECORATIVE: a held fix '
+        'must not seed the dead-reckoning countdown either', () {
+      // Found while building the gate, not by a test. onTick coasts the last
+      // seed down to zero and starts the ladder with no further fix at all, so
+      // gating only the direct ETA leg would have let the SAME wild fix arm
+      // the ladder one tick later, through the other door.
+      final wake = newWake();
+
+      wildFix(wake, _t0);
+
+      // A whole coast's worth of ticks, and the wild fix never becomes sound.
+      for (var s = 1; s <= 200; s++) {
+        expect(
+          wake.onTick(_t0.add(Duration(seconds: s))),
+          isEmpty,
+          reason: 'a single fix seeded the countdown at $s s',
+        );
+      }
+      expect(wake.isLadderLive, isFalse);
+    });
+
+    test('a contradicting fix between two wild ones resets the count, so a '
+        'lone liar never accumulates', () {
+      final wake = newWake();
+
+      wildFix(wake, _t0);
+      // The train is really here, 1038 s out. It agrees with nothing.
+      expect(honestFix(wake, _t0.add(const Duration(seconds: 1))), isEmpty);
+
+      final stillHeld = wildFix(wake, _t0.add(const Duration(seconds: 2)));
+
+      expect(wake.isLadderLive, isFalse);
+      expect(stillHeld.single, isA<WakeNote>());
+      expect(
+        (stillHeld.single as WakeNote).message,
+        contains('holding for 1 more fix'),
+      );
+    });
+
+    test('a station event still arms the ladder on its own: this gate is '
+        'about FIXES, and never delays the fence', () {
+      // The three trigger legs are independent (locked decision 5). Gating the
+      // fix leg must not make the rider wait for GPS at a fence that fired.
+      final wake = newWake();
+
+      final armed = wake.onStationEvent(_arrival('thane'), _t0);
+
+      expect(wake.isLadderLive, isTrue);
+      expect(armed.whereType<Speak>(), hasLength(1));
     });
   });
 }
@@ -1356,7 +1527,15 @@ void _wakeToggleTests() {
       );
 
       // Between Thane and Digha at 15 m/s: about 1.0 km, 69 s out, inside the
-      // 90 s lead window.
+      // 90 s lead window. Two fixes of the stream, because one is never
+      // enough to arm a ladder on its own.
+      wake.onFix(
+        lat: 19.1836,
+        lng: 72.9851,
+        accuracyM: 20,
+        speedMps: 15,
+        now: back.add(const Duration(seconds: 4)),
+      );
       final near = wake.onFix(
         lat: 19.1836,
         lng: 72.9851,

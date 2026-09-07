@@ -139,6 +139,31 @@ class WakeEscalation {
   /// such fixes are skipped rather than misread.
   static const minSpeedMps = 0.5;
 
+  /// How many usable fixes in a row must make the SAME claim before a fix
+  /// alone starts a ladder. Named so bench tuning is one edit, like the rung
+  /// timings.
+  ///
+  /// [maxAccuracyM] and [minSpeedMps] gate the QUALITY of one fix, and that
+  /// was the whole gate until now. It is not enough, because a fix can be
+  /// confidently wrong: `accuracyM` is the OS's own estimate of itself, and a
+  /// phone that resolves off the wrong cell tower reports a tight accuracy on
+  /// a position kilometres away. Both gates pass and the ladder arms.
+  ///
+  /// WHAT MADE THIS URGENT is the destination override below. Before it, a
+  /// wild fix could only arm the ladder for the target the cursor was already
+  /// on, near the end of a leg. Now one fix can JUMP THE CURSOR PAST EVERY
+  /// REMAINING CHANGE, during the first leg, and spend the alarm hours early:
+  /// the 21 Aug ride is the record of what an early ladder costs, because an
+  /// ack resolves the ladder and the real alarm can then never fire.
+  ///
+  /// TWO, one corroboration, is the same rule [RideProgress.onFix] already
+  /// runs on eliminative claims, and it was measured on the 18 Jul logs: the
+  /// one legitimate catch-up moved 13 s later and the false announcement
+  /// disappeared. Fixes are asked for at ~1 Hz, so the cost here is about a
+  /// second out of [leadTimeS]'s ninety. A wild fix has to be wrong twice, the
+  /// same way, back to back, to get through.
+  static const corroboratingFixes = 2;
+
   /// How long the dead-reckoning countdown in [onTick] may coast on a single
   /// fix before it stops being evidence.
   ///
@@ -189,6 +214,21 @@ class WakeEscalation {
   /// can keep counting down after fixes stop arriving.
   DateTime? _lastFixAt;
   double? _lastEtaS;
+
+  /// How many usable fixes in a row have made each of the two claims a fix can
+  /// make, and the cursor they were made against. See [corroboratingFixes].
+  ///
+  /// Two counters, not one, because the claims are different sentences about
+  /// different stations: "the target the plan is waiting for is close" and
+  /// "the stop is closer than that target". A fix can make both, and a shared
+  /// counter would let them reset each other forever.
+  ///
+  /// [_claimCursor] is what ties them to a leg of the journey. When the cursor
+  /// moves, the ladder they were evidence for is resolved or skipped, and the
+  /// next target must be proved from scratch.
+  int _targetClaimFixes = 0;
+  int _stopClaimFixes = 0;
+  int _claimCursor = -1;
 
   /// On a call means awake, not asleep (locked decision 8): outputs are
   /// suspended while true, but station events keep being ingested so call
@@ -415,15 +455,48 @@ class WakeEscalation {
     if (accuracyM > maxAccuracyM) return const [];
     if (speedMps < minSpeedMps) return const [];
 
-    final etaS = _distanceM(lat, lng, _target.lat, _target.lng) / speedMps;
-    _lastFixAt = now;
-    _lastEtaS = etaS;
-    // A usable fix ends the blackout, so the next one may be reported.
-    _deadReckonAbandoned = false;
-    // Mid-call the seed still updates (silent, not deaf, so hang-up
-    // re-syncs against the freshest position), but no ladder starts into
-    // the rider's conversation.
-    if (!_inCall && etaS <= leadTimeS) {
+    // The cursor moving makes every held claim someone else's evidence.
+    if (_cursor != _claimCursor) {
+      _claimCursor = _cursor;
+      _targetClaimFixes = 0;
+      _stopClaimFixes = 0;
+    }
+
+    final toTargetM = _distanceM(lat, lng, _target.lat, _target.lng);
+    final etaS = toTargetM / speedMps;
+
+    // THE CLAIM IS THE COASTABLE ENVELOPE, NOT THE LEAD TIME, because the seed
+    // below is a trigger too. A fix whose own ETA is under [leadTimeS] plus
+    // [maxDeadReckonCoast] can start a ladder without any further fix at all,
+    // by being coasted down to zero in [onTick]. Gating only the direct ETA
+    // leg would leave that door open and make this whole gate decorative: the
+    // held fix would arm the ladder one tick later anyway.
+    final coastableS = leadTimeS + maxDeadReckonCoast.inSeconds;
+    _targetClaimFixes = etaS <= coastableS ? _targetClaimFixes + 1 : 0;
+    final targetCorroborated = _targetClaimFixes >= corroboratingFixes;
+
+    // SEEDED ONLY BY A CORROBORATED FIX. A lone fix no longer starts the
+    // countdown, so dead reckoning always coasts from a position two fixes in
+    // a row agreed on. Withholding the seed also fails SAFE: the older seed
+    // keeps ageing, and [maxDeadReckonCoast] abandons it on schedule.
+    //
+    // Mid-call the seed still updates (silent, not deaf, so hang-up re-syncs
+    // against the freshest position), which is why this sits above the call
+    // check and the stop claim below does not.
+    if (targetCorroborated || etaS > coastableS) {
+      _lastFixAt = now;
+      _lastEtaS = etaS;
+      // A usable fix ends the blackout, so the next one may be reported.
+      _deadReckonAbandoned = false;
+    }
+
+    // No ladder starts into the rider's conversation.
+    if (_inCall) return const [];
+
+    if (etaS <= leadTimeS) {
+      if (!targetCorroborated) {
+        return [_holdingNote(_targets[_cursor], _targetClaimFixes)];
+      }
       return _startLadder(now);
     }
 
@@ -440,7 +513,7 @@ class WakeEscalation {
     // time of where they asked to be woken, AND closer to it than to whatever
     // the plan is still waiting for, the alarm is theirs. The second half is
     // what stops a change that is merely still ahead from being abandoned.
-    if (!_inCall && !_targetIsDestination) {
+    if (!_targetIsDestination) {
       final destination = chain.firstWhere(
         (s) => s.id == destinationStationId,
         orElse: () => _target,
@@ -451,8 +524,20 @@ class WakeEscalation {
         destination.lat,
         destination.lng,
       );
-      if (toDestination / speedMps <= leadTimeS &&
-          toDestination < _distanceM(lat, lng, _target.lat, _target.lng)) {
+      // A SECOND, INDEPENDENT CLAIM, counted on its own. This branch and the
+      // ETA leg above can both be true of one fix (the coastable envelope is
+      // wide and the stop can be nearer than the change inside it), so one
+      // shared counter would have them resetting each other on alternate
+      // fixes and neither would ever reach two.
+      final stopClaim =
+          toDestination / speedMps <= leadTimeS && toDestination < toTargetM;
+      _stopClaimFixes = stopClaim ? _stopClaimFixes + 1 : 0;
+      if (stopClaim) {
+        // The gate matters most here: this branch is the one that can jump the
+        // cursor past every remaining change, from anywhere on the route.
+        if (_stopClaimFixes < corroboratingFixes) {
+          return [_holdingNote(destinationStationId, _stopClaimFixes)];
+        }
         _cursor = _targets.length - 1;
         return [
           const WakeNote(
@@ -466,7 +551,22 @@ class WakeEscalation {
     return const [];
   }
 
+  /// A ladder withheld for want of a second opinion, in the ride log.
+  ///
+  /// A decision NOT to alarm is exactly the silence that reads as a working
+  /// ride, which is why [WakeNote] exists. Without this line a gated ride and
+  /// a broken one look identical in the log, and the 5 Sep ride is the record
+  /// of how long an unexplained silence stays an open question.
+  WakeNote _holdingNote(String stationId, int fixesSoFar) => WakeNote(
+    'a fix puts $stationId inside the lead time, holding for '
+    '${corroboratingFixes - fixesSoFar} more fix to agree',
+  );
+
   List<WakeAction> _startLadder(DateTime now) {
+    // The claims are spent the moment a ladder is live. Nothing may inherit
+    // them: the next target must earn its own corroboration.
+    _targetClaimFixes = 0;
+    _stopClaimFixes = 0;
     _ladderLive = true;
     _rung = 0;
     _nextTransitionAt = now.add(checkInToFirstRung);
