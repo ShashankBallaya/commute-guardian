@@ -519,10 +519,19 @@ class RideServiceClient {
 
   /// The MEDIA slider, 0.0 to 1.0, or null where the platform will not say.
   ///
-  /// A DIAGNOSTIC, NEVER A WARNING, and the difference from [alarmVolume] is
+  /// NEVER A CLAIM ABOUT THE ALARM, and the difference from [alarmVolume] is
   /// the whole reason both exist. The ladder tone rides the alarm stream and
   /// this number cannot touch it, so it must never gate a claim about whether
   /// the alarm can be heard.
+  ///
+  /// IT IS NO LONGER ONLY A DIAGNOSTIC, corrected 8 Sep 2026. This comment
+  /// said "A DIAGNOSTIC, NEVER A WARNING" and was written when the number only
+  /// reached the ride log. Since `b599525` it also gates a preflight warning
+  /// and can stop a ride from starting, so the sentence was describing the
+  /// caller it used to have rather than the contract it offers. Left uncorrected
+  /// it is the F1 drift shape exactly: the doc a reader trusts first,
+  /// disagreeing with the shipped behaviour. What did NOT change is the clause
+  /// above it, which is the part that was ever load-bearing.
   ///
   /// What it explains is everything the app SAYS. Station announcements and the
   /// spoken wake lines are speech, and speech rides the media stream. On 5 Sep

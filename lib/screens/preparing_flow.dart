@@ -92,7 +92,7 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
 
   bool _earphonesConnected = true;
   bool _volumeLow = false;
-  bool _speechSilent = false;
+  bool _announcementsSilent = false;
   RecheckState _recheck = RecheckState.idle;
 
   @override
@@ -105,7 +105,7 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
     );
     _earphonesConnected = widget.report.earphonesConnected;
     _volumeLow = widget.report.volumeLow;
-    _speechSilent = widget.report.speechSilent;
+    _announcementsSilent = widget.report.announcementsSilent;
     if (widget.report.hasFix) {
       _originName = widget.report.originName;
       _stage = _afterFix();
@@ -170,16 +170,14 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
   /// instead: the last three seconds in which a mis-tap is still free. See
   /// [StartingScreen].
   void _settleIfClear() {
-    // EVERY WARNING THIS SCREEN CAN DRAW IS TESTED HERE, and the list must
-    // grow whenever the rows do. This is the second reader of the same
-    // evidence: the rows decide what is SHOWN and this decides whether the
-    // rider is shown anything at all, so a warning added to one and not the
-    // other is a warning that draws for a single frame and settles past
-    // itself. `_speechSilent` was added 8 Sep 2026.
+    // THE SAME RULE [PreparingReport.clear] RUNS, not a second copy of it.
+    // See [audioIsClear].
     if (_stage == _Stage.preflight &&
-        _earphonesConnected &&
-        !_volumeLow &&
-        !_speechSilent) {
+        audioIsClear(
+          earphonesConnected: _earphonesConnected,
+          volumeLow: _volumeLow,
+          announcementsSilent: _announcementsSilent,
+        )) {
       setState(() => _stage = _Stage.committing);
       unawaited(_runCommitWindow());
     }
@@ -289,22 +287,20 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
     final answered = probe.isNotEmpty;
     final connected = answered ? probe[0] as bool : _earphonesConnected;
     final volume = answered ? probe[1] as double? : null;
-    final volumeLow = answered
-        ? volume != null && volume < AudioOutputGateway.lowVolume
-        : _volumeLow;
+    final volumeLow = answered ? _sliderIsLow(volume) : _volumeLow;
     // The media slider is rechecked on the same terms as the alarm slider,
     // because it is the same rider walking to the same platform turning the
     // same phone up. A recheck that cleared one warning and left the other
     // standing on a stale reading would be the screen lying about which of
     // the two it had just asked about.
-    final speech = answered ? probe[2] as double? : null;
-    final speechSilent = answered
-        ? speech != null && speech < AudioOutputGateway.lowVolume
-        : _speechSilent;
+    final announcementVolume = answered ? probe[2] as double? : null;
+    final announcementsSilent = answered
+        ? _sliderIsLow(announcementVolume)
+        : _announcementsSilent;
     final changed =
         connected != _earphonesConnected ||
         volumeLow != _volumeLow ||
-        speechSilent != _speechSilent;
+        announcementsSilent != _announcementsSilent;
 
     // Hold "Checking…" long enough to be seen. Measured from the tap, so a slow
     // probe waits no longer than it already took.
@@ -316,7 +312,7 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
     setState(() {
       _earphonesConnected = connected;
       _volumeLow = volumeLow;
-      _speechSilent = speechSilent;
+      _announcementsSilent = announcementsSilent;
       // A change speaks for itself: the row disappears and the headline counts
       // one fewer. Only an unchanged answer needs words, because that is the
       // case where the screen would otherwise look untouched.
@@ -420,7 +416,7 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
               detail: 'Turn it up, or the alarm may not wake you',
               status: PrepStatus.active,
             ),
-          if (_speechSilent)
+          if (_announcementsSilent)
             const PrepStep(
               // TWO SLIDERS, TWO SENTENCES, AND THE DIFFERENCE IS THE POINT.
               // The row above is about the alarm and says the rider may not
@@ -481,6 +477,34 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
   }
 }
 
+/// A slider is low enough to be worth stopping a rider over.
+///
+/// ONE DEFINITION, SHARED BY BOTH SLIDERS, and it is where the threshold
+/// argument lives. It was written four times across this file on 8 Sep 2026,
+/// twice per slider, which is four places for one number to drift and four
+/// places to forget when a bench finally tunes it.
+///
+/// NULL IS NOT LOW. A platform that will not answer has told us nothing, and
+/// nothing is not a warning: on iOS [RideServiceClient.mediaVolume] answers
+/// null on every ride, so reading null as low would put a warning in front of
+/// every iPhone rider forever.
+///
+/// THE NUMBER IS THE ALARM'S 0.3, AND IT IS REUSED WITH ITS ARGUMENT ONLY
+/// HALF INTACT, which is worth saying plainly rather than implying it
+/// transfers. [AudioOutputGateway.lowVolume] was set from two things: that a
+/// warning firing before ordinary rides teaches riders to tap past the one
+/// that mattered, and that the ladder's first rung at 0.3 of system volume
+/// lands near 9 percent of full scale and is inaudible in a carriage. The
+/// first half carries over exactly. THE SECOND DOES NOT: announcements have
+/// no rung ladder and play at full scale, so 0.3 of the media slider is
+/// louder than 0.3 of the alarm slider ever is. It is reused anyway, because
+/// a carriage is loud enough that the direction is certainly right and a
+/// second number invented at a desk would be a second thing to tune against
+/// nothing. Neither number is measured yet; the ride log records both at
+/// every start, so a later session can tune them against real rides.
+bool _sliderIsLow(double? volume) =>
+    volume != null && volume < AudioOutputGateway.lowVolume;
+
 /// What the cheap probes found. Built by [PreparingGate.check].
 class PreparingReport {
   const PreparingReport({
@@ -516,10 +540,7 @@ class PreparingReport {
   /// read the system volume. So a rider with the volume down started a ride,
   /// saw no warning, and slept through an alarm that played into silence while
   /// every log line reported success.
-  bool get volumeLow {
-    final volume = alarmVolume;
-    return volume != null && volume < AudioOutputGateway.lowVolume;
-  }
+  bool get volumeLow => _sliderIsLow(alarmVolume);
 
   /// The rider will hear nothing the app SAYS, and the alarm tone is not what
   /// is at stake.
@@ -541,24 +562,42 @@ class PreparingReport {
   /// exactly where the Xiaomi was. [mediaVolume] answers null on iOS and null
   /// warns about nothing.
   ///
-  /// SAME THRESHOLD AS THE ALARM, REUSED RATHER THAN INVENTED, and the
-  /// argument that set it carries over unchanged: a carriage is loud, and
-  /// speech at a tenth of full scale is not audible in one. A second number
-  /// tuned against nothing would be a second thing to drift.
-  bool get speechSilent {
-    final volume = mediaVolume;
-    return volume != null && volume < AudioOutputGateway.lowVolume;
-  }
+  /// The threshold is the alarm's, reused rather than invented, and the half
+  /// of its argument that does NOT carry over is written down at
+  /// [_sliderIsLow] rather than waved at here.
+  bool get announcementsSilent => _sliderIsLow(mediaVolume);
 
   /// Nothing to show. The ride starts and Screen 3 never appears, which is the
   /// normal case.
   bool get clear =>
       hasFix &&
       backgroundLocationGranted &&
-      earphonesConnected &&
-      !volumeLow &&
-      !speechSilent;
+      audioIsClear(
+        earphonesConnected: earphonesConnected,
+        volumeLow: volumeLow,
+        announcementsSilent: announcementsSilent,
+      );
 }
+
+/// Every audio warning this screen can draw, in ONE expression.
+///
+/// THE TWO READERS ARE THE POINT. [PreparingReport.clear] decides whether the
+/// flow is worth pushing at all, and `_settleIfClear` decides whether a flow
+/// already on screen walks itself into the commit window. They are different
+/// questions asked at different moments and they must agree, because a warning
+/// that only one of them knows about either draws for a single frame and
+/// settles past itself, or stops a ride nobody was warned about.
+///
+/// This was a comment on 8 Sep 2026 telling the next reader to remember to
+/// edit both. A comment cannot fail a build. Taking the parameters by name
+/// means adding a warning here breaks every caller that has not been given the
+/// new evidence, which is the same trick the wake engine's `_Claim` used to
+/// stop one of its two counters being updated and the other forgotten.
+bool audioIsClear({
+  required bool earphonesConnected,
+  required bool volumeLow,
+  required bool announcementsSilent,
+}) => earphonesConnected && !volumeLow && !announcementsSilent;
 
 /// Runs the probes that decide whether Screen 3 is needed at all.
 class PreparingGate {
@@ -576,15 +615,19 @@ class PreparingGate {
     final granted = await permissions.hasAlways();
     final earphones = await audio.earphonesConnected();
     final client = ref.read(rideServiceClientProvider);
-    final volume = await client.alarmVolume();
-    final speech = await client.mediaVolume();
+    // TOGETHER, NOT ONE AFTER THE OTHER. Each probe carries its own 2 second
+    // timeout, and this is the ride-start path: awaiting them in sequence
+    // spends that budget twice on a phone where the channel is slow to answer,
+    // for two questions that have nothing to say to each other. The recheck
+    // path has always put them in one wait; 8 Sep 2026 this one caught up.
+    final volumes = await Future.wait([client.alarmVolume(), client.mediaVolume()]);
     return PreparingReport(
       hasFix: hasFix,
       originName: hasFix ? fix.stationName : null,
       backgroundLocationGranted: granted,
       earphonesConnected: earphones,
-      alarmVolume: volume,
-      mediaVolume: speech,
+      alarmVolume: volumes[0],
+      mediaVolume: volumes[1],
     );
   }
 }

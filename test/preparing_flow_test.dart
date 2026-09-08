@@ -470,7 +470,7 @@ void main() {
     });
 
     test('the report itself refuses to call a muted phone clear', () {
-      expect(muted.speechSilent, isTrue);
+      expect(muted.announcementsSilent, isTrue);
       expect(muted.clear, isFalse);
       // The threshold is the alarm row's, reused rather than invented.
       expect(
@@ -480,7 +480,7 @@ void main() {
           backgroundLocationGranted: true,
           earphonesConnected: true,
           mediaVolume: AudioOutputGateway.lowVolume,
-        ).speechSilent,
+        ).announcementsSilent,
         isFalse,
       );
     });
