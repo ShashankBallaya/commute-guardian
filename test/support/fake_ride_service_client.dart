@@ -95,9 +95,15 @@ class FakeRideServiceClient implements RideServiceClient {
   @override
   Future<double?> alarmVolume() async => alarmVolumeValue;
 
-  /// The media slider, a DIAGNOSTIC only: it is written to the store at ride
-  /// start and read back off the log. Null by default, matching a platform
-  /// that will not say, so nothing existing changes shape.
+  /// The media slider. Null by default, matching a platform that will not
+  /// say, so nothing existing changes shape.
+  ///
+  /// NO LONGER A DIAGNOSTIC ONLY, corrected 8 Sep 2026. It was written into
+  /// the ride log by `2986dab` and read back afterwards, and that is still
+  /// true, but since today it also decides a preflight warning: speech rides
+  /// this stream, so a muted slider means no station announcements and no
+  /// spoken wake. It still says nothing about the alarm TONE, which rides
+  /// STREAM_ALARM on Android and is what [alarmVolumeValue] is for.
   double? mediaVolumeValue;
 
   @override

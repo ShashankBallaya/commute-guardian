@@ -92,6 +92,7 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
 
   bool _earphonesConnected = true;
   bool _volumeLow = false;
+  bool _speechSilent = false;
   RecheckState _recheck = RecheckState.idle;
 
   @override
@@ -104,6 +105,7 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
     );
     _earphonesConnected = widget.report.earphonesConnected;
     _volumeLow = widget.report.volumeLow;
+    _speechSilent = widget.report.speechSilent;
     if (widget.report.hasFix) {
       _originName = widget.report.originName;
       _stage = _afterFix();
@@ -168,7 +170,16 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
   /// instead: the last three seconds in which a mis-tap is still free. See
   /// [StartingScreen].
   void _settleIfClear() {
-    if (_stage == _Stage.preflight && _earphonesConnected && !_volumeLow) {
+    // EVERY WARNING THIS SCREEN CAN DRAW IS TESTED HERE, and the list must
+    // grow whenever the rows do. This is the second reader of the same
+    // evidence: the rows decide what is SHOWN and this decides whether the
+    // rider is shown anything at all, so a warning added to one and not the
+    // other is a warning that draws for a single frame and settles past
+    // itself. `_speechSilent` was added 8 Sep 2026.
+    if (_stage == _Stage.preflight &&
+        _earphonesConnected &&
+        !_volumeLow &&
+        !_speechSilent) {
       setState(() => _stage = _Stage.committing);
       unawaited(_runCommitWindow());
     }
@@ -268,9 +279,11 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
     // change NOTHING. Returning "volume unreadable" on a timeout would clear a
     // warning that is still true, which is the one direction this screen must
     // never fail in.
+    final client = ref.read(rideServiceClientProvider);
     final probe = await Future.wait([
       widget.audio.earphonesConnected(),
-      ref.read(rideServiceClientProvider).alarmVolume(),
+      client.alarmVolume(),
+      client.mediaVolume(),
     ]).timeout(const Duration(seconds: 3), onTimeout: () => const []);
 
     final answered = probe.isNotEmpty;
@@ -279,7 +292,19 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
     final volumeLow = answered
         ? volume != null && volume < AudioOutputGateway.lowVolume
         : _volumeLow;
-    final changed = connected != _earphonesConnected || volumeLow != _volumeLow;
+    // The media slider is rechecked on the same terms as the alarm slider,
+    // because it is the same rider walking to the same platform turning the
+    // same phone up. A recheck that cleared one warning and left the other
+    // standing on a stale reading would be the screen lying about which of
+    // the two it had just asked about.
+    final speech = answered ? probe[2] as double? : null;
+    final speechSilent = answered
+        ? speech != null && speech < AudioOutputGateway.lowVolume
+        : _speechSilent;
+    final changed =
+        connected != _earphonesConnected ||
+        volumeLow != _volumeLow ||
+        speechSilent != _speechSilent;
 
     // Hold "Checking…" long enough to be seen. Measured from the tap, so a slow
     // probe waits no longer than it already took.
@@ -291,6 +316,7 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
     setState(() {
       _earphonesConnected = connected;
       _volumeLow = volumeLow;
+      _speechSilent = speechSilent;
       // A change speaks for itself: the row disappears and the headline counts
       // one fewer. Only an unchanged answer needs words, because that is the
       // case where the screen would otherwise look untouched.
@@ -394,6 +420,24 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
               detail: 'Turn it up, or the alarm may not wake you',
               status: PrepStatus.active,
             ),
+          if (_speechSilent)
+            const PrepStep(
+              // TWO SLIDERS, TWO SENTENCES, AND THE DIFFERENCE IS THE POINT.
+              // The row above is about the alarm and says the rider may not
+              // wake. This one must NOT say that: on Android the ladder tone
+              // rides STREAM_ALARM and the media slider cannot touch it, so
+              // borrowing the stronger words would be the same drift F1 was
+              // built to stop, in the same direction, on the same screen.
+              // What is genuinely lost is everything the app SAYS: every
+              // station announcement, and the spoken line the ladder opens
+              // with before it starts sounding tones.
+              label: 'You will not hear the station names',
+              // Names what survives, so the rider can judge it, and names the
+              // slider rather than a number they cannot see on their own
+              // phone. The same rule the alarm row follows.
+              detail: 'The alarm still sounds. Turn up the media volume',
+              status: PrepStatus.active,
+            ),
           // REMOVED 27 Aug 2026: a row whose condition was the exact condition
           // for leaving this screen.
           //
@@ -445,6 +489,7 @@ class PreparingReport {
     required this.backgroundLocationGranted,
     required this.earphonesConnected,
     this.alarmVolume,
+    this.mediaVolume,
   });
 
   final bool hasFix;
@@ -455,6 +500,12 @@ class PreparingReport {
   /// How loud the wake alarm will be, 0.0 to 1.0, or null when the platform
   /// would not say. Null is NOT a warning: see [AudioOutputGateway.alarmVolume].
   final double? alarmVolume;
+
+  /// How loud everything the app SAYS will be, 0.0 to 1.0, or null where the
+  /// platform will not answer. Null is NOT a warning, the same rule as
+  /// [alarmVolume], and here it is the ordinary iOS answer rather than a
+  /// failure. See [RideServiceClient.mediaVolume].
+  final double? mediaVolume;
 
   /// The rider's volume is low enough that the alarm may not wake them.
   ///
@@ -470,10 +521,43 @@ class PreparingReport {
     return volume != null && volume < AudioOutputGateway.lowVolume;
   }
 
+  /// The rider will hear nothing the app SAYS, and the alarm tone is not what
+  /// is at stake.
+  ///
+  /// ADDED 8 SEP 2026, AND IT IS THE 5 SEP RIDE WRITTEN AS A CHECK. A tester
+  /// on a Xiaomi heard no station announcements and no spoken wake while his
+  /// own log recorded "Alarm volume at start: 100%". Nothing was broken. Speech
+  /// rides the MEDIA stream, the ladder tone rides the alarm stream, and this
+  /// screen read only the second one. So the app handed a clean bill of health
+  /// to a phone that would not say a word for eighteen stations, and no rider
+  /// could tell that from a broken app. `2986dab` put the number in the ride
+  /// log, which answers the question AFTER a ride; this is the same number at
+  /// the only moment a rider can still act on it.
+  ///
+  /// ANDROID ONLY, BY CONSTRUCTION AND NOT BY OVERSIGHT. iOS has no alarm
+  /// stream, so [alarmVolume] there reads `outputVolume`, which is what the
+  /// spoken lines get too: one number already covers both and the existing row
+  /// says it. On Android the two sliders are genuinely independent, which is
+  /// exactly where the Xiaomi was. [mediaVolume] answers null on iOS and null
+  /// warns about nothing.
+  ///
+  /// SAME THRESHOLD AS THE ALARM, REUSED RATHER THAN INVENTED, and the
+  /// argument that set it carries over unchanged: a carriage is loud, and
+  /// speech at a tenth of full scale is not audible in one. A second number
+  /// tuned against nothing would be a second thing to drift.
+  bool get speechSilent {
+    final volume = mediaVolume;
+    return volume != null && volume < AudioOutputGateway.lowVolume;
+  }
+
   /// Nothing to show. The ride starts and Screen 3 never appears, which is the
   /// normal case.
   bool get clear =>
-      hasFix && backgroundLocationGranted && earphonesConnected && !volumeLow;
+      hasFix &&
+      backgroundLocationGranted &&
+      earphonesConnected &&
+      !volumeLow &&
+      !speechSilent;
 }
 
 /// Runs the probes that decide whether Screen 3 is needed at all.
@@ -491,13 +575,16 @@ class PreparingGate {
     final hasFix = fix.state == GpsState.located;
     final granted = await permissions.hasAlways();
     final earphones = await audio.earphonesConnected();
-    final volume = await ref.read(rideServiceClientProvider).alarmVolume();
+    final client = ref.read(rideServiceClientProvider);
+    final volume = await client.alarmVolume();
+    final speech = await client.mediaVolume();
     return PreparingReport(
       hasFix: hasFix,
       originName: hasFix ? fix.stationName : null,
       backgroundLocationGranted: granted,
       earphonesConnected: earphones,
       alarmVolume: volume,
+      mediaVolume: speech,
     );
   }
 }

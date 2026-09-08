@@ -304,6 +304,188 @@ void main() {
     },
   );
 
+  // THE 5 SEP 2026 RIDE, WRITTEN AS A SCREEN. A tester on a Xiaomi heard no
+  // station announcements and no spoken wake while his own log recorded
+  // "Alarm volume at start: 100%". Nothing was broken: speech rides the MEDIA
+  // stream and the ladder tone rides the alarm stream, and this screen read
+  // only the second one. These tests are the difference between a log that
+  // explains it afterwards and a screen that prevents it.
+  group('a muted media slider is a warning of its own', () {
+    Future<void> pumpReport(
+      WidgetTester tester,
+      PreparingReport report, {
+      FakeRideServiceClient? client,
+    }) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            stationRepositoryProvider.overrideWith(
+              (ref) async => StationRepository.parse(stationsJson),
+            ),
+            fixAcquirerProvider.overrideWithValue(
+              () async => fixAt(shahadLat, shahadLng),
+            ),
+            if (client != null)
+              rideServiceClientProvider.overrideWithValue(client),
+          ],
+          child: MaterialApp(
+            // THE REAL GATEWAY HANGS HERE. `earphonesConnected()` times out
+            // its own getDevices call but not `AudioSession.instance`, which
+            // never answers under the test binding, so a recheck would fall
+            // into its 3 second timeout and report "no change" for reasons
+            // that have nothing to do with the volume under test.
+            home: PreparingFlow(
+              destinationName: 'Kalyan',
+              audio: const _EarphonesIn(),
+              report: report,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    // Everything else is clear on purpose. The screen cannot be stopping for
+    // another reason, and it is the exact fixture that used to sail through.
+    const muted = PreparingReport(
+      hasFix: true,
+      originName: 'Shahad',
+      backgroundLocationGranted: true,
+      earphonesConnected: true,
+      alarmVolume: 1,
+      mediaVolume: 0,
+    );
+
+    testWidgets('THE XIAOMI FIXTURE STOPS THE FLOW INSTEAD OF SAILING THROUGH', (
+      tester,
+    ) async {
+      await pumpReport(tester, muted);
+
+      expect(find.text('You will not hear the station names'), findsOneWidget);
+      // THE SECOND READER OF THE SAME EVIDENCE. `_settleIfClear` decides
+      // whether the rider is shown anything at all, and it is a separate
+      // condition from the rows. A warning drawn into a screen that settles
+      // past itself is a warning nobody sees, which is the shape the
+      // dead-reckoning seed had on 7 Sep.
+      expect(
+        find.byKey(const Key('starting_cancel')),
+        findsNothing,
+        reason: 'a live warning must not walk into the commit window',
+      );
+      expect(find.byKey(const Key('preflight_start')), findsOneWidget);
+    });
+
+    testWidgets('and it does NOT borrow the words of the alarm row', (
+      tester,
+    ) async {
+      await pumpReport(tester, muted);
+
+      // On Android the tone rides STREAM_ALARM and the media slider cannot
+      // touch it. Saying "the alarm may not wake you" here would be the same
+      // drift F1 was built to stop, in the same direction, on the same screen.
+      expect(
+        find.text('Turn it up, or the alarm may not wake you'),
+        findsNothing,
+      );
+      expect(find.text('Your earphone volume is low'), findsNothing);
+      expect(find.text('Volume is low'), findsNothing);
+      expect(
+        find.text('The alarm still sounds. Turn up the media volume'),
+        findsOneWidget,
+        reason: 'the row must name what survives, not only what is lost',
+      );
+    });
+
+    testWidgets('NULL IS NOT A WARNING, which is the ordinary iOS answer', (
+      tester,
+    ) async {
+      // iOS has no per-stream read behind this channel, so `mediaVolume()`
+      // answers null there rather than inventing a number. It is not a hole:
+      // iOS has no alarm stream either, so `alarmVolume` reads outputVolume,
+      // which is what the spoken lines get too, and the existing row already
+      // covers it. Warning on null would fire this row on every iPhone ride.
+      await pumpReport(
+        tester,
+        const PreparingReport(
+          hasFix: true,
+          originName: 'Shahad',
+          backgroundLocationGranted: true,
+          earphonesConnected: true,
+          alarmVolume: 1,
+        ),
+      );
+
+      expect(find.text('You will not hear the station names'), findsNothing);
+      expect(
+        find.byKey(const Key('starting_cancel')),
+        findsOneWidget,
+        reason: 'a clear report still goes straight to the commit window',
+      );
+    });
+
+    testWidgets('a slider turned up between the screen and the press clears it', (
+      tester,
+    ) async {
+      final client = FakeRideServiceClient()
+        ..alarmVolumeValue = 1
+        ..mediaVolumeValue = 0;
+      await pumpReport(tester, muted, client: client);
+      expect(find.text('You will not hear the station names'), findsOneWidget);
+
+      client.mediaVolumeValue = 0.8;
+      await tester.tap(find.byKey(const Key('preflight_recheck')));
+      await tester.pump();
+      await tester.pump(PreflightScreen.recheckMinimum);
+      await tester.pumpAndSettle();
+
+      expect(find.text('You will not hear the station names'), findsNothing);
+      expect(
+        find.text('No change yet'),
+        findsNothing,
+        reason: 'a row disappearing is its own feedback',
+      );
+    });
+
+    testWidgets('and a slider still down says so rather than looking untouched', (
+      tester,
+    ) async {
+      final client = FakeRideServiceClient()
+        ..alarmVolumeValue = 1
+        ..mediaVolumeValue = 0;
+      await pumpReport(tester, muted, client: client);
+
+      await tester.tap(find.byKey(const Key('preflight_recheck')));
+      await tester.pump();
+      await tester.pump(PreflightScreen.recheckMinimum);
+      await tester.pumpAndSettle();
+
+      expect(find.text('No change yet'), findsOneWidget);
+      expect(find.text('You will not hear the station names'), findsOneWidget);
+
+      // "No change yet" hands itself back to the button after a beat, and that
+      // timer outlives the tree unless it is drained here.
+      await tester.pump(PreflightScreen.recheckSettle);
+      await tester.pumpAndSettle();
+      expect(find.text("I've fixed it, check again"), findsOneWidget);
+    });
+
+    test('the report itself refuses to call a muted phone clear', () {
+      expect(muted.speechSilent, isTrue);
+      expect(muted.clear, isFalse);
+      // The threshold is the alarm row's, reused rather than invented.
+      expect(
+        const PreparingReport(
+          hasFix: true,
+          originName: 'Shahad',
+          backgroundLocationGranted: true,
+          earphonesConnected: true,
+          mediaVolume: AudioOutputGateway.lowVolume,
+        ).speechSilent,
+        isFalse,
+      );
+    });
+  });
+
   // "I'VE FIXED IT, CHECK AGAIN" HAD NO ANSWER, reported on device 11 Aug 2026:
   // "there's no refresh/delay or something to know if it works as the screen
   // remains stale which is Bad UX". The probes return in milliseconds, so a
