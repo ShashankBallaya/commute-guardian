@@ -7,6 +7,7 @@ import '../services/analytics.dart';
 import '../services/crash_reporting.dart';
 import '../services/geofence_chain_service.dart';
 import '../services/relaunch_lifeline.dart';
+import '../services/ride_notification.dart';
 
 /// Entry point the foreground service isolate calls to install the handler.
 /// Must stay top-level (or static) per flutter_foreground_task's contract.
@@ -317,6 +318,38 @@ class GeofenceTaskHandler extends TaskHandler {
     );
   }
 
+  /// Rewrites the ongoing notification's second line as the ride moves.
+  ///
+  /// C5's CHEAP HALF. One notification was set at Start, "Shahad to Karjat",
+  /// and never touched again, so a locked phone said the same thing at Shahad
+  /// as at Parel a hundred minutes later. The plugin owns this notification on
+  /// BOTH platforms, so this is the iPhone lock screen too, and it costs no
+  /// macOS run: no Kotlin, no Swift, no pbxproj.
+  ///
+  /// THE BUTTONS ARE NOT TOUCHED HERE, and that is not an oversight. This app
+  /// learned on 30 Jul 2026 that the notification's actions are the only ack a
+  /// swiped-out, pocketed phone has, so a station crossing that wiped a live
+  /// "I'm awake" would be a silent, ride-only regression of the worst kind.
+  ///
+  /// READ OFF THE PLUGIN, NOT ASSUMED. `NotificationContent.updateData` in
+  /// flutter_foreground_task 9.2.2 writes each field with `?.let`, so a field
+  /// this call does not pass is left exactly as it was. Text-only updates keep
+  /// the buttons, and [_updateNotificationButtons] keeps the text, so the two
+  /// callers are independent by the plugin's own construction rather than by
+  /// our timing.
+  void _updateNotificationText(int reachedIndex, bool atStation) {
+    final chain = _chain;
+    if (chain == null) return;
+    final line = rideProgressLine(
+      chain: chain.chain,
+      reachedIndex: reachedIndex,
+      atStation: atStation,
+      language: chain.language,
+    );
+    if (line.isEmpty) return;
+    FlutterForegroundTask.updateService(notificationText: line);
+  }
+
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     // This isolate has no screen, so a crash in it is SILENT: the ride simply
@@ -394,6 +427,7 @@ class GeofenceTaskHandler extends TaskHandler {
           value: reachedIndex,
         );
         FlutterForegroundTask.saveData(key: atStationKey, value: atStation);
+        _updateNotificationText(reachedIndex, atStation);
       },
       onWakeLadderLive: (live, rung, climbing) {
         _wakeLadderLive = live;

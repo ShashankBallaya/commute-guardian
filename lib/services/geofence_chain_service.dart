@@ -182,6 +182,16 @@ class GeofenceChainService {
   final FlutterTts _tts = FlutterTts();
   RideProgress? _rideProgress;
 
+  /// The chain and the voice this ride is running with, for a caller that has
+  /// to render something about the ride and cannot reach inside it.
+  ///
+  /// READ ONLY, AND DELIBERATELY NARROW. The foreground handler owns the
+  /// ongoing notification and needs station names to write its line; handing
+  /// out the whole [Journey] would invite a second projector against the same
+  /// chain, which is the shape that cost Churchgate its alarm.
+  List<Station> get chain => _journey?.chain ?? const [];
+  AppLanguage get language => _language;
+
   /// The last index handed to [onProgress]. Starts at -1, which is also
   /// RideProgress's "nothing confirmed yet", so a ride that has not reached a
   /// station never emits.
