@@ -741,4 +741,76 @@ void main() {
       );
     });
   });
+  // C7c, THE PICKER'S HALF THAT LIVES IN THE PLANNER. ADR 0004: the planner
+  // picks one corridor out of several and never says which, and the rider is
+  // the only one who knows why she would choose the other. Two measured
+  // defects, and this group is about the second one.
+  //
+  // THE EXCLUSION. Vasai Road to Kalyan plans 38 stations down to Dadar and
+  // back out. The MEMU across the top is 12. It is not ranked and rejected, it
+  // is never searched: the low-frequency lines are tried only when a station
+  // is otherwise UNREACHABLE, and the comment saying "an hourly MEMU is not a
+  // route anyone would choose" is a preference judgement wearing a filter's
+  // clothes. No ranking rule can reach this, which is why the answer is to
+  // offer both and let her decide.
+  group('alternative routes', () {
+    test('THE MEMU IS OFFERED RATHER THAN FILTERED OUT', () {
+      final routes = _planner().planAlternatives(
+        originId: 'vasai_road',
+        destinationId: 'kalyan',
+      );
+
+      expect(
+        routes.length,
+        greaterThan(1),
+        reason: 'one route is the bug this exists to fix',
+      );
+      // The route the planner has always given stays FIRST. Nothing about
+      // offering a choice changes what a rider who does not look gets.
+      expect(routes.first.chain.length, 38);
+
+      // ACROSS THE TOP, CHANGING AT KOPAR, which is how m-Indicator lists it
+      // (41 km via Kopar) and what the network data agrees with: the Vasai
+      // line meets the Central trunk at Kopar, one stop before Dombivli.
+      final acrossTheTop = routes.where(
+        (j) => j.interchanges.any((i) => i.stationId == 'kopar'),
+      );
+      expect(acrossTheTop, isNotEmpty, reason: 'the MEMU is the whole point');
+      expect(
+        acrossTheTop.first.chain.length,
+        lessThan(15),
+        reason: 'ten stations against thirty-eight is why she wants it',
+      );
+    });
+
+    // THE TIEBREAK, defect A, and it is the one she reported. Ghansoli to CSMT
+    // goes via Vashi; Ghansoli to Byculla, four stations further down the same
+    // stretch, goes via Thane. The corridor flips on a two-station tiebreak and
+    // she is never told there was one.
+    test('BOTH OF HER CORRIDORS ARE OFFERED, Vashi and Thane', () {
+      final routes = _planner().planAlternatives(
+        originId: 'ghansoli',
+        destinationId: 'csmt',
+      );
+
+      // What she gets today, unchanged and still first.
+      expect(routes.first.chain.map((s) => s.id), contains('vashi'));
+
+      // And the one she told us she actually takes.
+      final viaThane = routes.where(
+        (j) => j.chain.any((s) => s.id == 'thane'),
+      );
+      expect(
+        viaThane,
+        isNotEmpty,
+        reason: 'her words: I can go to CST through Vashi and through Thane',
+      );
+      expect(
+        viaThane.first.chain.map((s) => s.id),
+        isNot(contains('vashi')),
+        reason: 'a genuinely different corridor, not one ride relabelled',
+      );
+    });
+  });
+
 }

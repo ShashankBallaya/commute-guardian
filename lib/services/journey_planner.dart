@@ -93,6 +93,21 @@ class JourneyPlanner {
       _throughKeys.contains(_pairKey(lineId, otherLineId));
 
   Journey plan({required String originId, required String destinationId}) {
+    _refuseImpossible(originId, destinationId);
+
+    // ONE SEARCH, TWO CALLERS. [planAlternatives] runs the same thing under
+    // different rules, so it lives in [_planFor] and this method is the
+    // ordinary rules plus the errors a caller of `plan` already expects.
+    final result = _planFor(originId, destinationId);
+    if (result == null) {
+      throw ArgumentError('No route from $originId to $destinationId');
+    }
+    return result.journey;
+  }
+
+  /// The pairs that are not a journey at all, thrown for before any search
+  /// runs. Shared so [planAlternatives] refuses exactly what [plan] refuses.
+  void _refuseImpossible(String originId, String destinationId) {
     final origin = stationsById[originId];
     final destination = stationsById[destinationId];
     if (origin == null) {
@@ -116,7 +131,98 @@ class JourneyPlanner {
         'foot overbridge, so this is a walk rather than a journey.',
       );
     }
+  }
 
+  /// Every genuinely different way to make this journey, BEST FIRST.
+  ///
+  /// C7c, and ADR 0004 is the argument. [plan] answers with one route and
+  /// never says that there was a choice, which is a correctness bug with a
+  /// safety hole under it: a rider who takes the other corridor is riding a
+  /// chain the app is not watching. Her words, in Ghansoli: "I can go to CST
+  /// through Vashi and through Thane. My choice kaha se jau."
+  ///
+  /// THE FIRST ELEMENT IS ALWAYS [plan]'s OWN ANSWER, unchanged. Offering a
+  /// choice must not move what a rider who never looks already gets, and this
+  /// method is additive for exactly that reason: no existing caller changes
+  /// behaviour by its existence.
+  ///
+  /// FREQUENCY IS A LABEL HERE, NOT A FILTER, which is the whole of defect B.
+  /// The Vasai MEMU is not ranked and rejected today, it is never searched:
+  /// [_findLegs] allows low-frequency lines only as a fallback, when a station
+  /// is otherwise unreachable. Vasai Road to Kalyan is 38 stations down
+  /// through Dadar and back out, against ten across the top, and no ranking
+  /// rule can reach that because it is not a ranking problem.
+  ///
+  /// BANNING THE CORRIDOR IS WHAT SURFACES IT, and that fell out of a mutation
+  /// rather than a design. A second generator that simply re-ran the search
+  /// with low-frequency lines allowed was written first; deleting it broke
+  /// nothing, because forbidding the Western line already drops the search
+  /// into its own low-frequency fallback and finds the MEMU. Two generators
+  /// where one will do is a second thing to keep true.
+  /// [Line.lowFrequency] is what the picker labels the result with.
+  List<Journey> planAlternatives({
+    required String originId,
+    required String destinationId,
+  }) {
+    // Refuses an unknown or impossible pair exactly as [plan] does, and ONE
+    // search answers both what the best route is and which corridors it used.
+    // Calling plan() here and searching again for the lines was two full
+    // breadth-first sweeps of the network on the rider's own tap.
+    _refuseImpossible(originId, destinationId);
+    final bestPlan = _planFor(originId, destinationId);
+    if (bestPlan == null) {
+      throw ArgumentError('No route from $originId to $destinationId');
+    }
+    final best = bestPlan.journey;
+    final bestLines = bestPlan.lineIds;
+    final routes = <Journey>[best];
+
+    // ANOTHER CORRIDOR MEANS ANOTHER LINE, which is why the variations ban a
+    // LINE rather than an interchange.
+    //
+    // Banning the change station was the obvious idea and it is too weak to
+    // find what she asked for. Ghansoli to CSMT changes at Sanpada; forbid
+    // Sanpada and the search simply changes at Vashi instead, one stop along
+    // the same corridor, and hands her the same ride with a different label.
+    // Forbidding the Harbour line itself is what puts her on the Thane route,
+    // and it is also what the checklist means by "another corridor or another
+    // interchange, not one ride relabelled".
+    for (final lineId in bestLines) {
+      final other = _planFor(
+        originId,
+        destinationId,
+        bannedLineIds: {lineId},
+      );
+      if (other == null) continue;
+      if (routes.any((known) => _sameRoute(known, other.journey))) continue;
+      routes.add(other.journey);
+    }
+
+    return routes;
+  }
+
+  /// Two routes a rider would call the same ride.
+  ///
+  /// THE CHAIN, NOT THE LEGS. Two searches can describe one journey with
+  /// different leg boundaries (a through service split at Kalyan, say) and
+  /// arrive at the same list of stations in the same order. What a rider sees
+  /// out of the window is the chain, so the chain is what decides whether she
+  /// is being offered a real choice or one ride relabelled.
+  bool _sameRoute(Journey a, Journey b) {
+    if (a.chain.length != b.chain.length) return false;
+    for (var i = 0; i < a.chain.length; i++) {
+      if (a.chain[i].id != b.chain[i].id) return false;
+    }
+    return true;
+  }
+
+  /// [plan]'s search, minus the validation, so alternatives can run it again
+  /// under different rules. Null where this variation finds nothing.
+  ({Journey journey, Set<String> lineIds})? _planFor(
+    String originId,
+    String destinationId, {
+    Set<String> bannedLineIds = const {},
+  }) {
     // BOTH HALVES OF A WALK INTERCHANGE ARE THE SAME PLACE TO A RIDER.
     //
     // "Dadar" is one station in a Mumbai head, and two rows in this data: DR on
@@ -137,27 +243,42 @@ class JourneyPlanner {
     List<_Leg>? best;
     String? bestId;
     for (final candidate in candidates) {
-      // An hourly MEMU is not a route anyone would choose, so plan without the
-      // low-frequency lines first and fall back to them only when a station is
-      // unreachable any other way (Kharbao, Nilaje and friends live on them).
+      // An hourly MEMU is not the route most riders would choose, so plan
+      // without the low-frequency lines first and fall back to them when
+      // nothing else reaches (Kharbao, Nilaje and friends live on them, and
+      // a banned corridor puts an ordinary journey in the same position).
       final legs =
-          _findLegs(originId, candidate, allowLowFrequency: false) ??
-          _findLegs(originId, candidate, allowLowFrequency: true);
+          _findLegs(
+            originId,
+            candidate,
+            allowLowFrequency: false,
+            bannedLineIds: bannedLineIds,
+          ) ??
+          _findLegs(
+            originId,
+            candidate,
+            allowLowFrequency: true,
+            bannedLineIds: bannedLineIds,
+          );
       if (legs == null) continue;
       if (best == null || _isBetter(legs, best)) {
         best = legs;
         bestId = candidate;
       }
     }
-    if (best == null || bestId == null) {
-      throw ArgumentError('No route from $originId to $destinationId');
-    }
-
+    if (best == null || bestId == null) return null;
     // THE RIDER'S OWN PICK TRAVELS WITH THE PLAN. `bestId` is the platform the
     // train puts them on; `destinationId` is what they tapped, and the two
     // differ across a foot overbridge. Passing only the first is what made the
     // Parel-for-Prabhadevi substitution silent.
-    return _buildJourney(best, originId, bestId, destinationId);
+    //
+    // The lines come back too, because a Journey does not record them and
+    // [planAlternatives] needs to know which corridors this route used in
+    // order to look for another one.
+    return (
+      journey: _buildJourney(best, originId, bestId, destinationId),
+      lineIds: {for (final leg in best) leg.lineId},
+    );
   }
 
   /// Fewer changes wins; a tie goes to the shorter ride. The same order the
@@ -177,15 +298,26 @@ class JourneyPlanner {
     String originId,
     String destinationId, {
     required bool allowLowFrequency,
+    // A CORRIDOR THIS SEARCH MAY NOT USE. Empty for every ordinary plan;
+    // [planAlternatives] sets it to find the other way round.
+    Set<String> bannedLineIds = const {},
   }) {
     var frontier = <List<_Leg>>[
-      for (final lineId in _linesThrough(originId, allowLowFrequency))
+      for (final lineId in _linesThrough(
+        originId,
+        allowLowFrequency,
+        bannedLineIds,
+      ))
         [_Leg(lineId: lineId, fromId: originId, toId: originId)],
     ];
     // Boarding a given line at a given station is worth doing once: arriving
     // there again with more changes behind us can never be better.
     final seen = <String>{
-      for (final lineId in _linesThrough(originId, allowLowFrequency))
+      for (final lineId in _linesThrough(
+        originId,
+        allowLowFrequency,
+        bannedLineIds,
+      ))
         '$originId@$lineId',
     };
 
@@ -205,7 +337,9 @@ class JourneyPlanner {
       // Everywhere reachable without getting off the train.
       final reached = <List<_Leg>>[];
       for (final route in frontier) {
-        reached.addAll(_rideOut(route, seen, allowLowFrequency));
+        reached.addAll(
+          _rideOut(route, seen, allowLowFrequency, bannedLineIds),
+        );
       }
 
       // Done if any of them is the destination. Take the shortest, since they all
@@ -251,7 +385,11 @@ class JourneyPlanner {
           walkTo = null;
         }
         for (final boardAt in [leg.toId, ?walkTo]) {
-          for (final lineId in _linesThrough(boardAt, allowLowFrequency)) {
+          for (final lineId in _linesThrough(
+            boardAt,
+            allowLowFrequency,
+            bannedLineIds,
+          )) {
             // Staying on a through service is not a change; but a through
             // relationship cannot survive a walk to a different station.
             if (boardAt == leg.toId && _runsThrough(lineId, leg.lineId)) {
@@ -285,8 +423,9 @@ class JourneyPlanner {
   List<List<_Leg>> _rideOut(
     List<_Leg> route,
     Set<String> seen,
-    bool allowLowFrequency,
-  ) {
+    bool allowLowFrequency, [
+    Set<String> bannedLineIds = const {},
+  ]) {
     final reached = <List<_Leg>>[];
     final pending = <List<_Leg>>[route];
 
@@ -303,7 +442,11 @@ class JourneyPlanner {
         reached.add(extended);
 
         // The train carries on across a declared through junction.
-        for (final lineId in _linesThrough(stopId, allowLowFrequency)) {
+        for (final lineId in _linesThrough(
+          stopId,
+          allowLowFrequency,
+          bannedLineIds,
+        )) {
           if (lineId == leg.lineId) continue;
           if (!_runsThrough(lineId, leg.lineId)) continue;
           if (!seen.add('$stopId@$lineId')) continue;
@@ -587,14 +730,18 @@ class JourneyPlanner {
         total + _segmentIds(leg.lineId, leg.fromId, leg.toId).length,
   );
 
-  Iterable<String> _linesThrough(String stationId, bool allowLowFrequency) =>
-      linesById.values
-          .where(
-            (line) =>
-                (allowLowFrequency || !line.lowFrequency) &&
-                line.stationIds.contains(stationId),
-          )
-          .map((line) => line.id);
+  Iterable<String> _linesThrough(
+    String stationId,
+    bool allowLowFrequency, [
+    Set<String> bannedLineIds = const {},
+  ]) => linesById.values
+      .where(
+        (line) =>
+            (allowLowFrequency || !line.lowFrequency) &&
+            !bannedLineIds.contains(line.id) &&
+            line.stationIds.contains(stationId),
+      )
+      .map((line) => line.id);
 }
 
 /// A continuous ride on one line, from boarding it to leaving it.
