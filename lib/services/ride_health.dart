@@ -1,6 +1,7 @@
 import '../models/app_settings.dart';
 import '../models/journey.dart';
 import '../models/station.dart';
+import 'ride_resume.dart';
 import 'spoken_copy.dart';
 
 /// What a [RideHealth] wants said. The engine decides, the service speaks.
@@ -57,6 +58,7 @@ class RideHealth {
     this.origin,
     this.destinationName,
     this.wrongWayStations = const [],
+    this.chain = const [],
     this.language = AppLanguage.english,
   });
 
@@ -72,6 +74,7 @@ class RideHealth {
         ? null
         : journey.chain.last.nameIn(language),
     wrongWayStations: journey.wrongWayStations,
+    chain: journey.chain,
     language: language,
   );
 
@@ -83,6 +86,12 @@ class RideHealth {
   /// it. Null disables the wrong-way notice: a warning that cannot say what it
   /// is warning away from is not worth waking someone for.
   final String? destinationName;
+
+  /// The rail corridor this ride was planned along, in order, and the thing
+  /// OFF_ROUTE measures against. Empty disables that notice, the same way a
+  /// null [destinationName] does: [distanceToCorridorM] needs two stations to
+  /// have a corridor at all.
+  final List<Station> chain;
 
   /// The stations one stop behind [origin]. Matched by proximity, never by
   /// chain order. See [Journey.wrongWayStations].
@@ -167,6 +176,51 @@ class RideHealth {
   bool _wrongWayArmed = false;
   bool _wrongWayWatchOver = false;
 
+  /// OFF_ROUTE has been said. Once is all it gets, like the wrong-way notice.
+  bool _offRouteSaid = false;
+
+  /// How long the rider must be CONTINUOUSLY off the corridor before it is
+  /// said, measured from the first off-corridor fix and reset by any fix that
+  /// is back on it.
+  ///
+  /// A DURATION, NOT A FIX COUNT, and the choice is deliberate. GPS_LOST and
+  /// the stall watch above are both clocks, so this reads the same way as its
+  /// neighbours; more importantly a count means different things at different
+  /// sampling rates, and this app's rate is not constant. C7a learned the
+  /// harder half of the same lesson on 8 Sep 2026: two fixes eleven minutes
+  /// apart are not a sequence, and a clock is what makes "in a row" mean
+  /// anything.
+  ///
+  /// 90 SECONDS, AND THE GEOMETRY PAYS FOR IT. A wrong-corridor rider is off
+  /// by kilometres and stays off for the rest of her journey, so waiting costs
+  /// nothing that will not still be true. A wild fix is off for one sample. At
+  /// Mumbai local speeds 90 s is well under a single inter-station leg (1 to
+  /// 2.5 minutes, measured on the 5 Sep ride), so she is told inside the first
+  /// leg she takes on the wrong line.
+  static const offRouteFloor = Duration(seconds: 90);
+
+  /// When the rider first went off the corridor and stayed there. Null while
+  /// she is on it.
+  DateTime? _offCorridorSince;
+
+  /// OFF_ROUTE is armed only once a fix has put the rider inside the origin's
+  /// own fence.
+  ///
+  /// EVERY RIDE BEGINS OFF THE CORRIDOR. A rider opens Travel Mode at home, or
+  /// in an office, or in a rickshaw on the way to the station, and all three
+  /// are further from the rail line than [corridorToleranceM]. An unarmed
+  /// engine would tell her she is taking a different route before she had
+  /// boarded anything, which is the same failure [_wrongWayArmed] exists to
+  /// prevent, and the answer is the same one: say nothing about a journey
+  /// until a fix proves the rider is on it.
+  ///
+  /// The cost is a MISS, not a false alarm. A rider whose first usable fix
+  /// never lands inside the origin fence (a Kalyan platform under a roof, a
+  /// cold GPS on a train already moving) never arms the watch and is never
+  /// told. On this product that trade is the right way round, and it is the
+  /// asymmetry the whole engine is built on.
+  bool _offRouteArmed = false;
+
   /// Stall watching is over for this ride. Set at the destination, and at an
   /// overshoot pin, because after either one there are no more stations to
   /// cross BY DESIGN and every further minute would look like a stall.
@@ -212,7 +266,10 @@ class RideHealth {
     _lastCrossing ??= now;
     _gpsLost = false;
     if (lat == null || lng == null) return const [];
-    return _wrongWayActions(lat, lng);
+    return [
+      ..._wrongWayActions(lat, lng),
+      ..._offRouteActions(now, lat, lng),
+    ];
   }
 
   /// WRONG_DIRECTION, decided by PROXIMITY ALONE.
@@ -268,6 +325,48 @@ class RideHealth {
       ];
     }
     return const [];
+  }
+
+  /// OFF_ROUTE: the rider is not on the corridor this ride was planned along.
+  ///
+  /// A SENTENCE, NOT AN ALARM, and it reuses the maths rather than inventing
+  /// any: [distanceToCorridorM] and [corridorToleranceM] were written for the
+  /// iOS relaunch lifeline and measure to the nearest SEGMENT between
+  /// consecutive stations, so a train halfway between Vangani and Shelu is on
+  /// its line rather than 1.6 km from the nearest station.
+  List<RideHealthAction> _offRouteActions(DateTime now, double lat, double lng) {
+    if (_offRouteSaid) return const [];
+    final destination = destinationName;
+    if (destination == null) return const [];
+
+    if (!_offRouteArmed) {
+      final origin = this.origin;
+      if (origin == null || !origin.contains(lat, lng)) return const [];
+      _offRouteArmed = true;
+      return const [RideHealthNote('at the origin, off-route watch armed')];
+    }
+
+    final offCorridor = distanceToCorridorM(chain, lat, lng);
+    // A FIX BACK ON THE CORRIDOR TAKES THE CLAIM BACK, rather than being
+    // passed over. Without this the clock would measure "the first and last
+    // time she was off", which a single wild fix at the start of a ride turns
+    // into a warning ninety seconds later on a rider who never left the line.
+    if (offCorridor == null || offCorridor <= corridorToleranceM) {
+      _offCorridorSince = null;
+      return const [];
+    }
+
+    final since = _offCorridorSince ??= now;
+    if (now.difference(since) < offRouteFloor) return const [];
+
+    _offRouteSaid = true;
+    return [
+      RideHealthNote(
+        '${offCorridor.round()} m off the planned corridor for '
+        '${now.difference(since).inSeconds} s',
+      ),
+      RideHealthSpeak(_copy.offRoute(destination)),
+    ];
   }
 
   /// A station was passed or arrived at: the ride is provably moving.

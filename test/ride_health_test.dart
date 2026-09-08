@@ -536,6 +536,148 @@ void main() {
       );
     });
   });
+
+  // C7b, OFF_ROUTE. His friend in Ghansoli, in her own words: "I can go to CST
+  // through Vashi and through Thane. My choice kaha se jau." The planner picks
+  // one corridor and never says which, and ADR 0004 measured the tiebreak
+  // flipping halfway down one stretch of one line. C7a built the FLOOR under
+  // that in 6e24d39: she still gets woken. This is the sentence that tells her
+  // why the app has gone quiet about her stations, and it is a sentence, not
+  // an alarm.
+  group('OFF_ROUTE', () {
+    // The planned corridor: three real Central stations in a line.
+    final dadar = _s('dadar', 'Dadar', 19.0173761, 72.8430265, 450);
+    final parel = _s('parel', 'Parel', 19.0094817, 72.8376614, 350);
+    final currey = _s('currey_road', 'Currey Road', 18.9937486, 72.8328556, 300);
+
+    // Thane, about 20 km east of that corridor and nowhere near it. This is
+    // the other line, not a wobble.
+    const otherLineLat = 19.1860;
+    const otherLineLng = 72.9750;
+
+    RideHealth planned() => RideHealth(
+      origin: dadar,
+      destinationName: 'Kalyan',
+      chain: [dadar, parel, currey],
+    );
+
+    test('a rider on another corridor is told, once', () {
+      final health = planned();
+      // Armed the way a real ride arms it: a fix on the platform she boards
+      // from. Nothing may be claimed about her route before she has boarded.
+      health.onFix(t0, usable: true, lat: dadar.lat, lng: dadar.lng);
+
+      final said = <String>[];
+      for (var s = 10; s <= 120; s += 10) {
+        said.addAll(
+          spoken(
+            health.onFix(
+              t0.add(Duration(seconds: s)),
+              usable: true,
+              lat: otherLineLat,
+              lng: otherLineLng,
+            ),
+          ),
+        );
+      }
+
+      expect(said, hasLength(1), reason: 'once is all it gets');
+      expect(said.single, contains('Kalyan'));
+    });
+
+    test('IT DOES NOT FIRE COLD, before the rider has boarded anything', () {
+      // A rider who opens Travel Mode at home is OFF THE CORRIDOR at the
+      // instant the ride starts, and every ride begins somewhere that is not a
+      // platform. Firing here would greet her with "you seem to be taking a
+      // different route" before she had boarded, which is the same failure
+      // `_wrongWayArmed` exists to prevent for the wrong-way notice, and the
+      // cost of the rule is a MISS rather than a false alarm.
+      final health = planned();
+
+      final said = <String>[];
+      for (var s = 0; s <= 120; s += 10) {
+        said.addAll(
+          spoken(
+            health.onFix(
+              t0.add(Duration(seconds: s)),
+              usable: true,
+              lat: otherLineLat,
+              lng: otherLineLng,
+            ),
+          ),
+        );
+      }
+
+      expect(said, isEmpty);
+    });
+
+    test('ONE WILD FIX IS NOT A ROUTE, and the corridor takes it back', () {
+      // The 18 Jul log has a single 143 m creek fix that produced "you have
+      // passed Thane", and cdc1628 was the same shape 1510 m short of Kurla.
+      // Every false announcement this project has shipped came from one fix
+      // being believed. A rider who is genuinely on another line is off the
+      // corridor for the rest of her journey, so nothing is lost by waiting.
+      final health = planned();
+      health.onFix(t0, usable: true, lat: dadar.lat, lng: dadar.lng);
+
+      final said = <String>[];
+      // One jump to the other side of the city, then back on the line.
+      said.addAll(
+        spoken(
+          health.onFix(
+            t0.add(const Duration(seconds: 10)),
+            usable: true,
+            lat: otherLineLat,
+            lng: otherLineLng,
+          ),
+        ),
+      );
+      for (var s = 20; s <= 300; s += 10) {
+        said.addAll(
+          spoken(
+            health.onFix(
+              t0.add(Duration(seconds: s)),
+              usable: true,
+              lat: parel.lat,
+              lng: parel.lng,
+            ),
+          ),
+        );
+      }
+
+      expect(said, isEmpty);
+    });
+
+    test('AN ORDINARY RIDE DOWN THE PLANNED LINE IS NEVER REMARKED ON', () {
+      // The thing this whole group is really for. An edge state that fires on
+      // an ordinary Mumbai local is worse than one that never fires, because
+      // the rider learns to ignore the voice they installed the app to be
+      // woken by. Half an hour of fixes ON the corridor, including the long
+      // gaps between stations where the train is nowhere near either one.
+      final health = planned();
+      health.onFix(t0, usable: true, lat: dadar.lat, lng: dadar.lng);
+
+      final said = <String>[];
+      for (var s = 10; s <= 1800; s += 10) {
+        // Walks down the corridor between Dadar and Currey Road, which is
+        // where distanceToCorridorM measuring to the SEGMENT rather than to
+        // the nearest station earns its keep.
+        final t = (s % 600) / 600;
+        said.addAll(
+          spoken(
+            health.onFix(
+              t0.add(Duration(seconds: s)),
+              usable: true,
+              lat: dadar.lat + (currey.lat - dadar.lat) * t,
+              lng: dadar.lng + (currey.lng - dadar.lng) * t,
+            ),
+          ),
+        );
+      }
+
+      expect(said, isEmpty);
+    });
+  });
 }
 
 Station _s(String id, String name, double lat, double lng, int radiusM) =>

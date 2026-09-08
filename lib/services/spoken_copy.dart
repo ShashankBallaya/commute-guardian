@@ -332,6 +332,26 @@ class SpokenCopy {
           'ट्रॅव्हल मोड अजूनही सुरू आहे.',
   };
 
+  /// OFF_ROUTE. Says what the app can see, says the ride is still running, and
+  /// asks for nothing: there is no button on either platform to answer with,
+  /// and nothing is going to be turned off either way.
+  ///
+  /// IT DOES NOT SAY "WRONG TRAIN". The rider may be perfectly right and the
+  /// planner may have picked the other corridor, which is the whole of ADR
+  /// 0004: two routes to the same destination, one chosen for her without
+  /// being named.
+  String offRoute(String destination) => switch (language) {
+    AppLanguage.english =>
+      'You seem to be taking a different route. That is fine. Travel Mode is '
+          'still on and will still wake you before $destination.',
+    AppLanguage.hindi =>
+      'लगता है कि आप दूसरे रास्ते से जा रहे हैं। कोई बात नहीं। ट्रैवल मोड अभी '
+          'भी चालू है और $destination से पहले आपको जगा देगा।',
+    AppLanguage.marathi =>
+      'आपण वेगळ्या मार्गाने जात असल्याचे दिसत आहे. काही हरकत नाही. ट्रॅव्हल '
+          'मोड अजूनही सुरू आहे आणि $destination च्या आधी आपल्याला उठवेल.',
+  };
+
   /// Two minutes with no usable fix. Promises that the ride is still
   /// running, and does NOT promise to keep counting stations, because
   /// without fixes it cannot.
