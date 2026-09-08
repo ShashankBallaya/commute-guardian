@@ -1389,10 +1389,12 @@ void _consecutiveFixTests() {
       expect(held.whereType<Speak>(), isEmpty);
       expect(held.whereType<Tone>(), isEmpty);
       expect(held.single, isA<WakeNote>());
+      // Built from the constant, not pasted, so tuning it really is one edit.
+      final wanted = WakeEscalation.requiredAgreeingFixes - 1;
       expect(
         (held.single as WakeNote).message,
-        'a fix puts digha inside the lead time, holding for 1 more fix to '
-        'agree',
+        'a fix puts digha inside the lead time, holding for $wanted more '
+        '${wanted == 1 ? 'fix' : 'fixes'} to agree',
       );
     });
 
@@ -1445,8 +1447,116 @@ void _consecutiveFixTests() {
       expect(stillHeld.single, isA<WakeNote>());
       expect(
         (stillHeld.single as WakeNote).message,
-        contains('holding for 1 more fix'),
+        contains('holding for ${WakeEscalation.requiredAgreeingFixes - 1} '),
       );
+    });
+
+    test('AGREEMENT DECAYS: two wild fixes either side of a blackout are not '
+        'a sequence, they are two rumours', () {
+      // A count with no clock is not a sequence. The 5 Sep Kalyan blackout ran
+      // eleven minutes, and a phone resolving off the same wrong cell tower
+      // before and after it would have made the same wrong claim twice.
+      final wake = newWake();
+
+      wildFix(wake, _t0);
+      final afterBlackout = wildFix(
+        wake,
+        _t0.add(WakeEscalation.maxDeadReckonCoast + const Duration(seconds: 1)),
+      );
+
+      expect(wake.isLadderLive, isFalse);
+      expect(afterBlackout.single, isA<WakeNote>());
+    });
+
+    test('and the decay is a bound, not an off switch: agreement at the very '
+        'edge of it still arms the ladder', () {
+      // The other half of the pair, one second the other side of the bound.
+      // Nothing about this test differs except the number it tests.
+      final wake = newWake();
+
+      wildFix(wake, _t0);
+      final atTheEdge = wildFix(
+        wake,
+        _t0.add(WakeEscalation.maxDeadReckonCoast),
+      );
+
+      expect(wake.isLadderLive, isTrue);
+      expect(atTheEdge.whereType<Speak>(), hasLength(1));
+    });
+
+    test('a fix the OS is unsure of CONTRADICTS a held claim, rather than '
+        'being passed over in silence', () {
+      // Otherwise "in a row" quietly means "the next two the gates happen to
+      // admit", which is not a sequence once the OS starts refusing fixes.
+      final wake = newWake();
+
+      wildFix(wake, _t0);
+      // Same wrong position, blackout accuracy: not evidence of anything.
+      expect(
+        wake.onFix(
+          lat: 19.1807762,
+          lng: 72.9944301,
+          accuracyM: 600,
+          speedMps: 15,
+          now: _t0.add(const Duration(seconds: 1)),
+        ),
+        isEmpty,
+      );
+
+      final stillHeld = wildFix(wake, _t0.add(const Duration(seconds: 2)));
+
+      expect(wake.isLadderLive, isFalse);
+      expect(stillHeld.single, isA<WakeNote>());
+    });
+
+    test('a train standing at a platform contradicts too, and re-agrees the '
+        'moment it pulls out', () {
+      // The cost of the rule above, stated as a test: below [minSpeedMps] the
+      // ETA division is meaningless, so those fixes reset. It costs one fix.
+      final wake = newWake();
+
+      wildFix(wake, _t0);
+      wake.onFix(
+        lat: 19.1807762,
+        lng: 72.9944301,
+        accuracyM: 20,
+        speedMps: 0.1,
+        now: _t0.add(const Duration(seconds: 1)),
+      );
+
+      expect(wildFix(wake, _t0.add(const Duration(seconds: 2))), hasLength(1));
+      expect(wake.isLadderLive, isFalse);
+
+      final armed = wildFix(wake, _t0.add(const Duration(seconds: 3)));
+      expect(wake.isLadderLive, isTrue);
+      expect(armed.whereType<Speak>(), hasLength(1));
+    });
+
+    test('A SECOND BLACKOUT IS STILL REPORTED even when the fix between them '
+        'was too lonely to be believed', () {
+      // The blackout note is about fixes ARRIVING, not about the gate. Tying
+      // it to corroboration would silence the log on exactly the ride whose
+      // fixes are too sparse to agree, which is the ride that needs it.
+      final wake = newWake();
+
+      // A far seed, 711 s out: outside the coastable envelope, so it seeds
+      // whatever the gate thinks, and the coast abandons it at 180 s.
+      wake.onFix(
+        lat: 19.2358216,
+        lng: 73.1308101,
+        accuracyM: 20,
+        speedMps: 21.9,
+        now: _t0,
+      );
+      final first = wake.onTick(_t0.add(const Duration(seconds: 181)));
+      expect((first.single as WakeNote).message, contains('abandoned'));
+      expect(wake.onTick(_t0.add(const Duration(seconds: 182))), isEmpty);
+
+      // One lonely fix: held, unseeded, and it still ends the blackout.
+      wildFix(wake, _t0.add(const Duration(seconds: 200)));
+
+      final second = wake.onTick(_t0.add(const Duration(seconds: 201)));
+      expect((second.single as WakeNote).message, contains('abandoned'));
     });
 
     test('a station event still arms the ladder on its own: this gate is '

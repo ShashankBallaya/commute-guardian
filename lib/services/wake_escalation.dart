@@ -62,6 +62,54 @@ class Vibrate extends WakeAction {
   const Vibrate();
 }
 
+/// One sentence a fix can say about where the train is, and how many usable
+/// fixes have said it in a row.
+///
+/// A CLAIM IS EVIDENCE, AND EVIDENCE DECAYS. It carries the time of the fix
+/// that last made it, and a fix arriving more than [within] later starts the
+/// count over rather than joining it. Without that a count is not a sequence:
+/// two fixes eleven minutes apart would read as agreement, and the 5 Sep
+/// Kalyan blackout was eleven minutes long.
+///
+/// The type exists because there are two of these and each carries three
+/// pieces of state. Held as loose fields they were six, updated in two places
+/// and reset in three, and applying the decay to one and forgetting it on the
+/// other would have been a silent, ride-only bug.
+class _Claim {
+  _Claim({required this.agreeingFixes, required this.within});
+
+  /// How many fixes in a row must make this claim before it is believed.
+  final int agreeingFixes;
+
+  /// How long one fix stays evidence for the next one to build on.
+  final Duration within;
+
+  int _fixes = 0;
+  DateTime? _lastAt;
+
+  /// How many usable fixes in a row have made this claim.
+  int get fixes => _fixes;
+
+  bool get corroborated => _fixes >= agreeingFixes;
+
+  /// Record one usable fix. [holds] is whether THIS fix makes the claim; a
+  /// fix that does not make it contradicts what was held.
+  void record({required bool holds, required DateTime now}) {
+    if (!holds) {
+      reset();
+      return;
+    }
+    final last = _lastAt;
+    _fixes = last == null || now.difference(last) > within ? 1 : _fixes + 1;
+    _lastAt = now;
+  }
+
+  void reset() {
+    _fixes = 0;
+    _lastAt = null;
+  }
+}
+
 /// Pure, platform-free decision engine for the wake escalation ladder.
 ///
 /// Sibling of [RideProgress]: time is passed in rather than read from a
@@ -139,9 +187,9 @@ class WakeEscalation {
   /// such fixes are skipped rather than misread.
   static const minSpeedMps = 0.5;
 
-  /// How many usable fixes in a row must make the SAME claim before a fix
-  /// alone starts a ladder. Named so bench tuning is one edit, like the rung
-  /// timings.
+  /// How many usable fixes must agree, each inside [maxDeadReckonCoast] of
+  /// the one before it, before a fix alone starts a ladder. Named so bench
+  /// tuning is one edit, like the rung timings.
   ///
   /// [maxAccuracyM] and [minSpeedMps] gate the QUALITY of one fix, and that
   /// was the whole gate until now. It is not enough, because a fix can be
@@ -156,13 +204,21 @@ class WakeEscalation {
   /// the 21 Aug ride is the record of what an early ladder costs, because an
   /// ack resolves the ladder and the real alarm can then never fire.
   ///
-  /// TWO, one corroboration, is the same rule [RideProgress.onFix] already
-  /// runs on eliminative claims, and it was measured on the 18 Jul logs: the
-  /// one legitimate catch-up moved 13 s later and the false announcement
-  /// disappeared. Fixes are asked for at ~1 Hz, so the cost here is about a
-  /// second out of [leadTimeS]'s ninety. A wild fix has to be wrong twice, the
-  /// same way, back to back, to get through.
-  static const corroboratingFixes = 2;
+  /// TWO is the same rule [RideProgress.onFix] already runs on eliminative
+  /// claims, and it was measured on the 18 Jul logs: the one legitimate
+  /// catch-up moved 13 s later and the false announcement disappeared. Fixes
+  /// are asked for at ~1 Hz, so the cost here is about a second out of
+  /// [leadTimeS]'s ninety. A wild fix has to be wrong twice, the same way, in
+  /// quick succession, to get through.
+  ///
+  /// "IN QUICK SUCCESSION" IS HALF THE RULE, and the count alone does not say
+  /// it. A count with no clock reads two fixes eleven minutes apart as
+  /// agreement, and the 5 Sep Kalyan blackout was eleven minutes long: a wild
+  /// fix, a blackout, and a second wild fix off the same wrong tower would
+  /// have walked straight through. So a claim also decays, on the same clock
+  /// and for the same reason as the dead-reckoning seed it guards, and any
+  /// fix that fails the quality gates contradicts it outright.
+  static const requiredAgreeingFixes = 2;
 
   /// How long the dead-reckoning countdown in [onTick] may coast on a single
   /// fix before it stops being evidence.
@@ -215,19 +271,24 @@ class WakeEscalation {
   DateTime? _lastFixAt;
   double? _lastEtaS;
 
-  /// How many usable fixes in a row have made each of the two claims a fix can
-  /// make, and the cursor they were made against. See [corroboratingFixes].
+  /// The two claims a fix can make, each counted on its own.
   ///
-  /// Two counters, not one, because the claims are different sentences about
-  /// different stations: "the target the plan is waiting for is close" and
-  /// "the stop is closer than that target". A fix can make both, and a shared
-  /// counter would let them reset each other forever.
+  /// Two, not one, because they are different sentences about different
+  /// stations: "the target the plan is waiting for is close" and "the stop is
+  /// closer than that target". A fix can make both, and a shared counter would
+  /// let them reset each other on alternate fixes so neither ever agreed.
   ///
   /// [_claimCursor] is what ties them to a leg of the journey. When the cursor
   /// moves, the ladder they were evidence for is resolved or skipped, and the
   /// next target must be proved from scratch.
-  int _targetClaimFixes = 0;
-  int _stopClaimFixes = 0;
+  final _targetClaim = _Claim(
+    agreeingFixes: requiredAgreeingFixes,
+    within: maxDeadReckonCoast,
+  );
+  final _stopClaim = _Claim(
+    agreeingFixes: requiredAgreeingFixes,
+    within: maxDeadReckonCoast,
+  );
   int _claimCursor = -1;
 
   /// On a call means awake, not asleep (locked decision 8): outputs are
@@ -452,14 +513,25 @@ class WakeEscalation {
     required DateTime now,
   }) {
     if (!_hasTarget || _ladderLive) return const [];
-    if (accuracyM > maxAccuracyM) return const [];
-    if (speedMps < minSpeedMps) return const [];
+
+    // A FIX THAT FAILS THE QUALITY GATES CONTRADICTS WHAT IS HELD, rather than
+    // being passed over in silence. Skipping it would make "in a row" mean
+    // "the next two the gates happen to admit", which is not a sequence at all
+    // once the OS starts refusing fixes. The cost when this bites is one more
+    // fix, about a second: a train standing at a platform falls under
+    // [minSpeedMps] and has to re-agree when it pulls out, which it does long
+    // before it is anywhere near the next station.
+    if (accuracyM > maxAccuracyM || speedMps < minSpeedMps) {
+      _targetClaim.reset();
+      _stopClaim.reset();
+      return const [];
+    }
 
     // The cursor moving makes every held claim someone else's evidence.
     if (_cursor != _claimCursor) {
       _claimCursor = _cursor;
-      _targetClaimFixes = 0;
-      _stopClaimFixes = 0;
+      _targetClaim.reset();
+      _stopClaim.reset();
     }
 
     final toTargetM = _distanceM(lat, lng, _target.lat, _target.lng);
@@ -472,8 +544,8 @@ class WakeEscalation {
     // leg would leave that door open and make this whole gate decorative: the
     // held fix would arm the ladder one tick later anyway.
     final coastableS = leadTimeS + maxDeadReckonCoast.inSeconds;
-    _targetClaimFixes = etaS <= coastableS ? _targetClaimFixes + 1 : 0;
-    final targetCorroborated = _targetClaimFixes >= corroboratingFixes;
+    _targetClaim.record(holds: etaS <= coastableS, now: now);
+    final targetCorroborated = _targetClaim.corroborated;
 
     // SEEDED ONLY BY A CORROBORATED FIX. A lone fix no longer starts the
     // countdown, so dead reckoning always coasts from a position two fixes in
@@ -486,16 +558,19 @@ class WakeEscalation {
     if (targetCorroborated || etaS > coastableS) {
       _lastFixAt = now;
       _lastEtaS = etaS;
-      // A usable fix ends the blackout, so the next one may be reported.
-      _deadReckonAbandoned = false;
     }
+    // A usable fix ends the blackout, so the next one may be reported. This
+    // is about fixes ARRIVING, not about the gate, so it sits outside the
+    // seed: a ride whose fixes are too sparse to agree is exactly the ride
+    // whose second blackout must still reach the log.
+    _deadReckonAbandoned = false;
 
     // No ladder starts into the rider's conversation.
     if (_inCall) return const [];
 
     if (etaS <= leadTimeS) {
       if (!targetCorroborated) {
-        return [_holdingNote(_targets[_cursor], _targetClaimFixes)];
+        return [_holdingNote(_targets[_cursor], _targetClaim.fixes)];
       }
       return _startLadder(now);
     }
@@ -531,12 +606,12 @@ class WakeEscalation {
       // fixes and neither would ever reach two.
       final stopClaim =
           toDestination / speedMps <= leadTimeS && toDestination < toTargetM;
-      _stopClaimFixes = stopClaim ? _stopClaimFixes + 1 : 0;
+      _stopClaim.record(holds: stopClaim, now: now);
       if (stopClaim) {
         // The gate matters most here: this branch is the one that can jump the
         // cursor past every remaining change, from anywhere on the route.
-        if (_stopClaimFixes < corroboratingFixes) {
-          return [_holdingNote(destinationStationId, _stopClaimFixes)];
+        if (!_stopClaim.corroborated) {
+          return [_holdingNote(destinationStationId, _stopClaim.fixes)];
         }
         _cursor = _targets.length - 1;
         return [
@@ -557,16 +632,19 @@ class WakeEscalation {
   /// ride, which is why [WakeNote] exists. Without this line a gated ride and
   /// a broken one look identical in the log, and the 5 Sep ride is the record
   /// of how long an unexplained silence stays an open question.
-  WakeNote _holdingNote(String stationId, int fixesSoFar) => WakeNote(
-    'a fix puts $stationId inside the lead time, holding for '
-    '${corroboratingFixes - fixesSoFar} more fix to agree',
-  );
+  WakeNote _holdingNote(String stationId, int fixesSoFar) {
+    final wanted = requiredAgreeingFixes - fixesSoFar;
+    return WakeNote(
+      'a fix puts $stationId inside the lead time, holding for $wanted more '
+      '${wanted == 1 ? 'fix' : 'fixes'} to agree',
+    );
+  }
 
   List<WakeAction> _startLadder(DateTime now) {
     // The claims are spent the moment a ladder is live. Nothing may inherit
-    // them: the next target must earn its own corroboration.
-    _targetClaimFixes = 0;
-    _stopClaimFixes = 0;
+    // them: the next target must earn its own agreement.
+    _targetClaim.reset();
+    _stopClaim.reset();
     _ladderLive = true;
     _rung = 0;
     _nextTransitionAt = now.add(checkInToFirstRung);
