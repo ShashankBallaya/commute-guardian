@@ -102,12 +102,40 @@ class JourneyDraftNotifier extends Notifier<JourneyDraft> {
     originId: id,
     destinationId: state.destinationId,
     originSource: OriginSource.picked,
+    // CLEARED IN WRITING, not by omission. A route chosen for one pair of
+    // stations is not a route for another, and a rule kept only by a field
+    // that nobody remembered to copy is the shape of the bug C7c exists to
+    // close.
+    routeChainIds: null,
   );
 
   void setDestination(String? id) => state = JourneyDraft(
     originId: state.originId,
     destinationId: id,
     originSource: state.originSource,
+    routeChainIds: null,
+  );
+
+  /// The whole draft at once, for a ride that already exists.
+  ///
+  /// ONE CALL RATHER THAN THREE SETTERS IN A FIXED ORDER. Restoring used to be
+  /// setOrigin, then setDestination, then [setChosenRoute], with a comment
+  /// warning that either endpoint setter clears the corridor. That is a rule
+  /// kept by comment, which is exactly what C7c is about: get the order wrong
+  /// and the screen plans a different corridor from the one the service is
+  /// riding, then indexes the service's own reachedIndex into it.
+  ///
+  /// THE ORIGIN IS THE RIDER'S, as it is through [setOrigin]: this is a ride
+  /// she started, so no later fix may walk it along the line behind the train.
+  void restore({
+    required String? originId,
+    required String? destinationId,
+    required List<String>? routeChainIds,
+  }) => state = JourneyDraft(
+    originId: originId,
+    destinationId: destinationId,
+    originSource: OriginSource.picked,
+    routeChainIds: routeChainIds,
   );
 
   /// The corridor the rider chose, set AFTER both ends, because either setter
@@ -138,7 +166,16 @@ class JourneyDraftNotifier extends Notifier<JourneyDraft> {
   /// train.
   void confirmOrigin() {
     if (state.originId == null) return;
-    setOrigin(state.originId);
+    // THROUGH [restore], NOT [setOrigin], and the difference is a real bug.
+    // This is not an endpoint CHANGE, it only marks the origin as the rider's
+    // own. Running setOrigin here dropped a chosen corridor, and start() calls
+    // this, so pressing Start would have replanned the ordinary route while
+    // the service rode the chosen one.
+    restore(
+      originId: state.originId,
+      destinationId: state.destinationId,
+      routeChainIds: state.routeChainIds,
+    );
   }
 
   /// Fills the origin from a fix, and corrects one the APP filled in.

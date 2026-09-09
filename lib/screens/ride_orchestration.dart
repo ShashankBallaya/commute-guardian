@@ -470,14 +470,18 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final origin = repo?.stationsById[ride.originId];
     final destination = repo?.stationsById[ride.destinationId];
     if (origin == null || destination == null) return;
-    final draft = ref.read(journeyDraftProvider.notifier);
-    draft.setOrigin(origin.id);
-    draft.setDestination(destination.id);
-    // AFTER BOTH ENDS, because either setter clears it. Without this the
-    // screen replans from the two ids and can draw the OTHER corridor while
-    // the service rides this one, and Screen 4 then indexes the service's own
-    // reachedIndex into a chain it does not belong to.
-    draft.setChosenRoute(ride.routeChainIds);
+    // ONE CALL. Three setters in a fixed order was a rule kept by comment,
+    // and either endpoint setter clears the corridor. Without the corridor the
+    // screen replans from the two ids and can draw the OTHER one while the
+    // service rides this one, then indexes the service's own reachedIndex into
+    // a chain it does not belong to.
+    ref
+        .read(journeyDraftProvider.notifier)
+        .restore(
+          originId: origin.id,
+          destinationId: destination.id,
+          routeChainIds: ride.routeChainIds,
+        );
     onOrchestrationLog('Restored the running ride from the service store.');
 
     // AND PUT THE RIDER BACK ON THE RIDE. Reported on device 11 Aug 2026: swipe
@@ -597,6 +601,12 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       routeAlreadySpoken: routeAlreadySpoken,
       originStationId: journey.originStationId,
       destinationStationId: journey.requestedDestinationId,
+      // THE CORRIDOR SHE CHOSE, from the draft the plan above was made from.
+      // Null for every rider who never opens a picker, which is everyone
+      // until it lands. Without this line the ordinary start stores no
+      // corridor at all and the whole of C7c only ever round-trips a chain
+      // nothing wrote.
+      routeChainIds: ref.read(journeyDraftProvider).routeChainIds,
       notificationText:
           '${stationName(journey.originStationId)} to '
           '${stationName(journey.requestedDestinationId)}',
@@ -854,7 +864,11 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // history row, which is exactly the shape of bug the store exists to end.
     // THE CHOSEN CORRIDOR, or the history row counts the wrong stations: a
     // via-Thane ride recorded as via-Vashi is a different number of stops.
-    final journey = _planStored(originId, destinationId, persisted.routeChainIds);
+    final journey = _planStored(
+      originId,
+      destinationId,
+      persisted.routeChainIds,
+    );
     if (journey == null) {
       onOrchestrationLog('History skipped: cannot replan the ride');
       await service.clearRideRecordSeed();

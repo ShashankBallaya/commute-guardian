@@ -56,6 +56,53 @@ void main() {
       );
     });
 
+    test('PRESSING START KEEPS THE CORRIDOR, it is not a new pick', () {
+      // confirmOrigin() is the SIXTH consumer, and it clears by accident. It
+      // re-runs setOrigin with the same id, which exists to mark a GPS-filled
+      // origin as the rider's own so later fixes cannot walk it along the
+      // line. It is not an endpoint CHANGE, so it must not drop a corridor
+      // she chose: start() calls it, and dropping it there would replan the
+      // ordinary route while the service rides the chosen one.
+      final c = makeContainer();
+      final viaThane = repo.planner
+          .planAlternatives(originId: 'ghansoli', destinationId: 'csmt')
+          .firstWhere((j) => j.chain.any((s) => s.id == 'thane'));
+      final draft = c.read(journeyDraftProvider.notifier);
+      draft.setOrigin('ghansoli');
+      draft.setDestination('csmt');
+      draft.setChosenRoute(viaThane.chain.map((s) => s.id).toList());
+
+      draft.confirmOrigin();
+
+      expect(
+        c.read(journeyDraftProvider).routeChainIds,
+        viaThane.chain.map((s) => s.id).toList(),
+      );
+    });
+
+    test('ONE RESTORE, so the order of three setters cannot be got wrong', () {
+      // The restore used to be setOrigin, setDestination, setChosenRoute, in
+      // that order, with a comment warning that either endpoint setter clears
+      // the corridor. A rule kept by comment is the shape of the bug this
+      // whole change exists to close, so the three are one call.
+      final c = makeContainer();
+      final draft = c.read(journeyDraftProvider.notifier);
+
+      draft.restore(
+        originId: 'ghansoli',
+        destinationId: 'csmt',
+        routeChainIds: const ['ghansoli', 'thane', 'csmt'],
+      );
+
+      final state = c.read(journeyDraftProvider);
+      expect(state.originId, 'ghansoli');
+      expect(state.destinationId, 'csmt');
+      expect(state.routeChainIds, const ['ghansoli', 'thane', 'csmt']);
+      // The origin is the rider's, exactly as it was through setOrigin: this
+      // is a ride she started, so no later fix may move it.
+      expect(state.originSource, OriginSource.picked);
+    });
+
     test('A NEW PICK DROPS THE OLD CORRIDOR', () {
       // A route chosen for one pair of stations is not a route for another.
       // Carrying it across a fresh pick would hand the next journey a chain

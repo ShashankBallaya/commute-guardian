@@ -352,17 +352,6 @@ class GeofenceChainService {
   bool _wakeArmedThisRide = false;
   bool _wakeAnsweredThisRide = false;
 
-  /// Whether two chains are the same ride. A copy of the planner's own rule,
-  /// four lines rather than an import, because this isolate must not depend on
-  /// the planner for a LOG LINE: a ride has never failed for want of one.
-  static bool _sameIds(List<String> a, List<String> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
-
   Future<void> start({
     required String originId,
     required String destinationId,
@@ -472,11 +461,27 @@ class GeofenceChainService {
     // in the CODE is not the same as silent in the LOG, and the one failure
     // this whole feature exists to prevent (the ride running down a corridor
     // the rider did not choose) would otherwise be invisible on a real ride.
+    final riding = journey.chain.map((s) => s.id).toList();
     if (routeChainIds != null &&
-        !_sameIds(journey.chain.map((s) => s.id).toList(), routeChainIds)) {
+        !repo.planner.sameChain(riding, routeChainIds)) {
+      // NAMED, NOT COUNTED. A first draft of this line printed the two chain
+      // LENGTHS, which is the same weakness the test for this feature had:
+      // two corridors of equal length are exactly the dangerous case, and
+      // "stored 20 stations, riding 20" says nothing about the ride that
+      // matters most. The first station they disagree at is where the ride
+      // left her route.
+      var at = 'the end of the chain';
+      for (var i = 0; i < riding.length || i < routeChainIds.length; i++) {
+        final a = i < riding.length ? riding[i] : null;
+        final b = i < routeChainIds.length ? routeChainIds[i] : null;
+        if (a != b) {
+          at = 'station $i, chose ${b ?? 'nothing'}, riding ${a ?? 'nothing'}';
+          break;
+        }
+      }
       _log(
-        'CHOSEN ROUTE NOT HONOURED: stored ${routeChainIds.length} stations, '
-        'riding ${journey.chain.length}. Falling back to the ordinary route.',
+        'CHOSEN ROUTE NOT HONOURED: diverges at $at. '
+        'Falling back to the ordinary route.',
       );
     }
     _journey = journey;

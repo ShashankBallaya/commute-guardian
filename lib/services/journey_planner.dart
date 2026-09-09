@@ -162,8 +162,8 @@ class JourneyPlanner {
   /// rider the whole ride. The default route is wrong about the corridor and
   /// right about the destination, which is the safe direction to be wrong in.
   ///
-  /// [routeChainIds] null or empty is the ORDINARY ride, and always will be for a
-  /// rider who never opens a picker.
+  /// [routeChainIds] null or empty is the ORDINARY ride, and always will be
+  /// for a rider who never opens a picker.
   Journey planAlong({
     required String originId,
     required String destinationId,
@@ -184,7 +184,7 @@ class JourneyPlanner {
       return plan(originId: originId, destinationId: destinationId);
     }
     for (final route in routes) {
-      if (_sameChain(route.chain.map((s) => s.id).toList(), routeChainIds)) {
+      if (sameChain(route.chain.map((s) => s.id).toList(), routeChainIds)) {
         return route;
       }
     }
@@ -246,11 +246,7 @@ class JourneyPlanner {
     // and it is also what the checklist means by "another corridor or another
     // interchange, not one ride relabelled".
     for (final lineId in bestLines) {
-      final other = _planFor(
-        originId,
-        destinationId,
-        bannedLineIds: {lineId},
-      );
+      final other = _planFor(originId, destinationId, bannedLineIds: {lineId});
       if (other == null) continue;
       if (routes.any((known) => _sameRoute(known, other.journey))) continue;
       routes.add(other.journey);
@@ -266,15 +262,18 @@ class JourneyPlanner {
   /// arrive at the same list of stations in the same order. What a rider sees
   /// out of the window is the chain, so the chain is what decides whether she
   /// is being offered a real choice or one ride relabelled.
-  bool _sameRoute(Journey a, Journey b) => _sameChain(
+  bool _sameRoute(Journey a, Journey b) => sameChain(
     a.chain.map((s) => s.id).toList(),
     b.chain.map((s) => s.id).toList(),
   );
 
-  /// Two chains a rider would call the same ride. Shared with [planAlong], so
-  /// the question "is this the route she chose" is asked in exactly the way
-  /// "are these two routes the same" is asked.
-  bool _sameChain(List<String> a, List<String> b) {
+  /// Two chains a rider would call the same ride.
+  ///
+  /// PUBLIC, so the service isolate can ask the same question when it logs a
+  /// route it could not honour. It already holds a planner on that code path,
+  /// so a private copy over there would be two spellings of one rule in two
+  /// files that must stay in step.
+  bool sameChain(List<String> a, List<String> b) {
     if (a.length != b.length) return false;
     for (var i = 0; i < a.length; i++) {
       if (a[i] != b[i]) return false;
@@ -403,9 +402,7 @@ class JourneyPlanner {
       // Everywhere reachable without getting off the train.
       final reached = <List<_Leg>>[];
       for (final route in frontier) {
-        reached.addAll(
-          _rideOut(route, seen, allowLowFrequency, bannedLineIds),
-        );
+        reached.addAll(_rideOut(route, seen, allowLowFrequency, bannedLineIds));
       }
 
       // Done if any of them is the destination. Take the shortest, since they all
