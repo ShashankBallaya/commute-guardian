@@ -352,6 +352,17 @@ class GeofenceChainService {
   bool _wakeArmedThisRide = false;
   bool _wakeAnsweredThisRide = false;
 
+  /// Whether two chains are the same ride. A copy of the planner's own rule,
+  /// four lines rather than an import, because this isolate must not depend on
+  /// the planner for a LOG LINE: a ride has never failed for want of one.
+  static bool _sameIds(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   Future<void> start({
     required String originId,
     required String destinationId,
@@ -447,7 +458,7 @@ class GeofenceChainService {
       journey = repo.planner.planAlong(
         originId: originId,
         destinationId: destinationId,
-        chainIds: routeChainIds,
+        routeChainIds: routeChainIds,
       );
     } catch (error) {
       // The picker plans the same route before enabling Start, so this should be
@@ -455,6 +466,18 @@ class GeofenceChainService {
       // isolate takes the whole ride down silently.
       _log('Cannot plan $originId -> $destinationId: $error');
       return;
+    }
+    // AND IT SAYS SO WHEN IT COULD NOT. planAlong falls back silently, on
+    // purpose: a resume must never lose a ride over a stale chain. But silent
+    // in the CODE is not the same as silent in the LOG, and the one failure
+    // this whole feature exists to prevent (the ride running down a corridor
+    // the rider did not choose) would otherwise be invisible on a real ride.
+    if (routeChainIds != null &&
+        !_sameIds(journey.chain.map((s) => s.id).toList(), routeChainIds)) {
+      _log(
+        'CHOSEN ROUTE NOT HONOURED: stored ${routeChainIds.length} stations, '
+        'riding ${journey.chain.length}. Falling back to the ordinary route.',
+      );
     }
     _journey = journey;
     _language = language;

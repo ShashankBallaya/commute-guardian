@@ -450,7 +450,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             // ride was planned along, so it has to be the rail she chose. On
             // the wrong corridor the distance is the gap between two lines,
             // which is how a rider still on her train gets told she is off it.
-            chainIds: ride.routeChainIds,
+            routeChainIds: ride.routeChainIds,
           )
           .chain;
     } catch (_) {
@@ -473,6 +473,11 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final draft = ref.read(journeyDraftProvider.notifier);
     draft.setOrigin(origin.id);
     draft.setDestination(destination.id);
+    // AFTER BOTH ENDS, because either setter clears it. Without this the
+    // screen replans from the two ids and can draw the OTHER corridor while
+    // the service rides this one, and Screen 4 then indexes the service's own
+    // reachedIndex into a chain it does not belong to.
+    draft.setChosenRoute(ride.routeChainIds);
     onOrchestrationLog('Restored the running ride from the service store.');
 
     // AND PUT THE RIDER BACK ON THE RIDE. Reported on device 11 Aug 2026: swipe
@@ -943,7 +948,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       return repo.planner.planAlong(
         originId: originId,
         destinationId: destinationId,
-        chainIds: routeChainIds,
+        routeChainIds: routeChainIds,
       );
     } catch (_) {
       return null;

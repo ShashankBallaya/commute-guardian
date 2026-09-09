@@ -46,10 +46,17 @@ class LiveRide {
     this.reachedIndex = -1,
     this.atStation = false,
     this.alightStationId,
+    this.routeChainIds,
   });
 
   final String originId;
   final String destinationId;
+
+  /// The corridor the SERVICE is riding, from the store it was started with.
+  ///
+  /// Carried so the UI can plan the same ride rather than replanning from the
+  /// two ids and drawing the other corridor. See [JourneyDraft.routeChainIds].
+  final List<String>? routeChainIds;
 
   /// The station the rider will actually get off at, or null for the
   /// destination they picked.
@@ -80,6 +87,7 @@ class LiveRide {
     reachedIndex: index,
     atStation: atStation,
     alightStationId: alightStationId,
+    routeChainIds: routeChainIds,
   );
 
   LiveRide withAlightAt(String stationId) => LiveRide(
@@ -89,6 +97,7 @@ class LiveRide {
     reachedIndex: reachedIndex,
     atStation: atStation,
     alightStationId: stationId,
+    routeChainIds: routeChainIds,
   );
 
   LiveRide get arrived => LiveRide(
@@ -98,6 +107,7 @@ class LiveRide {
     reachedIndex: reachedIndex,
     atStation: atStation,
     alightStationId: alightStationId,
+    routeChainIds: routeChainIds,
   );
 }
 
@@ -169,6 +179,7 @@ class LiveRideNotifier extends AsyncNotifier<LiveRide?> {
         reachedIndex: persisted.reachedIndex,
         atStation: persisted.atStation,
         alightStationId: persisted.alightStationId,
+        routeChainIds: persisted.routeChainIds,
       );
     } catch (_) {
       // No service plumbing (widget tests) or a store race.

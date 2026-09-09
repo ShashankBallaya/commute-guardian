@@ -716,7 +716,7 @@ class RideServiceClient {
     destinationId: await FlutterForegroundTask.getData<String>(
       key: destinationIdKey,
     ),
-    routeChainIds: _chainFromStore(
+    routeChainIds: routeChainFromStore(
       await FlutterForegroundTask.getData<String>(key: routeChainKey),
     ),
     destinationReached:
@@ -756,18 +756,6 @@ class RideServiceClient {
       await FlutterForegroundTask.getData<String>(key: alightStationKey),
     ),
   );
-
-  /// The stored chain, back as ids, or null when there is no chosen route.
-  ///
-  /// A STRING BECAUSE THE STORE HOLDS NO LISTS. `FlutterForegroundTask` keeps
-  /// String, int, bool and double, so the chain travels joined and comes back
-  /// split. Empty and missing both mean the ordinary route, which is the same
-  /// thing a rider who never opened a picker has.
-  static List<String>? _chainFromStore(String? joined) {
-    if (joined == null || joined.isEmpty) return null;
-    final ids = joined.split(',').where((id) => id.isNotEmpty).toList();
-    return ids.isEmpty ? null : ids;
-  }
 
   static DateTime? _dateFromMillis(int? millis) => millis == null || millis <= 0
       ? null
@@ -860,7 +848,7 @@ class RideServiceClient {
     // learned on 18 Aug 2026.
     await FlutterForegroundTask.saveData(
       key: routeChainKey,
-      value: routeChainIds == null ? '' : routeChainIds.join(','),
+      value: routeChainToStore(routeChainIds),
     );
     await FlutterForegroundTask.saveData(
       key: destinationIdKey,

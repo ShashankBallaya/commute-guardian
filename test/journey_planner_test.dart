@@ -804,17 +804,23 @@ void main() {
         final restored = planner.planAlong(
           originId: 'ghansoli',
           destinationId: 'csmt',
-          chainIds: viaThane.chain.map((s) => s.id).toList(),
+          routeChainIds: viaThane.chain.map((s) => s.id).toList(),
         );
 
         expect(restored.chain.map((s) => s.id), viaThane.chain.map((s) => s.id));
         // And it is NOT what plan() would have said on its own, or this test
-        // would pass with the bug still in place.
+        // would pass with the bug still in place. COMPARED BY IDS, never by
+        // length: two corridors of equal length are exactly the case that
+        // makes this bug dangerous rather than obvious, so a length assertion
+        // would go green on the ride that matters most.
         final byDefault = planner.plan(
           originId: 'ghansoli',
           destinationId: 'csmt',
         );
-        expect(restored.chain.length, isNot(byDefault.chain.length));
+        expect(
+          restored.chain.map((s) => s.id).toList(),
+          isNot(byDefault.chain.map((s) => s.id).toList()),
+        );
       });
 
       test('NO STORED CHAIN IS THE ORDINARY RIDE, unchanged', () {
@@ -825,7 +831,7 @@ void main() {
         final restored = planner.planAlong(
           originId: 'ghansoli',
           destinationId: 'csmt',
-          chainIds: null,
+          routeChainIds: null,
         );
 
         expect(
@@ -847,7 +853,7 @@ void main() {
         final restored = planner.planAlong(
           originId: 'ghansoli',
           destinationId: 'csmt',
-          chainIds: const ['ghansoli', 'atlantis', 'csmt'],
+          routeChainIds: const ['ghansoli', 'atlantis', 'csmt'],
         );
 
         expect(

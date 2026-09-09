@@ -42,6 +42,30 @@ const destinationIdKey = 'destination_station_id';
 /// a picker.
 const routeChainKey = 'route_chain_ids';
 
+/// The chain as the store holds it, and back again.
+///
+/// ONE CODEC, BESIDE ITS OWN KEY, and it was written three times before this.
+/// The UI joined it, the UI's reader split it, and the service isolate split
+/// it again by hand. The two splitters had already disagreed: on ',,' one
+/// answered null and the other an empty list. Nothing rode on that yet, which
+/// is luck rather than design.
+///
+/// A STRING BECAUSE THE STORE HOLDS NO LISTS. `FlutterForegroundTask` keeps
+/// String, int, bool and double and nothing else.
+///
+/// ABSENT, EMPTY AND SEPARATORS-ONLY ARE ALL ONE ANSWER: no chosen route,
+/// which is the ordinary ride. [routeChainToStore] writes the empty string for
+/// null rather than skipping the key, because leaving it alone would hand this
+/// ride the PREVIOUS ride's corridor.
+String routeChainToStore(List<String>? ids) =>
+    ids == null || ids.isEmpty ? '' : ids.join(',');
+
+List<String>? routeChainFromStore(String? stored) {
+  if (stored == null || stored.isEmpty) return null;
+  final ids = stored.split(',').where((id) => id.isNotEmpty).toList();
+  return ids.isEmpty ? null : ids;
+}
+
 /// Debug bench flag: play the bundled Sarvam greeting clip at Start (Android
 /// only). Written by the debug screen's toggle, read once at service start.
 const sarvamGreetingKey = 'sarvam_greeting';
@@ -528,12 +552,9 @@ class GeofenceTaskHandler extends TaskHandler {
     // Split rather than stored as a list because the store holds no lists.
     // Missing or empty is the ordinary route, which is what every ride before
     // C7c has and what a rider who never opens a picker will always have.
-    final storedChain = await FlutterForegroundTask.getData<String>(
-      key: routeChainKey,
+    final routeChainIds = routeChainFromStore(
+      await FlutterForegroundTask.getData<String>(key: routeChainKey),
     );
-    final routeChainIds = storedChain == null || storedChain.isEmpty
-        ? null
-        : storedChain.split(',').where((id) => id.isNotEmpty).toList();
 
     await _chain!.start(
       originId: originId,

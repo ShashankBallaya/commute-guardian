@@ -162,14 +162,14 @@ class JourneyPlanner {
   /// rider the whole ride. The default route is wrong about the corridor and
   /// right about the destination, which is the safe direction to be wrong in.
   ///
-  /// [chainIds] null or empty is the ORDINARY ride, and always will be for a
+  /// [routeChainIds] null or empty is the ORDINARY ride, and always will be for a
   /// rider who never opens a picker.
   Journey planAlong({
     required String originId,
     required String destinationId,
-    required List<String>? chainIds,
+    required List<String>? routeChainIds,
   }) {
-    if (chainIds == null || chainIds.isEmpty) {
+    if (routeChainIds == null || routeChainIds.isEmpty) {
       return plan(originId: originId, destinationId: destinationId);
     }
     final List<Journey> routes;
@@ -184,16 +184,8 @@ class JourneyPlanner {
       return plan(originId: originId, destinationId: destinationId);
     }
     for (final route in routes) {
-      final ids = route.chain.map((s) => s.id).toList();
-      if (ids.length == chainIds.length) {
-        var same = true;
-        for (var i = 0; i < ids.length; i++) {
-          if (ids[i] != chainIds[i]) {
-            same = false;
-            break;
-          }
-        }
-        if (same) return route;
+      if (_sameChain(route.chain.map((s) => s.id).toList(), routeChainIds)) {
+        return route;
       }
     }
     return plan(originId: originId, destinationId: destinationId);
@@ -274,10 +266,18 @@ class JourneyPlanner {
   /// arrive at the same list of stations in the same order. What a rider sees
   /// out of the window is the chain, so the chain is what decides whether she
   /// is being offered a real choice or one ride relabelled.
-  bool _sameRoute(Journey a, Journey b) {
-    if (a.chain.length != b.chain.length) return false;
-    for (var i = 0; i < a.chain.length; i++) {
-      if (a.chain[i].id != b.chain[i].id) return false;
+  bool _sameRoute(Journey a, Journey b) => _sameChain(
+    a.chain.map((s) => s.id).toList(),
+    b.chain.map((s) => s.id).toList(),
+  );
+
+  /// Two chains a rider would call the same ride. Shared with [planAlong], so
+  /// the question "is this the route she chose" is asked in exactly the way
+  /// "are these two routes the same" is asked.
+  bool _sameChain(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
     }
     return true;
   }

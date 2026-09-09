@@ -64,10 +64,24 @@ class JourneyDraft {
     this.originId,
     this.destinationId,
     this.originSource = OriginSource.defaulted,
+    this.routeChainIds,
   });
 
   final String? originId;
   final String? destinationId;
+
+  /// The corridor the rider chose, or null for the ordinary route.
+  ///
+  /// C7c, AND THE SCREEN'S HALF OF IT. Two ids do not name a route, so a UI
+  /// that plans from the endpoints alone can draw a different corridor from
+  /// the one the service is riding. That matters more than a wrong picture:
+  /// Screen 4 indexes the SERVICE's own reachedIndex into this chain, and the
+  /// wake alert names `chain[reached]`. Two corridors of the same length would
+  /// name a station on a line she is not on.
+  ///
+  /// CLEARED BY EITHER PICK, in [setOrigin] and [setDestination]. A route
+  /// chosen for one pair of stations is not a route for another.
+  final List<String>? routeChainIds;
 
   /// Only meaningful while [originId] is non-null.
   final OriginSource originSource;
@@ -94,6 +108,16 @@ class JourneyDraftNotifier extends Notifier<JourneyDraft> {
     originId: state.originId,
     destinationId: id,
     originSource: state.originSource,
+  );
+
+  /// The corridor the rider chose, set AFTER both ends, because either setter
+  /// clears it. Null is the ordinary route, which is every ride that never
+  /// opened a picker.
+  void setChosenRoute(List<String>? routeChainIds) => state = JourneyDraft(
+    originId: state.originId,
+    destinationId: state.destinationId,
+    originSource: state.originSource,
+    routeChainIds: routeChainIds,
   );
 
   /// After a ride ends: the next one usually starts where the last finished,
@@ -177,9 +201,13 @@ final plannedJourneyProvider = Provider<PlannedJourney>((ref) {
   }
   try {
     return PlannedJourney(
-      journey: repo.planner.plan(
+      // ALONG THE CHOSEN CORRIDOR. This plan is what Screen 4 draws, what the
+      // wake alert indexes the service's reachedIndex into, and what Screen 5
+      // names, so it has to be the ride the service is actually running.
+      journey: repo.planner.planAlong(
         originId: originId,
         destinationId: destinationId,
+        routeChainIds: draft.routeChainIds,
       ),
     );
   } catch (error) {

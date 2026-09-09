@@ -29,6 +29,52 @@ void main() {
     return container;
   }
 
+  group('the corridor the rider chose', () {
+    // C7c, AND THE FIFTH CONSUMER. The service was taught to ride the chosen
+    // corridor, and the SCREEN was not. `_restoreRunningRide` refills this
+    // draft from the store after a kill or an activity recreation, and the
+    // plan below is what Screen 4 draws, what the wake alert indexes into and
+    // what Screen 5 names. With the service on Thane and this on Vashi, the
+    // service's own reachedIndex would be read into a DIFFERENT chain, so the
+    // alert can name a station on a line she is not riding. A length check is
+    // the only thing between that and a crash, which means it misnames rather
+    // than fails.
+    test('THE SCREEN PLANS THE SAME RIDE THE SERVICE IS RIDING', () {
+      final c = makeContainer();
+      final viaThane = repo.planner
+          .planAlternatives(originId: 'ghansoli', destinationId: 'csmt')
+          .firstWhere((j) => j.chain.any((s) => s.id == 'thane'));
+      final draft = c.read(journeyDraftProvider.notifier);
+
+      draft.setOrigin('ghansoli');
+      draft.setDestination('csmt');
+      draft.setChosenRoute(viaThane.chain.map((s) => s.id).toList());
+
+      expect(
+        c.read(plannedJourneyProvider).journey!.chain.map((s) => s.id),
+        viaThane.chain.map((s) => s.id),
+      );
+    });
+
+    test('A NEW PICK DROPS THE OLD CORRIDOR', () {
+      // A route chosen for one pair of stations is not a route for another.
+      // Carrying it across a fresh pick would hand the next journey a chain
+      // that cannot match, which is harmless, or worse, one that can.
+      final c = makeContainer();
+      final viaThane = repo.planner
+          .planAlternatives(originId: 'ghansoli', destinationId: 'csmt')
+          .firstWhere((j) => j.chain.any((s) => s.id == 'thane'));
+      final draft = c.read(journeyDraftProvider.notifier);
+      draft.setOrigin('ghansoli');
+      draft.setDestination('csmt');
+      draft.setChosenRoute(viaThane.chain.map((s) => s.id).toList());
+
+      draft.setDestination('byculla');
+
+      expect(c.read(journeyDraftProvider).routeChainIds, isNull);
+    });
+  });
+
   group('plannedJourneyProvider', () {
     test('stays empty until both ends are picked', () {
       final c = makeContainer();
