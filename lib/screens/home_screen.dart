@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/app_database.dart';
+import '../services/commit_announcer.dart';
 import '../services/journey_suggestion.dart';
 import '../state/journey_providers.dart';
 import '../state/ride_providers.dart';
@@ -104,6 +105,7 @@ class HomeScreen extends ConsumerStatefulWidget {
     this.onDeclineRide,
     this.onHistory,
     this.onSettings,
+    this.announcer,
   });
 
   /// Start a ride to this destination. Origin is never picked here: it is
@@ -139,6 +141,16 @@ class HomeScreen extends ConsumerStatefulWidget {
   final VoidCallback? onHistory;
   final VoidCallback? onSettings;
 
+  /// The engine the COMMIT WINDOW will speak through, handed here only so this
+  /// screen can warm it. Injected so a test can count warm-ups without a TTS
+  /// engine, and null in production, where this screen builds its own.
+  ///
+  /// SCREEN 1 DOES NOT SPEAK, AND MUST NOT START. This is the one thing it
+  /// does with a voice: load it, silently, and hand nothing on. The window
+  /// builds its own announcer as it always has; what it inherits is a warm
+  /// engine, not an object.
+  final CommitAnnouncer? announcer;
+
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
@@ -148,6 +160,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     unawaited(_locateOnce());
+    // AFTER THE FIX, NOT BEFORE IT. Both are fire-and-forget, but the fix is
+    // what the rider is actually waiting on: it fills the origin the window
+    // will speak, and a warm-up that delayed it would trade a real wait for a
+    // theoretical one.
+    unawaited(_warmVoiceOnce());
+  }
+
+  /// Loads the commit window's TTS engine while the rider is still reading.
+  ///
+  /// THE FREE TIME IS HERE AND NOWHERE ELSE. The window cannot warm its own
+  /// engine: it speaks in the same instant it appears, and a clear preflight
+  /// report takes a recents tap into it straight from `initState`. So on
+  /// 9 Sep 2026 the first ride of every launch paid a 500 to 900 ms cold start
+  /// (16 Aug bench) that no later ride paid, and on the 3T that was enough for
+  /// the Sarvam welcome to speak over a commit line still in progress. The
+  /// second tap sounded perfect because the engine was warm. This makes the
+  /// first tap the second one.
+  ///
+  /// NOT DURING A RIDE. A rider back on Screen 1 mid-journey has the SERVICE
+  /// engine announcing stations, and two engines live at once is the exact
+  /// shape that wedged the iPhone announcer on 21 Aug 2026. A warm-up is
+  /// silent, not absent: it still touches the audio path. There is also
+  /// nothing to warm for, since a running ride never opens a commit window.
+  Future<void> _warmVoiceOnce() async {
+    if (ref.read(isRideRunningProvider)) return;
+    await (widget.announcer ?? CommitAnnouncer()).warmUp();
   }
 
   /// Asks where the rider is, once, on arrival.

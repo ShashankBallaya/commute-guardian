@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:commute_guardian/data/app_database.dart';
 import 'package:commute_guardian/data/station_repository.dart';
 import 'package:commute_guardian/screens/home_screen.dart';
+import 'package:commute_guardian/models/app_settings.dart';
+import 'package:commute_guardian/services/commit_announcer.dart';
 import 'package:commute_guardian/services/journey_suggestion.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
@@ -62,6 +64,8 @@ void main() {
     // one throws under this binding, the notifier catches it, and the screen is
     // exactly the screen it was before this feature existed.
     FakeRideServiceClient? service,
+    CommitAnnouncer? announcer,
+    bool rideRunning = false,
   }) async {
     taps.clear();
     final started = <String>[];
@@ -86,6 +90,7 @@ void main() {
           journeySuggestionProvider.overrideWith((ref) async => suggestion),
           if (service != null)
             rideServiceClientProvider.overrideWithValue(service),
+          if (rideRunning) isRideRunningProvider.overrideWithValue(true),
         ],
         child: MaterialApp(
           home: HomeScreen(
@@ -94,6 +99,7 @@ void main() {
             onResumeRide: () => taps.add('resume'),
             onHistory: header ? () => taps.add('history') : null,
             onSettings: header ? () => taps.add('settings') : null,
+            announcer: announcer,
           ),
         ),
       ),
@@ -101,6 +107,38 @@ void main() {
     await tester.pumpAndSettle();
     return started;
   }
+
+
+  testWidgets('opening Screen 1 warms the engine the commit window will use', (
+    tester,
+  ) async {
+    // SCREEN 1 IS THE ONLY FREE TIME THERE IS. The commit window cannot warm
+    // its own engine: it speaks the instant it appears, and a clear preflight
+    // report takes a recents tap straight into it from initState. So the cold
+    // start has to be paid here, seconds before any tap exists. This is the
+    // same trick this screen already plays with the GPS fix, and the one
+    // onboarding plays with the phone lookup four taps early.
+    final announcer = _CountingAnnouncer();
+
+    await pumpHome(tester, announcer: announcer);
+
+    expect(announcer.warmUps, 1);
+  });
+
+  testWidgets('a running ride is never spoken over by a warm-up', (
+    tester,
+  ) async {
+    // TWO ENGINES MUST NEVER BE LIVE AT ONCE. That is the invariant the whole
+    // CommitAnnouncer class is built around, and the 21 Aug 2026 iPhone wedge
+    // is what it cost when it was broken. A rider who walks back to Screen 1
+    // mid-ride has the SERVICE engine announcing stations, so a warm-up here,
+    // silent or not, is a second engine touching the same audio path.
+    final announcer = _CountingAnnouncer();
+
+    await pumpHome(tester, announcer: announcer, rideRunning: true);
+
+    expect(announcer.warmUps, 0);
+  });
 
   testWidgets('first run says what the app does and offers one action', (
     tester,
@@ -787,4 +825,15 @@ void main() {
       expectAccentFill(tester);
     });
   });
+}
+
+/// Counts warm-ups and speaks nothing.
+class _CountingAnnouncer extends CommitAnnouncer {
+  int warmUps = 0;
+
+  @override
+  Future<void> warmUp() async => warmUps++;
+
+  @override
+  Future<bool> speak(String line, {required AppLanguage language}) async => true;
 }
