@@ -41,10 +41,21 @@ class InterruptedRide {
     required this.startedAt,
     required this.reachedIndex,
     this.startBatteryPct,
+    this.routeChainIds,
   });
 
   final String originId;
   final String destinationId;
+
+  /// Which way the rider chose to go, or null for the ordinary route.
+  ///
+  /// TWO IDS DO NOT NAME A ROUTE. Ghansoli to CSMT runs via Vashi or via
+  /// Thane, and the planner picks one on a two-station tiebreak, so a resume
+  /// planned from the endpoints alone can come back down the other corridor
+  /// and watch a chain the rider is not riding. Handed to
+  /// `JourneyPlanner.planAlong`, which falls back to the ordinary route rather
+  /// than throwing.
+  final List<String>? routeChainIds;
 
   /// When the RIDE began, not when it was resumed. Carried through a resume so
   /// the history row records the journey the rider actually took, and so a
@@ -121,6 +132,7 @@ InterruptedRide? interruptedRideFrom(
     startedAt: startedAt,
     startBatteryPct: persisted.startBatteryPct,
     reachedIndex: persisted.reachedIndex,
+    routeChainIds: persisted.routeChainIds,
   );
 }
 

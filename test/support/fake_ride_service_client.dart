@@ -33,11 +33,22 @@ class FakeRideServiceClient implements RideServiceClient {
     this.wakeLadderLive = false,
     this.windDownLive = false,
     this.alightStationId,
+    this.routeChainIds,
   });
 
   bool running;
   String? originId;
   String? destinationId;
+
+  /// The chain the rider's chosen route runs along, as the store would hold it
+  /// for a killed ride. Null is the ordinary route.
+  List<String>? routeChainIds;
+
+  /// What the last startRide was told the chosen route was. Recorded rather
+  /// than read off the source, because the bug this exists for is the value
+  /// being DROPPED at the isolate boundary, which is exactly where the pulse
+  /// interval was once silently lost.
+  List<String>? routeChainPassed;
   bool destinationReached;
 
   /// The history row's seed, which lives in the real store so a ride swiped out
@@ -143,6 +154,7 @@ class FakeRideServiceClient implements RideServiceClient {
     wakeLadderLive: wakeLadderLive,
     windDownLive: windDownLive,
     alightStationId: alightStationId,
+    routeChainIds: routeChainIds,
   );
 
   @override
@@ -186,8 +198,10 @@ class FakeRideServiceClient implements RideServiceClient {
     bool announceEveryStation = true,
     AppLanguage language = AppLanguage.english,
     bool routeAlreadySpoken = false,
+    List<String>? routeChainIds,
   }) async {
     commands.add('startRide:$originStationId->$destinationStationId');
+    routeChainPassed = routeChainIds;
     languagePassed = language;
     sarvamGreetingPassed = sarvamGreeting;
     // Recorded so a test can prove the rider's opt-out actually reaches the

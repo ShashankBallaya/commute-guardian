@@ -133,6 +133,72 @@ class JourneyPlanner {
     }
   }
 
+  /// The route the rider actually chose, found again from the ids a store
+  /// could hold.
+  ///
+  /// C7c, SECOND HALF. [planAlternatives] lets a rider pick the other
+  /// corridor; this is what makes the pick survive. The route is re-derived
+  /// from origin and destination on every resume and every iOS relaunch, so
+  /// without this a rider who chose Thane is handed Vashi after an OS kill and
+  /// is then woken against a chain she is not riding. That is the Prabhadevi
+  /// trap `344b1a5` closed, one level up: there the app was wrong about a
+  /// station, here it would be wrong about the whole corridor.
+  ///
+  /// IT SEARCHES RATHER THAN RECONSTRUCTS, and that is the design. A [Journey]
+  /// carries interchanges, platforms, spoken line names and walk crossings,
+  /// none of which is recoverable from a list of station ids. Rebuilding one
+  /// from a store would be a second, quieter planner that drifts from this
+  /// one. So the ids are a KEY, not a payload: they select among the answers
+  /// this planner gives today.
+  ///
+  /// THE CHAIN IS THE KEY BECAUSE IT IS EXACT. Interchange stations look like
+  /// a smaller key and are not a safe one: [planAlternatives] bans a LINE
+  /// rather than a change station, so two alternatives can change at the same
+  /// place and still be different rides.
+  ///
+  /// EVERY FAILURE FALLS BACK TO [plan], never to an exception. Station data
+  /// is regenerated from OSM and ships inside the app, so a stored chain can
+  /// outlive the network it was planned on. A resume that threw would cost the
+  /// rider the whole ride. The default route is wrong about the corridor and
+  /// right about the destination, which is the safe direction to be wrong in.
+  ///
+  /// [chainIds] null or empty is the ORDINARY ride, and always will be for a
+  /// rider who never opens a picker.
+  Journey planAlong({
+    required String originId,
+    required String destinationId,
+    required List<String>? chainIds,
+  }) {
+    if (chainIds == null || chainIds.isEmpty) {
+      return plan(originId: originId, destinationId: destinationId);
+    }
+    final List<Journey> routes;
+    try {
+      routes = planAlternatives(
+        originId: originId,
+        destinationId: destinationId,
+      );
+    } catch (_) {
+      // Refused or unplannable now. plan() throws the error the caller
+      // already handles, rather than a new one from in here.
+      return plan(originId: originId, destinationId: destinationId);
+    }
+    for (final route in routes) {
+      final ids = route.chain.map((s) => s.id).toList();
+      if (ids.length == chainIds.length) {
+        var same = true;
+        for (var i = 0; i < ids.length; i++) {
+          if (ids[i] != chainIds[i]) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return route;
+      }
+    }
+    return plan(originId: originId, destinationId: destinationId);
+  }
+
   /// Every genuinely different way to make this journey, BEST FIRST.
   ///
   /// C7c, and ADR 0004 is the argument. [plan] answers with one route and

@@ -783,6 +783,82 @@ void main() {
       );
     });
 
+    // C7c, SECOND HALF, AND IT IS THE HALF THAT BITES. Offering a choice is
+    // worth nothing if the choice does not survive. The route is re-derived
+    // from the two ids on every resume and every iOS relaunch, so a rider who
+    // picked Thane is handed Vashi after an OS kill, and is then woken against
+    // a chain she is not riding. Same trap `344b1a5` closed for Prabhadevi,
+    // and worse: there the app was wrong about one station, here it is wrong
+    // about the whole corridor.
+    group('a route the rider chose survives being re-derived', () {
+      test('THE STORED CHAIN WINS, not the planner default', () {
+        final planner = _planner();
+        final viaThane = planner
+            .planAlternatives(originId: 'ghansoli', destinationId: 'csmt')
+            .firstWhere((j) => j.chain.any((s) => s.id == 'thane'));
+
+        // What a resume has to work from: ids off a store, nothing else. A
+        // Journey cannot be rebuilt from ids alone (it carries interchanges,
+        // platforms, walk crossings), so this asks the PLANNER to hand back
+        // the alternative that matches, rather than reconstructing one.
+        final restored = planner.planAlong(
+          originId: 'ghansoli',
+          destinationId: 'csmt',
+          chainIds: viaThane.chain.map((s) => s.id).toList(),
+        );
+
+        expect(restored.chain.map((s) => s.id), viaThane.chain.map((s) => s.id));
+        // And it is NOT what plan() would have said on its own, or this test
+        // would pass with the bug still in place.
+        final byDefault = planner.plan(
+          originId: 'ghansoli',
+          destinationId: 'csmt',
+        );
+        expect(restored.chain.length, isNot(byDefault.chain.length));
+      });
+
+      test('NO STORED CHAIN IS THE ORDINARY RIDE, unchanged', () {
+        // Every ride before C7c has no stored chain, and every rider who
+        // never opens a picker still will not. This path must be plan().
+        final planner = _planner();
+
+        final restored = planner.planAlong(
+          originId: 'ghansoli',
+          destinationId: 'csmt',
+          chainIds: null,
+        );
+
+        expect(
+          restored.chain.map((s) => s.id),
+          planner.plan(originId: 'ghansoli', destinationId: 'csmt').chain.map(
+            (s) => s.id,
+          ),
+        );
+      });
+
+      test('A CHAIN THAT NO LONGER PLANS FALLS BACK, it does not throw', () {
+        // Station data is regenerated from OSM and ships with the app, so a
+        // stored chain can outlive the network it was planned on. A resume
+        // that threw here would cost the rider the ride; the default route is
+        // wrong about the corridor and right about the destination, which is
+        // the safe direction.
+        final planner = _planner();
+
+        final restored = planner.planAlong(
+          originId: 'ghansoli',
+          destinationId: 'csmt',
+          chainIds: const ['ghansoli', 'atlantis', 'csmt'],
+        );
+
+        expect(
+          restored.chain.map((s) => s.id),
+          planner.plan(originId: 'ghansoli', destinationId: 'csmt').chain.map(
+            (s) => s.id,
+          ),
+        );
+      });
+    });
+
     // THE TIEBREAK, defect A, and it is the one she reported. Ghansoli to CSMT
     // goes via Vashi; Ghansoli to Byculla, four stations further down the same
     // stretch, goes via Thane. The corridor flips on a two-station tiebreak and

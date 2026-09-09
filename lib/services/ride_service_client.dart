@@ -153,6 +153,7 @@ class PersistedRide {
   const PersistedRide({
     required this.originId,
     required this.destinationId,
+    this.routeChainIds,
     required this.destinationReached,
     this.reachedIndex = -1,
     this.atStation = false,
@@ -183,6 +184,11 @@ class PersistedRide {
 
   final String? originId;
   final String? destinationId;
+
+  /// The chain the rider's chosen route runs along, or null for the ordinary
+  /// route. See [routeChainKey]: it is a key handed to
+  /// `JourneyPlanner.planAlong`, not a route in itself.
+  final List<String>? routeChainIds;
 
   /// How far along the chain the ride has provably got, or -1 before the first
   /// station. Screen 4 draws itself from this after a process recreation, for
@@ -710,6 +716,9 @@ class RideServiceClient {
     destinationId: await FlutterForegroundTask.getData<String>(
       key: destinationIdKey,
     ),
+    routeChainIds: _chainFromStore(
+      await FlutterForegroundTask.getData<String>(key: routeChainKey),
+    ),
     destinationReached:
         await FlutterForegroundTask.getData<bool>(key: destinationReachedKey) ??
         false,
@@ -747,6 +756,18 @@ class RideServiceClient {
       await FlutterForegroundTask.getData<String>(key: alightStationKey),
     ),
   );
+
+  /// The stored chain, back as ids, or null when there is no chosen route.
+  ///
+  /// A STRING BECAUSE THE STORE HOLDS NO LISTS. `FlutterForegroundTask` keeps
+  /// String, int, bool and double, so the chain travels joined and comes back
+  /// split. Empty and missing both mean the ordinary route, which is the same
+  /// thing a rider who never opened a picker has.
+  static List<String>? _chainFromStore(String? joined) {
+    if (joined == null || joined.isEmpty) return null;
+    final ids = joined.split(',').where((id) => id.isNotEmpty).toList();
+    return ids.isEmpty ? null : ids;
+  }
 
   static DateTime? _dateFromMillis(int? millis) => millis == null || millis <= 0
       ? null
@@ -824,10 +845,22 @@ class RideServiceClient {
     // [routeSpokenKey]. Defaults FALSE so a caller that forgets it gets the
     // full welcome, which says too much rather than too little.
     bool routeAlreadySpoken = false,
+    // The chain the rider CHOSE, or null for the ordinary route. See
+    // [routeChainKey]: two ids do not name a route, so without this a resume
+    // comes back down the other corridor.
+    List<String>? routeChainIds,
   }) async {
     await FlutterForegroundTask.saveData(
       key: originIdKey,
       value: originStationId,
+    );
+    // WRITTEN EVERY START, including as an empty string, because a stale chain
+    // from the PREVIOUS ride is worse than none: it would select a corridor
+    // for a journey it was never planned for. Same rule the progress keys
+    // learned on 18 Aug 2026.
+    await FlutterForegroundTask.saveData(
+      key: routeChainKey,
+      value: routeChainIds == null ? '' : routeChainIds.join(','),
     );
     await FlutterForegroundTask.saveData(
       key: destinationIdKey,

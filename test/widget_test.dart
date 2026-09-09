@@ -1032,6 +1032,60 @@ void main() {
     expect(service.commands, isNot(contains('clearRideInFlight')));
   });
 
+  testWidgets('A RESUMED RIDE GOES BACK DOWN THE CORRIDOR SHE CHOSE', (
+    tester,
+  ) async {
+    // C7c, SECOND HALF, END TO END. The resume already refuses to replan the
+    // ENDPOINTS from where the phone is standing, which is the 9 Aug
+    // stale-origin bug. It still replanned the ROUTE BETWEEN them, and two ids
+    // do not name a route: Ghansoli to CSMT runs via Vashi or via Thane and
+    // the planner picks one on a two-station tiebreak. So a rider who chose
+    // Thane was resumed on Vashi and then watched against a chain she was not
+    // riding, which is the Prabhadevi trap one level up.
+    final service = FakeRideServiceClient(
+      running: false,
+      rideInFlight: true,
+      originId: 'ghansoli',
+      destinationId: 'csmt',
+      startedAt: DateTime.now().subtract(const Duration(minutes: 20)),
+      routeChainIds: const ['ghansoli', 'thane', 'csmt'],
+    );
+    _grantPermissions(tester);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          stationRepositoryProvider.overrideWith(
+            (ref) async => StationRepository.parse(
+              File(StationRepository.assetPath).readAsStringSync(),
+            ),
+          ),
+          fixAcquirerProvider.overrideWithValue(
+            () async => throw StateError('no GPS'),
+          ),
+          appDatabaseProvider.overrideWith((ref) {
+            final db = AppDatabase.inMemory();
+            ref.onDispose(db.close);
+            return db;
+          }),
+          onboardingSeenProvider.overrideWith((ref) async => true),
+          rideServiceClientProvider.overrideWithValue(service),
+        ],
+        child: const CommuteGuardianDebugApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('resume_ride_card')));
+    await tester.pumpAndSettle();
+
+    expect(service.commands, contains('startRide:ghansoli->csmt'));
+    // AND THE CORRIDOR CROSSED THE BOUNDARY WITH IT. Asserted on the value the
+    // service was handed, not on the source, because dropping it at the
+    // isolate edge is the failure this is about.
+    expect(service.routeChainPassed, const ['ghansoli', 'thane', 'csmt']);
+  });
+
   testWidgets('SCREEN 4 REFUSES A BACK PRESS WHILE THE RIDE IS RUNNING', (
     tester,
   ) async {

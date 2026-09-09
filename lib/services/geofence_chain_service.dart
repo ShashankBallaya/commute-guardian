@@ -382,6 +382,9 @@ class GeofenceChainService {
     // loud. Shortens the welcome so a rider is not told their route twice in
     // five seconds. False on every path without a window.
     bool routeAlreadySpoken = false,
+    // The chain the rider CHOSE, from the store like the ids beside it. Null
+    // is the ordinary route, and is what every ride before C7c has.
+    List<String>? routeChainIds,
   }) async {
     _logFile = await _createLogFile();
 
@@ -434,9 +437,17 @@ class GeofenceChainService {
     final repo = await StationRepository.load();
     final Journey journey;
     try {
-      journey = repo.planner.plan(
+      // ALONG THE CHOSEN CORRIDOR, not just between the two ids. Two ids do
+      // not name a route: Ghansoli to CSMT runs via Vashi or via Thane, and
+      // the planner picks one on a two-station tiebreak. This is the ride
+      // itself, so getting it wrong here means every announcement, the wake
+      // ladder and the corridor test all watch a chain the rider is not on.
+      // A chain that no longer plans falls back to the ordinary route rather
+      // than ending the ride: see [JourneyPlanner.planAlong].
+      journey = repo.planner.planAlong(
         originId: originId,
         destinationId: destinationId,
+        chainIds: routeChainIds,
       );
     } catch (error) {
       // The picker plans the same route before enabling Start, so this should be

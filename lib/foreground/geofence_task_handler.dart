@@ -23,6 +23,25 @@ void geofenceTaskStartCallback() {
 const originIdKey = 'origin_station_id';
 const destinationIdKey = 'destination_station_id';
 
+/// The chain the rider's CHOSEN route runs along, station ids in order, joined
+/// with commas.
+///
+/// C7c, second half. Two ids do not name a route: Ghansoli to CSMT goes via
+/// Vashi or via Thane, and the planner picks one on a two-station tiebreak.
+/// So a ride that stored only its endpoints came back down the OTHER corridor
+/// after an OS kill, and the wake ladder then watched a chain the rider was
+/// not on.
+///
+/// A KEY, NOT A PAYLOAD. A Journey carries interchanges, platforms and walk
+/// crossings that no list of ids can rebuild, so this is handed to
+/// `JourneyPlanner.planAlong`, which returns the alternative it matches. A
+/// chain that no longer plans falls back to the ordinary route rather than
+/// costing the rider the ride.
+///
+/// ABSENT IS THE ORDINARY RIDE, and always will be for a rider who never opens
+/// a picker.
+const routeChainKey = 'route_chain_ids';
+
 /// Debug bench flag: play the bundled Sarvam greeting clip at Start (Android
 /// only). Written by the debug screen's toggle, read once at service start.
 const sarvamGreetingKey = 'sarvam_greeting';
@@ -505,9 +524,21 @@ class GeofenceTaskHandler extends TaskHandler {
       key: rideStartedAtKey,
     );
 
+    // THE CORRIDOR THE RIDER CHOSE, read here beside the ids it belongs with.
+    // Split rather than stored as a list because the store holds no lists.
+    // Missing or empty is the ordinary route, which is what every ride before
+    // C7c has and what a rider who never opens a picker will always have.
+    final storedChain = await FlutterForegroundTask.getData<String>(
+      key: routeChainKey,
+    );
+    final routeChainIds = storedChain == null || storedChain.isEmpty
+        ? null
+        : storedChain.split(',').where((id) => id.isNotEmpty).toList();
+
     await _chain!.start(
       originId: originId,
       destinationId: destinationId,
+      routeChainIds: routeChainIds,
       rideStartedAt: startedAtMs == null || startedAtMs <= 0
           ? null
           : DateTime.fromMillisecondsSinceEpoch(startedAtMs),

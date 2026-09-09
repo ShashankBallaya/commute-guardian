@@ -19,6 +19,7 @@ import 'support/fake_ride_service_client.dart';
 /// keeping the decision pure: a jetsam is a state, not an event, and the state
 /// is two booleans and a timestamp.
 void main() {
+
   /// The store as the dead service left it: a ride in flight, no service.
   PersistedRide killed({
     String? originId = 'shahad',
@@ -31,6 +32,7 @@ void main() {
     bool destinationReached = false,
     int reachedIndex = 11,
     int? startBatteryPct = 74,
+    List<String>? routeChainIds,
   }) => PersistedRide(
     originId: originId,
     destinationId: destinationId,
@@ -38,8 +40,41 @@ void main() {
     reachedIndex: reachedIndex,
     startedAt: noStartedAt ? null : startedAt ?? DateTime(2026, 8, 16, 19, 30),
     startBatteryPct: startBatteryPct,
+    routeChainIds: routeChainIds,
     rideInFlight: rideInFlight,
   );
+
+  group('the route the rider chose', () {
+    test('A KILLED RIDE REMEMBERS WHICH WAY IT WAS GOING', () {
+      // C7c. Without this the corridor is re-derived from the two ids, so a
+      // rider who chose Thane is resumed on Vashi and woken against a chain
+      // she is not riding. The ids alone cannot say which way she went: that
+      // is the whole defect, and it is why the chain has to survive the kill
+      // beside them.
+      final ride = interruptedRideFrom(
+        killed(routeChainIds: const ['ghansoli', 'thane', 'csmt']),
+        serviceRunning: false,
+        now: DateTime(2026, 8, 16, 19, 45),
+      );
+
+      expect(ride, isNotNull);
+      expect(ride!.routeChainIds, const ['ghansoli', 'thane', 'csmt']);
+    });
+
+    test('A RIDE THAT NEVER CHOSE CARRIES NOTHING', () {
+      // Every ride before C7c, and every rider who never opens a picker. Null
+      // has to reach the planner as null, because that is what selects the
+      // ordinary route rather than a failed lookup.
+      final ride = interruptedRideFrom(
+        killed(),
+        serviceRunning: false,
+        now: DateTime(2026, 8, 16, 19, 45),
+      );
+
+      expect(ride!.routeChainIds, isNull);
+    });
+  });
+
 
   final now = DateTime(2026, 8, 16, 20, 15);
 

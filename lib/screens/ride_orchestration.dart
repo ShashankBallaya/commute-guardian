@@ -443,7 +443,15 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     if (repo == null) return const [];
     try {
       return repo.planner
-          .plan(originId: ride.originId, destinationId: ride.destinationId)
+          .planAlong(
+            originId: ride.originId,
+            destinationId: ride.destinationId,
+            // The corridor test asks how far the phone is from the RAIL the
+            // ride was planned along, so it has to be the rail she chose. On
+            // the wrong corridor the distance is the gap between two lines,
+            // which is how a rider still on her train gets told she is off it.
+            chainIds: ride.routeChainIds,
+          )
           .chain;
     } catch (_) {
       return const [];
@@ -658,6 +666,11 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       shareAnonymousUsage: pulseSettings.shareAnonymousUsage,
       announceEveryStation: pulseSettings.announceEveryStation,
       language: pulseSettings.language,
+      // THE CORRIDOR, not just the endpoints. This resume already refuses to
+      // replan the ids from where the phone is standing (the 9 Aug
+      // stale-origin bug); it replanned the route BETWEEN them until C7c, so a
+      // rider who chose Thane came back on Vashi.
+      routeChainIds: ride.routeChainIds,
     );
 
     if (started) {
@@ -834,7 +847,9 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // 29 Jul 2026. Removed 5 Aug: both routes plan from the same ids, so the
     // only thing it ever did was suggest a second source of truth for the
     // history row, which is exactly the shape of bug the store exists to end.
-    final journey = _planStored(originId, destinationId);
+    // THE CHOSEN CORRIDOR, or the history row counts the wrong stations: a
+    // via-Thane ride recorded as via-Vashi is a different number of stops.
+    final journey = _planStored(originId, destinationId, persisted.routeChainIds);
     if (journey == null) {
       onOrchestrationLog('History skipped: cannot replan the ride');
       await service.clearRideRecordSeed();
@@ -917,13 +932,18 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   }
 
   /// The journey the service is riding, replanned from the stored ids.
-  Journey? _planStored(String originId, String destinationId) {
+  Journey? _planStored(
+    String originId,
+    String destinationId,
+    List<String>? routeChainIds,
+  ) {
     final repo = ref.read(stationRepositoryProvider).valueOrNull;
     if (repo == null) return null;
     try {
-      return repo.planner.plan(
+      return repo.planner.planAlong(
         originId: originId,
         destinationId: destinationId,
+        chainIds: routeChainIds,
       );
     } catch (_) {
       return null;
