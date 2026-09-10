@@ -56,6 +56,18 @@ That is the lifecycle flush. The iOS service engine lives in the app process and
 gets `onInactive`; a headless Android service engine has no window and never
 does.
 
+**AND THE OPEN QUESTION THIS SECTION USED TO CARRY IS ANSWERED, so it is
+recorded here rather than dropped.** It asked whether iOS runs the foreground
+task handler in a genuinely separate isolate, because if iOS shared the UI's
+isolate then the reason ride events fire from the service at all, that the UI
+can die mid-ride while the ride goes on (30 Jul swipe bench), would be an
+Android guarantee only. **iOS DOES run it separately.** Read off the plugin
+source, `ios/Classes/FlutterForegroundTaskLifecycleListener.swift`: "Each time a
+task starts, a new FlutterEngine is created." So both things are true at once,
+and they do not conflict: the ride has its own isolate, AND that isolate still
+gets the lifecycle flush, because a second engine in the same process is still
+told when the app goes inactive. That is what Android has no equivalent of.
+
 **The fix, two parts.**
 
 - `Analytics.tickFor` gives the SERVICE isolate a 2 second tick instead of 30,
