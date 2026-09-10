@@ -767,17 +767,17 @@ void main() {
       );
       // The route the planner has always given stays FIRST. Nothing about
       // offering a choice changes what a rider who does not look gets.
-      expect(routes.first.chain.length, 38);
+      expect(routes.first.journey.chain.length, 38);
 
       // ACROSS THE TOP, CHANGING AT KOPAR, which is how m-Indicator lists it
       // (41 km via Kopar) and what the network data agrees with: the Vasai
       // line meets the Central trunk at Kopar, one stop before Dombivli.
       final acrossTheTop = routes.where(
-        (j) => j.interchanges.any((i) => i.stationId == 'kopar'),
+        (o) => o.journey.interchanges.any((i) => i.stationId == 'kopar'),
       );
       expect(acrossTheTop, isNotEmpty, reason: 'the MEMU is the whole point');
       expect(
-        acrossTheTop.first.chain.length,
+        acrossTheTop.first.journey.chain.length,
         lessThan(15),
         reason: 'ten stations against thirty-eight is why she wants it',
       );
@@ -795,7 +795,7 @@ void main() {
         final planner = _planner();
         final viaThane = planner
             .planAlternatives(originId: 'ghansoli', destinationId: 'csmt')
-            .firstWhere((j) => j.chain.any((s) => s.id == 'thane'));
+            .firstWhere((o) => o.journey.chain.any((s) => s.id == 'thane'));
 
         // What a resume has to work from: ids off a store, nothing else. A
         // Journey cannot be rebuilt from ids alone (it carries interchanges,
@@ -804,10 +804,10 @@ void main() {
         final restored = planner.planAlong(
           originId: 'ghansoli',
           destinationId: 'csmt',
-          routeChainIds: viaThane.chain.map((s) => s.id).toList(),
+          routeChainIds: viaThane.journey.chain.map((s) => s.id).toList(),
         );
 
-        expect(restored.chain.map((s) => s.id), viaThane.chain.map((s) => s.id));
+        expect(restored.chain.map((s) => s.id), viaThane.journey.chain.map((s) => s.id));
         // And it is NOT what plan() would have said on its own, or this test
         // would pass with the bug still in place. COMPARED BY IDS, never by
         // length: two corridors of equal length are exactly the case that
@@ -876,11 +876,11 @@ void main() {
       );
 
       // What she gets today, unchanged and still first.
-      expect(routes.first.chain.map((s) => s.id), contains('vashi'));
+      expect(routes.first.journey.chain.map((s) => s.id), contains('vashi'));
 
       // And the one she told us she actually takes.
       final viaThane = routes.where(
-        (j) => j.chain.any((s) => s.id == 'thane'),
+        (o) => o.journey.chain.any((s) => s.id == 'thane'),
       );
       expect(
         viaThane,
@@ -888,7 +888,7 @@ void main() {
         reason: 'her words: I can go to CST through Vashi and through Thane',
       );
       expect(
-        viaThane.first.chain.map((s) => s.id),
+        viaThane.first.journey.chain.map((s) => s.id),
         isNot(contains('vashi')),
         reason: 'a genuinely different corridor, not one ride relabelled',
       );

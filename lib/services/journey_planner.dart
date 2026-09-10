@@ -1,5 +1,6 @@
 import '../models/journey.dart';
 import '../models/line.dart';
+import '../models/route_option.dart';
 import '../models/station.dart';
 
 /// Plans a [Journey] between two stations over the real line network.
@@ -174,10 +175,13 @@ class JourneyPlanner {
     }
     final List<Journey> routes;
     try {
-      routes = planAlternatives(
-        originId: originId,
-        destinationId: destinationId,
-      );
+      routes = [
+        for (final option in planAlternatives(
+          originId: originId,
+          destinationId: destinationId,
+        ))
+          option.journey,
+      ];
     } catch (_) {
       // Refused or unplannable now. plan() throws the error the caller
       // already handles, rather than a new one from in here.
@@ -218,7 +222,7 @@ class JourneyPlanner {
   /// into its own low-frequency fallback and finds the MEMU. Two generators
   /// where one will do is a second thing to keep true.
   /// [Line.lowFrequency] is what the picker labels the result with.
-  List<Journey> planAlternatives({
+  List<RouteOption> planAlternatives({
     required String originId,
     required String destinationId,
   }) {
@@ -231,9 +235,8 @@ class JourneyPlanner {
     if (bestPlan == null) {
       throw ArgumentError('No route from $originId to $destinationId');
     }
-    final best = bestPlan.journey;
     final bestLines = bestPlan.lineIds;
-    final routes = <Journey>[best];
+    final routes = <RouteOption>[_option(bestPlan)];
 
     // ANOTHER CORRIDOR MEANS ANOTHER LINE, which is why the variations ban a
     // LINE rather than an interchange.
@@ -248,12 +251,32 @@ class JourneyPlanner {
     for (final lineId in bestLines) {
       final other = _planFor(originId, destinationId, bannedLineIds: {lineId});
       if (other == null) continue;
-      if (routes.any((known) => _sameRoute(known, other.journey))) continue;
-      routes.add(other.journey);
+      if (routes.any((known) => _sameRoute(known.journey, other.journey))) {
+        continue;
+      }
+      routes.add(_option(other));
     }
 
     return routes;
   }
+
+  /// Wraps one search result with the facts a rider chooses on.
+  ///
+  /// BOTH LABELS COME OUT OF THE SEARCH THAT FOUND THE ROUTE, never out of a
+  /// second pass over it. `lineIds` is already computed here and was being
+  /// dropped on the floor; the interchange stations are already resolved on the
+  /// journey. Nothing in here can disagree with the route it describes.
+  RouteOption _option(({Journey journey, Set<String> lineIds}) plan) =>
+      RouteOption(
+        journey: plan.journey,
+        via: [
+          for (final interchange in plan.journey.interchanges)
+            ?stationsById[interchange.stationId],
+        ],
+        lowFrequency: plan.lineIds.any(
+          (id) => linesById[id]?.lowFrequency ?? false,
+        ),
+      );
 
   /// Two routes a rider would call the same ride.
   ///

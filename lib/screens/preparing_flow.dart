@@ -12,6 +12,7 @@ import '../state/journey_providers.dart';
 import '../state/ride_providers.dart';
 import '../state/settings_providers.dart';
 import 'preparing_screen.dart';
+import 'route_picker_sheet.dart';
 
 /// Screen 3, wired: everything that has to be true before a rider pockets the
 /// phone, in order, ending in a ride or in the rider backing out.
@@ -178,9 +179,105 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
           volumeLow: _volumeLow,
           announcementsSilent: _announcementsSilent,
         )) {
-      setState(() => _stage = _Stage.committing);
-      unawaited(_runCommitWindow());
+      unawaited(_enterCommitWindow());
     }
+  }
+
+  /// THE ONE DOOR INTO THE COMMIT WINDOW, and it is one on purpose.
+  ///
+  /// Two places used to set [_Stage.committing] and start the window by hand:
+  /// [_settleIfClear] for the ordinary ride and the preflight screen's own
+  /// Start for a rider who pressed past a warning. C7c has to ask its question
+  /// on BOTH, and a gate that only covers the path you were looking at is this
+  /// project's most repeated bug. Adding a second copy of the ask was the
+  /// obvious way to write it and the wrong one.
+  Future<void> _enterCommitWindow() async {
+    final via = await _chooseRoute();
+    if (!mounted) return;
+    setState(() {
+      // Set WITH the stage it belongs to, so the window can never paint a
+      // corridor from the journey before it.
+      _viaLabel = via;
+      _stage = _Stage.committing;
+    });
+    unawaited(_runCommitWindow());
+  }
+
+  /// What the commit window prints under the destination, or null for a ride
+  /// with no change in it, which has no "which way" to answer.
+  String? _viaLabel;
+
+  /// C7c. Offers the corridors, and only when there is genuinely a choice.
+  ///
+  /// SILENT ON THE ORDINARY RIDE. Most journeys have exactly one route, and a
+  /// sheet that opened to say so would tax every rider for a question only some
+  /// of them have. Fewer than two options is not a choice.
+  ///
+  /// DISMISSAL IS A DECISION, NOT A DEAD END. Null comes back from the scrim,
+  /// the drag and the system back, and all three mean "the one you had": the
+  /// draft is left untouched, so `planAlong` falls through to `plan` and she
+  /// rides exactly what a rider who never looks rides. The alternative, a sheet
+  /// with no way out, would let a pocketed phone sit with no ride running and
+  /// nothing said, which is worse than the bug this fixes.
+  Future<String?> _chooseRoute() async {
+    // WAIT FOR THE STATIONS FIRST, the same rule [_locate] runs on and for a
+    // sharper reason. `routeOptionsProvider` answers `const []` while the
+    // repository future is unresolved, and this method reads an empty list as
+    // "no choice to offer". So on a cold launch where the rider taps a saved
+    // route before the asset has parsed, the picker would silently not appear
+    // and she would be given the default corridor with no question asked.
+    //
+    // The clear-report path never awaited it: only [_locate] did, and a report
+    // with a fix skips [_locate] entirely. Found by review, and the test suite
+    // was hiding it, because the harness resolved the repository by hand.
+    //
+    // AND IT CANNOT THROW ONTO THE RIDE PATH. The future carries the asset
+    // parse, so it can fail, and an error escaping here would take the whole
+    // flow down and leave the rider with no ride and no screen. A repository
+    // that will not parse has already cost her the journey by another route
+    // (`plannedJourneyProvider` reports it), so the only thing this can
+    // usefully do is stop asking about corridors.
+    try {
+      await ref.read(stationRepositoryProvider.future);
+    } catch (_) {
+      return null;
+    }
+    if (!mounted) return null;
+    final options = ref.read(routeOptionsProvider);
+    if (options.length < 2) {
+      return options.firstOrNull?.viaLabel;
+    }
+    final chosen = await showRoutePicker(
+      context: context,
+      destinationName: widget.destinationName,
+      options: options,
+      chosenChainIds: ref.read(journeyDraftProvider).routeChainIds,
+    );
+    if (!mounted) return null;
+    if (chosen != null) {
+      ref.read(journeyDraftProvider.notifier)
+        ..setChosenRoute(chosen)
+        // AND THE ORIGIN IS HERS NOW TOO, which is not tidiness but the fix
+        // for a silent revert. The window runs for three more seconds with the
+        // origin still `OriginSource.defaulted`, and a streamed fix in that gap
+        // calls `defaultOriginTo`, which builds a fresh draft and drops
+        // `routeChainIds` BY OMITTING IT. The ride would then begin on the
+        // ordinary corridor while this screen still printed the one she chose.
+        //
+        // `confirmOrigin` is the right tool rather than a new one: it exists to
+        // mark an origin as the rider's own without disturbing the rest of the
+        // draft, and it was built carrying the chosen chain through for exactly
+        // this reason. Choosing a corridor IS choosing where you are standing.
+        ..confirmOrigin();
+    }
+    // READ BACK RATHER THAN ASSUMED. On a dismissal `chosen` is null and the
+    // draft still holds whatever it held, so asking the draft is the only way
+    // to name the route she is actually about to ride.
+    final riding = ref.read(journeyDraftProvider).routeChainIds;
+    final ridden = riding == null
+        ? options.first
+        : options.where((o) => o.isChain(riding)).firstOrNull ?? options.first;
+    return ridden.viaLabel;
   }
 
   /// The window: speak the route, run the ring, and commit if nobody objects.
@@ -460,16 +557,14 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
         // past a volume warning has confirmed the WARNING, not the
         // destination, and the mis-tap this window catches is the destination.
         // One exit from this flow starts a ride, and it is the window.
-        onStart: () {
-          setState(() => _stage = _Stage.committing);
-          unawaited(_runCommitWindow());
-        },
+        onStart: () => unawaited(_enterCommitWindow()),
         onRecheck: () => unawaited(_recheckAudio()),
         recheckState: _recheck,
       ),
       _Stage.committing => StartingScreen(
         originName: _originName,
         destinationName: destination,
+        viaLabel: _viaLabel,
         remaining: _window,
         onCancel: _cancelCommit,
       ),
@@ -620,7 +715,10 @@ class PreparingGate {
     // spends that budget twice on a phone where the channel is slow to answer,
     // for two questions that have nothing to say to each other. The recheck
     // path has always put them in one wait; 8 Sep 2026 this one caught up.
-    final volumes = await Future.wait([client.alarmVolume(), client.mediaVolume()]);
+    final volumes = await Future.wait([
+      client.alarmVolume(),
+      client.mediaVolume(),
+    ]);
     return PreparingReport(
       hasFix: hasFix,
       originName: hasFix ? fix.stationName : null,

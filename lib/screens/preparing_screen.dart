@@ -495,10 +495,26 @@ class StartingScreen extends StatelessWidget {
     required this.destinationName,
     required this.remaining,
     required this.onCancel,
+    this.viaLabel,
   });
 
   final String? originName;
   final String destinationName;
+
+  /// "via Thane", or null for a ride with no change in it.
+  ///
+  /// C7c. THE WINDOW NAMES THE CORRIDOR, and it does so on EVERY multi-change
+  /// ride rather than only on the ones that had a choice. A rider whose journey
+  /// has one route still deserves to know which way she is going; the corridor
+  /// is where her changes are, and the changes are half of what this app
+  /// promised to wake her for.
+  ///
+  /// IT IS TEXT, NOT A CONTROL, and that is the owner's decision. The choice
+  /// belongs to the step before this one, where there is time to read it. A
+  /// tappable row here would put a second decision inside three seconds, and
+  /// three seconds is why the choice was moved out of this screen in the first
+  /// place.
+  final String? viaLabel;
 
   /// Runs 1.0 to 0.0 over the window. Owned by the flow, not by this widget,
   /// so the thing that commits the ride and the thing the rider watches are
@@ -538,6 +554,30 @@ class StartingScreen extends StatelessWidget {
               color: Palette.textDim(0.6),
             ),
           ),
+          // ABOVE THE SENTENCE IT QUALIFIES WOULD BE WRONG. This is the quiet
+          // confirmation of a decision already taken, not a new instruction, so
+          // it sits last and dim. A rider who wants it will find it; a rider
+          // watching the ring will not be pulled off it.
+          if (viaLabel case final via?) ...[
+            const SizedBox(height: 14),
+            Text(
+              via,
+              key: const Key('starting_via'),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: TypeScale.caption,
+                // 0.48 against THE SCAFFOLD GROUND this sits on (#0F1722) is
+                // 4.92:1. At the 0.45 it started on it was 4.47:1, under the
+                // 4.5:1 floor for text this size. Naming the surface matters:
+                // the same ink over a card fill measures differently.
+                //
+                // No letterSpacing: `TypeScale` reserves tracking for its two
+                // large sizes, and a hand-set value here would be a fourth
+                // opinion about it.
+                color: Palette.textDim(0.48),
+              ),
+            ),
+          ],
         ],
       ),
       bottom: _PlainButton(

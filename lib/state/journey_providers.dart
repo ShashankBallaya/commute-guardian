@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/app_database.dart';
 import '../data/station_repository.dart';
 import '../models/journey.dart';
+import '../models/route_option.dart';
 import '../models/station.dart';
 import '../services/journey_suggestion.dart';
 import 'ride_providers.dart';
@@ -253,6 +254,65 @@ final plannedJourneyProvider = Provider<PlannedJourney>((ref) {
           ? '${error.message}'
           : 'Cannot plan this ride.',
     );
+  }
+});
+
+/// Every genuinely different way to make the drafted journey, best first.
+///
+/// C7c, THE PICKER'S SOURCE. ADR 0004: the planner stops being the thing that
+/// decides and becomes the thing that enumerates.
+///
+/// A PLAIN Provider, like [plannedJourneyProvider] and for the same reason:
+/// it is a pure function of the draft and the station data, with nothing to
+/// persist and nothing process death could lose.
+///
+/// EMPTY ON EVERY FAILURE, never an error state. A rider whose journey cannot
+/// be enumerated still has a plan (that is [plannedJourneyProvider]'s job, and
+/// it reports its own error), so the only thing this can usefully say is "no
+/// choice to offer", which is also what it says for the ordinary single-route
+/// ride. One caller, one meaning, no branch that a picker has to render.
+///
+/// HOW OFTEN THIS FIRES, MEASURED 10 SEP 2026 rather than guessed, over 809
+/// sampled origin-destination pairs across the whole network:
+///
+///     1 route    395 pairs   49 %   the picker never appears
+///     2 routes   322 pairs   40 %
+///     3 routes    90 pairs   11 %
+///     4 routes     2 pairs    0.2 %
+///
+/// TWO THINGS FALL OUT OF THAT TABLE. **ADR 0004's cap of six is unreachable**,
+/// so it is deliberately not implemented: the worst pair on the whole network
+/// is Vasai Road to Seawoods at four, and a cap that can never bind is a line
+/// of code that can only ever be wrong later. The ADR called it "not a
+/// principle, just a number that matches the reference", and the reference was
+/// m-Indicator rather than our own planner.
+///
+/// And **the picker fires on about half of all journeys**, which is the number
+/// to watch once riders have it. A rider's own commute is one pair: either she
+/// is never asked, or she is asked every single ride, twice a day. If that
+/// second group complains, the fix is remembering her choice per pair, not
+/// moving the question back inside the three second window.
+///
+/// COST: about 200 ms in the worst case measured for ADR 0004, on a screen
+/// that appears once per ride. Computed on demand, never shipped as a table:
+/// a route table would be a second source of truth beside the station JSON
+/// that `tool/build_stations.py` generates from OSM, and the two would drift
+/// the first time a station was renamed.
+final routeOptionsProvider = Provider<List<RouteOption>>((ref) {
+  final repo = ref.watch(stationRepositoryProvider).valueOrNull;
+  final draft = ref.watch(journeyDraftProvider);
+  final originId = draft.originId;
+  final destinationId = draft.destinationId;
+  if (repo == null || originId == null || destinationId == null) {
+    return const [];
+  }
+  try {
+    return repo.planner.planAlternatives(
+      originId: originId,
+      destinationId: destinationId,
+    );
+  } catch (_) {
+    return const [];
   }
 });
 

@@ -12,11 +12,13 @@ import 'package:commute_guardian/screens/oem_guidance_screen.dart';
 import 'package:commute_guardian/services/journey_suggestion.dart';
 import 'package:commute_guardian/services/oem_guidance.dart';
 import 'package:commute_guardian/screens/preparing_screen.dart';
+import 'package:commute_guardian/screens/route_picker_sheet.dart';
 import 'package:commute_guardian/screens/settings_screen.dart';
 import 'package:commute_guardian/screens/travel_mode_screen.dart';
 import 'package:commute_guardian/screens/wake_alert_screen.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
 import 'package:commute_guardian/state/ride_providers.dart';
+import 'package:commute_guardian/theme/palette.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -289,11 +291,11 @@ void main() {
       'travel mode, ${at.key}',
       () => MaterialApp(
         home: TravelModeScreen(
-        wakeEnabled: true,
-        onWakeEnabled: _ignore,
-        crowdMode: false,
-        pulseIntervalSeconds: 180,
-        onCrowdMode: _ignore,
+          wakeEnabled: true,
+          onWakeEnabled: _ignore,
+          crowdMode: false,
+          pulseIntervalSeconds: 180,
+          onCrowdMode: _ignore,
 
           journey: journey,
           reachedIndex: at.value,
@@ -407,6 +409,46 @@ void main() {
         onBack: () {},
         onOpenSetting: () async => null,
         onAcknowledge: () {},
+      ),
+    ),
+  );
+
+  // ------------------------------------------------------- Screen 3, C7c
+
+  // THE WORST CASE THE PICKER CAN EVER SHOW, and it is real rather than
+  // invented: Vasai Road to Kalyan is the ADR 0004 journey that produces the
+  // longest list, and its cards carry the extra frequency word as well.
+  //
+  // The commit window's own via line goes through here too. Both were built on
+  // 10 Sep 2026, and this suite exists because two fold bugs shipped from
+  // screens that skipped it.
+  atEverySize(
+    'route picker, the longest list',
+    () => wrap(
+      Scaffold(
+        backgroundColor: Palette.ground,
+        body: RoutePickerSheet(
+          destinationName: 'Kalyan',
+          options: StationRepository.parse(stationsJson).planner
+              .planAlternatives(
+                originId: 'vasai_road',
+                destinationId: 'kalyan',
+              ),
+          chosenChainIds: null,
+        ),
+      ),
+    ),
+  );
+
+  atEverySize(
+    'commit window, naming a long corridor',
+    () => wrap(
+      StartingScreen(
+        originName: 'Chhatrapati Shivaji Maharaj Terminus',
+        destinationName: 'Kalyan',
+        viaLabel: 'via Dadar and Thane',
+        remaining: const AlwaysStoppedAnimation(1),
+        onCancel: () {},
       ),
     ),
   );

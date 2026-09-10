@@ -43,16 +43,16 @@ void main() {
       final c = makeContainer();
       final viaThane = repo.planner
           .planAlternatives(originId: 'ghansoli', destinationId: 'csmt')
-          .firstWhere((j) => j.chain.any((s) => s.id == 'thane'));
+          .firstWhere((o) => o.journey.chain.any((s) => s.id == 'thane'));
       final draft = c.read(journeyDraftProvider.notifier);
 
       draft.setOrigin('ghansoli');
       draft.setDestination('csmt');
-      draft.setChosenRoute(viaThane.chain.map((s) => s.id).toList());
+      draft.setChosenRoute(viaThane.journey.chain.map((s) => s.id).toList());
 
       expect(
         c.read(plannedJourneyProvider).journey!.chain.map((s) => s.id),
-        viaThane.chain.map((s) => s.id),
+        viaThane.journey.chain.map((s) => s.id),
       );
     });
 
@@ -66,17 +66,17 @@ void main() {
       final c = makeContainer();
       final viaThane = repo.planner
           .planAlternatives(originId: 'ghansoli', destinationId: 'csmt')
-          .firstWhere((j) => j.chain.any((s) => s.id == 'thane'));
+          .firstWhere((o) => o.journey.chain.any((s) => s.id == 'thane'));
       final draft = c.read(journeyDraftProvider.notifier);
       draft.setOrigin('ghansoli');
       draft.setDestination('csmt');
-      draft.setChosenRoute(viaThane.chain.map((s) => s.id).toList());
+      draft.setChosenRoute(viaThane.journey.chain.map((s) => s.id).toList());
 
       draft.confirmOrigin();
 
       expect(
         c.read(journeyDraftProvider).routeChainIds,
-        viaThane.chain.map((s) => s.id).toList(),
+        viaThane.journey.chain.map((s) => s.id).toList(),
       );
     });
 
@@ -110,11 +110,11 @@ void main() {
       final c = makeContainer();
       final viaThane = repo.planner
           .planAlternatives(originId: 'ghansoli', destinationId: 'csmt')
-          .firstWhere((j) => j.chain.any((s) => s.id == 'thane'));
+          .firstWhere((o) => o.journey.chain.any((s) => s.id == 'thane'));
       final draft = c.read(journeyDraftProvider.notifier);
       draft.setOrigin('ghansoli');
       draft.setDestination('csmt');
-      draft.setChosenRoute(viaThane.chain.map((s) => s.id).toList());
+      draft.setChosenRoute(viaThane.journey.chain.map((s) => s.id).toList());
 
       draft.setDestination('byculla');
 
