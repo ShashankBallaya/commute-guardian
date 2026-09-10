@@ -92,6 +92,31 @@ void main() {
     );
   });
 
+  test('AND THE ROW SAYS THE APP NAME, not the package name', () {
+    // Seen on the 3T on 10 Sep 2026 while checking the icon: the notification
+    // read "commute_guardian". That is Flutter's scaffold default for
+    // `android:label`, never chosen by anybody, and it had been there since the
+    // project was created. It is not only the notification: the same string is
+    // the launcher name, the app-info screen and the battery-usage list.
+    //
+    // iOS has been right the whole time (`CFBundleDisplayName` is "Commute
+    // Guardian"), which is why nobody caught it: the two platforms disagreed
+    // and only one of them was ever read.
+    expect(manifest, contains('android:label="Commute Guardian"'));
+    expect(
+      manifest.contains('android:label="commute_guardian"'),
+      isFalse,
+      reason: 'the package name is not a product name',
+    );
+
+    final plist = File('ios/Runner/Info.plist').readAsStringSync();
+    expect(
+      plist,
+      contains('<string>Commute Guardian</string>'),
+      reason: 'and the two platforms must not drift apart again',
+    );
+  });
+
   test('the generator is the only author, like every other icon', () {
     // Same rule as the app icon and the station JSON: hand-editing one of five
     // density files is a difference nobody will ever find.
