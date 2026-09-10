@@ -466,6 +466,58 @@ void main() {
     expect(outcome, isTrue);
   });
 
+  test('THE PICK CROSSES THE ISOLATE BOUNDARY, or a kill loses her corridor', () {
+    // HIS QUESTION, 10 SEP 2026: "I am on a train from Ghansoli to CSMT and I
+    // interchange at Sanpada. What if the app is killed, does it recover the
+    // path the user chose?"
+    //
+    // THE LOOP HAS THREE LINKS and each is proved somewhere different:
+    //
+    //  1. sheet -> draft         `A PICK IS WRITTEN TO THE DRAFT` above, which
+    //                            drives the real PreparingFlow.
+    //  2. draft -> service store THIS TEST. `start()` must hand the draft's
+    //                            chain to `startRide`, which persists it under
+    //                            `routeChainKey`; the store outlives the
+    //                            process, the draft does not.
+    //  3. store -> resumed ride  `A RESUMED RIDE GOES BACK DOWN THE CORRIDOR
+    //                            SHE CHOSE` in widget_test.dart, asserted on
+    //                            `routeChainPassed`.
+    //
+    // LINK 2 IS READ FROM THE SOURCE, and the reason is worth recording. The
+    // whole path needs `prepareAndStart`, which runs `PreparingGate.check`
+    // against `AudioSession` and is fired UNAWAITED, so in a widget test it
+    // returns to Screen 1 with any failure swallowed. No test in this repo
+    // drives it, and building the harness for one is a bigger job than this
+    // guard. Written down rather than left as a gap.
+    final source = File('lib/screens/ride_orchestration.dart')
+        .readAsStringSync()
+        .replaceAll(RegExp(r'/\*.*?\*/', dotAll: true), '')
+        .split('\n')
+        .map((line) {
+          final comment = line.indexOf('//');
+          return comment == -1 ? line : line.substring(0, comment);
+        })
+        .join('\n');
+
+    expect(
+      source,
+      contains('routeChainIds: ref.read(journeyDraftProvider).routeChainIds,'),
+      reason:
+          'start() must read the corridor off the draft the picker wrote. '
+          'Without this line the store holds no chain and C7c only ever '
+          'round-trips something nothing wrote.',
+    );
+    final handedOver = source.indexOf(
+      'routeChainIds: ref.read(journeyDraftProvider).routeChainIds,',
+    );
+    final startRide = source.indexOf('service.startRide(');
+    expect(
+      handedOver,
+      greaterThan(startRide),
+      reason: 'it has to be an argument to startRide, not a stray read',
+    );
+  });
+
   group('the wiring itself, because a helper nobody calls is not a feature', () {
     String source(String path) => File(path)
         .readAsStringSync()
