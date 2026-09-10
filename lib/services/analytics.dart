@@ -143,7 +143,28 @@ class Analytics {
   /// repository is public. Empty in every checkout, and empty means off.
   static const appKey = String.fromEnvironment('APTABASE_APP_KEY');
 
-  static bool get isConfigured => appKey.isNotEmpty;
+  /// Whether there is a key we can actually send to.
+  ///
+  /// SHAPE-CHECKED, NOT JUST NON-EMPTY, and the Sentry DSN is why: a secret
+  /// pasted as a whole JSON line once shipped a white screen to a build nobody
+  /// could use. The package asserts this same pattern, and an `assert` is
+  /// stripped from the release build that ships, where the check that remains
+  /// leaves `_appKey` unassigned and every send throws a
+  /// `LateInitializationError` into a catch block that swallows it.
+  ///
+  /// So a mistyped key used to read as CONFIGURED and behave as broken. Now it
+  /// reads as absent, which is a state the rest of this file already handles,
+  /// and which stops [awaitQueueDrain] holding a dying isolate open for a
+  /// queue that nothing was ever going to drain.
+  ///
+  /// `SH` is not accepted: a self-hosted key needs an `InitOptions.host` we do
+  /// not pass, so the package would refuse it too.
+  static bool get isConfigured {
+    final parts = appKey.split('-');
+    return parts.length == 3 &&
+        parts.every((part) => part.isNotEmpty) &&
+        const {'EU', 'US', 'DEV'}.contains(parts[1]);
+  }
 
   /// True only when there is a key to send to AND the rider has not opted out.
   bool get isActive => (isConfigured || _forceConfigured) && enabled;
@@ -189,15 +210,72 @@ class Analytics {
   }) {
     if (!isConfigured || !enabled || _started) return Future.value();
     _started = true;
+    final queue = IsolateEventQueue(isolate.name);
+    pendingQueue = queue;
     // Held so events queued before init finishes still go out, and so a hung
     // init cannot leave them waiting forever.
     _ready = Aptabase.init(
       appKey,
-      const InitOptions(),
-      IsolateEventQueue(isolate.name),
+      InitOptions(tickDuration: tickFor(isolate)),
+      queue,
     ).timeout(startupTimeout).catchError((Object _) {});
     return _ready!;
   }
+
+  /// How often the SDK looks for queued events to send. THE CANONICAL TELLING
+  /// OF THE 10 SEP 2026 BUG: everything else about it cites this.
+  ///
+  /// THE PACKAGE'S 30 SECONDS IS WRONG FOR THE SERVICE ISOLATE, and his own
+  /// dashboard is what proved it: Android rides showed `ride_started` and no
+  /// `ride_ended`, and the missing ones appeared only when he started the NEXT
+  /// ride.
+  ///
+  /// `Aptabase.trackEvent` does not send. It queues, and the queue is flushed
+  /// by exactly three things: once inside `Aptabase.init`, an
+  /// `AppLifecycleListener.onInactive` a headless service isolate never
+  /// receives, and this timer. `ride_started` is queued at the top of a ride
+  /// and the timer flushes it somewhere on the train. **`ride_ended` is queued
+  /// in the isolate's dying seconds**, in `GeofenceChainService.stop()`, with
+  /// only the farewell and the teardown between it and
+  /// `FlutterForegroundTask.stopService()`. At 30 seconds it almost never got
+  /// out, and survived only because the next ride's init found it on disk.
+  ///
+  /// WHY IT WAS WORSE THAN A MISSING ROW: `ride_started` with no `ride_ended`
+  /// is the exact signature [RideOutcome.interrupted] reads as an OS kill.
+  ///
+  /// TWO SECONDS is chosen against the teardown, not against the network: the
+  /// farewell alone is 2 to 3 seconds, so the tick lands inside the window the
+  /// old default missed.
+  ///
+  /// WHAT IT COSTS, STATED HONESTLY BECAUSE IT HAS NOT BEEN MEASURED. This
+  /// timer runs for the whole ride, not just the teardown, so an hour's ride
+  /// pays about 1,800 wakeups instead of 120. Each one that finds an empty
+  /// queue reads an in-memory map and returns. The desk reasoning is that this
+  /// is nothing beside a ride that holds GPS continuously, where 18 Aug 2026
+  /// measured two thirds of our whole draw as the location provider. THAT IS
+  /// REASONING, NOT A MEASUREMENT. The instrument that would settle it is the
+  /// same one that produced the 6.7 percent per hour figure, and the next
+  /// battery bench should read this rather than assume it.
+  ///
+  /// THE UI ISOLATE KEEPS THE 30, deliberately. Its one ride event is
+  /// [trackRideInterrupted], and the UI both gets the lifecycle flush and
+  /// recovers its queue at every app open, which is far more often than a
+  /// ride. A 2 second timer for the life of the foreground app buys it nothing.
+  static Duration tickFor(AnalyticsIsolate isolate) => switch (isolate) {
+    AnalyticsIsolate.service => const Duration(seconds: 2),
+    AnalyticsIsolate.ui => const Duration(seconds: 30),
+  };
+
+  /// The queue this isolate's SDK is sending from.
+  ///
+  /// REAL STATE ON THE REAL PATH, written by [init], and NOT a test seam
+  /// despite the annotation. [awaitQueueDrain] reads it to tell when the SDK
+  /// has finished; the annotation is here only because a test also has to be
+  /// able to stand one in, and there is no way to say that in Dart without
+  /// making the field reachable. It is deliberately not cleared when a ride
+  /// ends: the queue outlives any one ride, which is the whole point of it.
+  @visibleForTesting
+  static IsolateEventQueue? pendingQueue;
 
   /// How long an event will wait for a slow startup before giving up on
   /// itself. Bounded because the alternative is a queue of pending sends
@@ -251,6 +329,64 @@ class Analytics {
     wakeArmed: false,
     wakeAnswered: false,
   );
+
+  /// Waits, once, for a queued ride event to be written AND then sent, and
+  /// gives up rather than holding a dying isolate open.
+  ///
+  /// THE BELT TO [tickFor]'s BRACES. A timer is a probability, not a
+  /// guarantee: a slow phone can still outrun a 2 second tick, or the tick can
+  /// arrive while the SDK is already mid-send. The event this protects is the
+  /// one that says whether the alarm worked.
+  ///
+  /// NOTE WHAT IT CANNOT DO. Nothing here triggers a send. `Aptabase` exposes
+  /// no flush, so this waits for the SDK's own timer to drain the queue we
+  /// gave it. That is why it is named for waiting and not for flushing.
+  ///
+  /// ONE BUDGET, NOT TWO. [queued] is the future from [trackRideEnded], which
+  /// only writes the event to disk; it is awaited here rather than dropped,
+  /// because dropping it raced that write against the isolate's death. Both
+  /// the write and the drain come out of [limit] together, so the caller's
+  /// worst case is [limit] and not twice it. A first draft gave each its own
+  /// [limit] and quietly doubled the teardown.
+  ///
+  /// ON TIMEOUT the event is still on disk and the next ride's `Aptabase.init`
+  /// sends it, which is exactly the behaviour this replaced. The worst case
+  /// here is the old bug, never something worse.
+  ///
+  /// Returns at once when the rider has opted out, when no usable key is
+  /// compiled in, or when the queue is already empty, which is the ordinary
+  /// case once the tick is 2 seconds.
+  Future<void> awaitQueueDrain({
+    required Future<void> queued,
+    Duration limit = drainLimit,
+  }) async {
+    if (!isActive) return;
+    final giveUpAt = DateTime.now().add(limit);
+    try {
+      await queued.timeout(limit, onTimeout: () {});
+      final queue = pendingQueue;
+      if (queue == null) return;
+      while (true) {
+        if ((await queue.getItems(1)).isEmpty) return;
+        if (!DateTime.now().isBefore(giveUpAt)) return;
+        await Future<void>.delayed(pollInterval);
+      }
+    } catch (_) {
+      // Same rule as [_send]. Counting a ride may not endanger ending one.
+    }
+  }
+
+  /// The whole budget [awaitQueueDrain] may spend, disk write included.
+  ///
+  /// Three seconds against a farewell already allowed eight. It is spent in
+  /// full only when the send is failing, which is the case where it buys
+  /// nothing, and the case where the event was going to wait for the next ride
+  /// anyway.
+  static const drainLimit = Duration(seconds: 3);
+
+  /// How often [awaitQueueDrain] re-reads the queue. An in-memory map read, so
+  /// the cost is the wakeup and not the work.
+  static const pollInterval = Duration(milliseconds: 200);
 
   /// Sends one event, and CANNOT FAIL INTO THE RIDE.
   ///

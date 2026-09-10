@@ -27,26 +27,63 @@ The project has five pre-committed numbers from the locked monetization design:
 | D30 retention 40 percent | 3 months | **NOTHING. Not measurable.** |
 | Kill floor: under 50 weekly active OR D30 under 20 percent | 6 months | half of it is not measurable |
 
-### A ride_ended is DELAYED, never lost, and the flush trigger is not ours
+### A ride_ended used to be DELAYED by a whole ride. Fixed 10 Sep 2026
 
-`trackRideEnded` fires unawaited at the top of `GeofenceChainService.stop`, before
-the teardown, so a slow endpoint can never hold up the end of a ride. The SDK then
-transmits on a 30 second timer, on `init`, and on `AppLifecycleListener.onInactive`.
-The service isolate is usually gone before its timer fires, so the event waits on
-disk.
+**THIS SECTION USED TO DESCRIBE THE BUG AS THE DESIGN.** It said a delayed
+`ride_ended` was fine because nothing is lost. Nothing was lost, and it was
+still not fine.
 
-Nothing is lost by that: events are persisted before sending and deleted only after
-a send the SDK accepts. Observed on iOS 10 Aug 2026, where a bench ride's
-`ride_ended` appeared the moment the app went into the app switcher, which is the
-lifecycle flush.
+**What was happening.** `Aptabase.trackEvent` does not send. It queues, and the
+queue is flushed by exactly three things: once inside `Aptabase.init`, on
+`AppLifecycleListener.onInactive`, and on a timer whose package default is 30
+seconds. `ride_started` is queued at the top of a ride, so the timer flushes it
+somewhere on the train. `ride_ended` is queued in `GeofenceChainService.stop()`,
+seconds before the service isolate is destroyed, so the timer never came round
+again. The event sat on disk until the NEXT ride's `init` found it.
 
-**OPEN QUESTION, and it is not about analytics.** Whether iOS runs the foreground
-task handler in a genuinely separate isolate decides whether that lifecycle flush
-could have sent a SERVICE queue's event at all. The hint is that it did. If iOS
-shares the isolate, then the reason ride events fire from the service at all, that
-the UI can die mid-ride while the ride goes on (30 Jul swipe bench), is an Android
-guarantee only. Worth settling before the beta, and it is a `flutter_foreground_task`
-question rather than an Aptabase one.
+**How it was found.** Off the Aptabase dashboard, 10 Sep 2026: Android rides
+showed `ride_started` and no `ride_ended`. Confirmed from the device, not from
+the desk. Starting another ride made the missing one appear.
+
+**WHY IT MATTERED MORE THAN A LATE ROW.** `ride_started` with no `ride_ended` is
+the exact signature `RideOutcome.interrupted` reads as an OS kill. Every healthy
+Android ride was manufacturing it. Any reading of the 10 to 18 Aug orphans, and
+of wake success itself, is confounded by this for Android.
+
+**Why iOS looked fine, and it was written here on 10 Aug and not read.** A bench
+ride's `ride_ended` appeared the moment the app went into the app switcher.
+That is the lifecycle flush. The iOS service engine lives in the app process and
+gets `onInactive`; a headless Android service engine has no window and never
+does.
+
+**The fix, two parts.**
+
+- `Analytics.tickFor` gives the SERVICE isolate a 2 second tick instead of 30,
+  chosen against the teardown rather than the network: the farewell alone is 2
+  to 3 seconds. The UI isolate keeps 30, because it gets the lifecycle flush and
+  re-sends at every app open.
+- `Analytics.awaitQueueDrain` waits at the bottom of `stop()` for the event to
+  be written and then sent, on ONE budget of `Analytics.drainLimit`, 3 seconds,
+  covering both. It triggers nothing: the package exposes no flush, so this
+  waits for the SDK's own timer.
+
+**On timeout, the old behaviour.** The event is on disk and the next ride sends
+it. The worst case of the fix is the bug it replaced.
+
+**KNOWN AND LEFT OPEN.** `_send` awaits `_ready`, which carries `startupTimeout`
+(10 s), longer than the 3 s budget. A ride ended within seconds of starting, on
+a phone where `Aptabase.init` is slow, can still lose the event outright. Judged
+not worth closing: that ride is a mis-tap, the commit window exists to stop
+those becoming rides, and it says nothing about wake success. Closing it means
+either a 10 second wait in a dying process, which is worse than the bug, or
+cutting `startupTimeout`, which costs real coverage.
+
+**NOT MEASURED.** The 2 second timer runs for the whole ride, so an hour costs
+about 1,800 wakeups instead of 120. Each one that finds an empty queue reads an
+in-memory map. The desk reasoning is that this is nothing beside a ride holding
+GPS, where 18 Aug measured two thirds of our draw as the location provider.
+**That is reasoning. The next battery bench should read it rather than assume
+it.**
 
 ### DEBUG AND RELEASE ARE TWO SEPARATE DATASETS. Read the bars from RELEASE
 
@@ -193,6 +230,9 @@ clone and every test gets.
 - **Network**: three small requests per ride at most. One session on app open,
   one `ride_started`, one `ride_ended`. Against a ride that samples GPS at 1 Hz
   for an hour this is not measurable in battery terms.
+- **Timer wakeups, NOT MEASURED**: since 10 Sep 2026 the service isolate ticks
+  every 2 seconds instead of 30, so an hour's ride pays about 1,800 empty queue
+  reads. Reasoned to be free, never benched. See the section above.
 - **Size**: `aptabase_flutter` is pure Dart over `shared_preferences`. Tens of
   kilobytes, not megabytes.
 - **The ride path: NOTHING.** This is the part that needed work rather than

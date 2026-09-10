@@ -1936,15 +1936,18 @@ class GeofenceChainService {
   Future<void> stop({required String reason}) async {
     _log('Journey ending: $reason.');
     // Sent FIRST, before the teardown below clears the state it describes, and
-    // not awaited: a slow or unreachable analytics endpoint must never hold up
-    // the end of a ride. Silent and cost-free when the rider has opted out or
-    // no key is compiled in.
-    unawaited(
-      _analytics.trackRideEnded(
-        outcome: _rideOutcome,
-        wakeArmed: _wakeArmedThisRide,
-        wakeAnswered: _wakeAnsweredThisRide,
-      ),
+    // not awaited HERE: a slow or unreachable analytics endpoint must never
+    // hold up the end of a ride. Silent and cost-free when the rider has opted
+    // out or no key is compiled in.
+    //
+    // The future is kept rather than dropped, and it is waited for at the
+    // BOTTOM of this method, because `trackRideEnded` only writes the event to
+    // disk. Dropping it raced that write against the isolate's death. See the
+    // flush below.
+    final ended = _analytics.trackRideEnded(
+      outcome: _rideOutcome,
+      wakeArmed: _wakeArmedThisRide,
+      wakeAnswered: _wakeAnsweredThisRide,
     );
     // The engine dies first so nothing re-starts the tone mid-teardown; a
     // ride ended mid-ladder must also release the UI's media session.
@@ -2017,6 +2020,17 @@ class GeofenceChainService {
     _lastPublishedIndex = -1;
     _lastPublishedAtStation = false;
     _journey = null;
+    // THE RIDE IS OVER AND THE EVENT THAT DESCRIBES IT HAS NOT LEFT THE PHONE.
+    // The 10 Sep 2026 bug, told in full on `Analytics.tickFor`. Short version:
+    // this isolate is destroyed seconds after this method returns, and the SDK
+    // only sends on a timer.
+    //
+    // LAST, ON PURPOSE. Everything above either speaks to the rider or releases
+    // something the next ride needs, and none of it may queue behind counting.
+    // One budget of `Analytics.drainLimit` covers the disk write and the send
+    // together, and on timeout the event is still on disk for the next ride,
+    // which is the old behaviour rather than a new failure.
+    await _analytics.awaitQueueDrain(queued: ended);
     _log('Geofence chain stopped.');
     _logFile = null;
   }

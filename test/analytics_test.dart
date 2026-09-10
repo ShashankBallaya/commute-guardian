@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:aptabase_flutter/aptabase_flutter.dart';
@@ -402,6 +403,201 @@ void main() {
         isNot(contains('trackRideInterrupted')),
         reason: 'detection repeats at every launch; reporting there over-counts',
       );
+    });
+  });
+
+  group('RIDE_ENDED HAS TO LEAVE THE PHONE BEFORE THE ISOLATE DIES', () {
+    // The 10 Sep 2026 bug, found on his own dashboard and confirmed from the
+    // device before a line was written. Told in full on `Analytics.tickFor`,
+    // which is the one place that carries it.
+
+    setUp(() => SharedPreferences.setMockInitialValues({}));
+    tearDown(() => Analytics.pendingQueue = null);
+
+    Future<IsolateEventQueue> queueHolding(String key) async {
+      final queue = IsolateEventQueue(AnalyticsIsolate.service.name);
+      await queue.init();
+      await queue.addEvent(key, '{"e":"ride_ended"}');
+      Analytics.pendingQueue = queue;
+      return queue;
+    }
+
+    test('THE SERVICE TICK IS SHORT ENOUGH TO FIRE INSIDE A TEARDOWN', () {
+      // The bound that matters is not the network, it is the farewell: about 2
+      // to 3 seconds of speech and then the isolate is gone. A tick slower than
+      // that cannot flush the event it was queued to flush, which is what 30
+      // seconds was.
+      expect(
+        Analytics.tickFor(AnalyticsIsolate.service),
+        lessThanOrEqualTo(const Duration(seconds: 2)),
+      );
+      expect(
+        Analytics.tickFor(AnalyticsIsolate.service),
+        lessThan(Analytics.tickFor(AnalyticsIsolate.ui)),
+        reason: 'the UI keeps the default: it re-sends at every app open',
+      );
+    });
+
+    test('the flush returns as soon as the queue is empty', () async {
+      final queue = await queueHolding('aptabase_1_ride_ended');
+      // Stands in for the SDK's timer getting there while we wait.
+      unawaited(
+        Future<void>.delayed(
+          const Duration(milliseconds: 250),
+          () => queue.deleteEvents({'aptabase_1_ride_ended'}),
+        ),
+      );
+
+      final waited = Stopwatch()..start();
+      await Analytics.configured(
+        enabled: true,
+        client: _RecordingAptabase(),
+      ).awaitQueueDrain(queued: Future<void>.value());
+      waited.stop();
+
+      expect(await queue.getItems(25), isEmpty);
+      expect(
+        waited.elapsed,
+        lessThan(Analytics.drainLimit),
+        reason: 'it must return on the drain, not sit out the whole bound',
+      );
+    });
+
+    test('AND IT GIVES UP, because a dying isolate may not be held open', () async {
+      // The event stays on disk and the next ride sends it, which is the old
+      // behaviour. The worst case of this fix is the bug it replaces.
+      final queue = await queueHolding('aptabase_1_ride_ended');
+      const bound = Duration(milliseconds: 400);
+
+      final waited = Stopwatch()..start();
+      await Analytics.configured(
+        enabled: true,
+        client: _RecordingAptabase(),
+      ).awaitQueueDrain(queued: Future<void>.value(), limit: bound);
+      waited.stop();
+
+      expect(waited.elapsed, greaterThanOrEqualTo(bound));
+      expect(waited.elapsed, lessThan(const Duration(seconds: 3)));
+      expect((await queue.getItems(25)).length, 1);
+    });
+
+    test('a rider who opted out is not waited on', () async {
+      final queue = await queueHolding('aptabase_1_ride_ended');
+
+      final waited = Stopwatch()..start();
+      await Analytics.configured(
+        enabled: false,
+        client: _RecordingAptabase(),
+      ).awaitQueueDrain(queued: Future<void>.value());
+      waited.stop();
+
+      expect(waited.elapsed, lessThan(const Duration(milliseconds: 200)));
+      expect(
+        (await queue.getItems(25)).length,
+        1,
+        reason: 'nothing was sent, so nothing was cleared',
+      );
+    });
+
+    test('INIT ACTUALLY WIRES THE SHORT TICK, not just offers it', () {
+      // THE HOLE THE SPEC REVIEW FOUND, and it is this repo's recurring one: a
+      // helper can be perfectly tested and never called. Put `const
+      // InitOptions()` back and every assertion about `tickFor` above still
+      // passes while the fix is gone, because a pure function does not care
+      // whether anybody uses it.
+      final source = _stripComments(
+        File('lib/services/analytics.dart').readAsStringSync(),
+      );
+
+      expect(
+        source.contains('InitOptions(tickDuration: tickFor(isolate))'),
+        isTrue,
+        reason: 'the tick must reach Aptabase.init, not just exist',
+      );
+      expect(
+        RegExp(r'Aptabase\.init\(\s*appKey,\s*const InitOptions\(\)')
+            .hasMatch(source),
+        isFalse,
+        reason: 'the package default is the bug',
+      );
+    });
+
+    test('AND IT HANDS INIT THE QUEUE THE DRAIN WATCHES', () {
+      // The same hole, one line down. Delete `pendingQueue = queue` and
+      // `awaitQueueDrain` becomes a permanent no-op in production while every
+      // test above stays green, because each of them injects a queue by hand.
+      final source = _stripComments(
+        File('lib/services/analytics.dart').readAsStringSync(),
+      );
+
+      final assigned = source.indexOf('pendingQueue = queue;');
+      final handed = source.indexOf('Aptabase.init(');
+      expect(assigned, greaterThan(-1), reason: 'the drain has nothing to read');
+      expect(
+        assigned,
+        lessThan(handed),
+        reason: 'the queue the drain watches must be the one init was given',
+      );
+      expect(
+        RegExp(r'IsolateEventQueue\(isolate\.name\)').allMatches(source).length,
+        1,
+        reason: 'a second queue would mean the drain watches the wrong one',
+      );
+    });
+
+    test('A MISTYPED KEY READS AS ABSENT, not as configured and broken', () {
+      // Found by the spec review: `pendingQueue` is set before the package can
+      // reject the key, so a malformed one used to cost every ride end the full
+      // budget waiting on a queue nothing would ever drain. The release build
+      // is where this bites: the package's own check is an `assert`, which is
+      // stripped, and the fallback leaves `_appKey` unassigned.
+      //
+      // The checkout has no key at all, which is the case the old
+      // `isNotEmpty` already covered.
+      expect(Analytics.isConfigured, isFalse);
+    });
+
+    test('THE RIDE PATH KEEPS THE EVENT AND WAITS FOR IT', () {
+      // The service cannot be built in a test (plugins), so this reads the
+      // source. Comments stripped, because the explanation above the call site
+      // names every symbol this looks for.
+      final source = _stripComments(
+        File('lib/services/geofence_chain_service.dart').readAsStringSync(),
+      );
+
+      expect(
+        RegExp(r'unawaited\(\s*_analytics\.trackRideEnded').hasMatch(source),
+        isFalse,
+        reason: 'dropping the future races the disk write against the teardown',
+      );
+
+      final queued = source.indexOf('_analytics.trackRideEnded(');
+      final flushed = source.indexOf('_analytics.awaitQueueDrain(');
+      expect(queued, greaterThan(-1));
+      expect(flushed, greaterThan(-1), reason: 'the flush must be wired at all');
+      expect(
+        flushed,
+        greaterThan(queued),
+        reason: 'flushing before the event is queued flushes nothing',
+      );
+    });
+
+    test('and that guard can still fail, proved against the old shape', () {
+      // A guard nobody has watched fail is a guard that may be matching its own
+      // explanation. This is the code as it stood on the morning of 10 Sep.
+      const before =
+          '    unawaited(\n'
+          '      _analytics.trackRideEnded(\n'
+          '        outcome: _rideOutcome,\n'
+          '      ),\n'
+          '    );\n';
+
+      expect(
+        RegExp(r'unawaited\(\s*_analytics\.trackRideEnded').hasMatch(before),
+        isTrue,
+        reason: 'the guard must fire on the shape it was written against',
+      );
+      expect(before.contains('_analytics.awaitQueueDrain('), isFalse);
     });
   });
 }
