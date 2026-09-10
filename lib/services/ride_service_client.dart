@@ -950,6 +950,32 @@ class RideServiceClient {
       serviceId: 1,
       notificationTitle: 'Travel Mode active',
       notificationText: notificationText,
+      // NAMED, BECAUSE THE FALLBACK IS WRONG AND LOOKS BROKEN. With no icon
+      // the plugin uses `appInfo.icon`, and Android renders a small icon from
+      // its ALPHA CHANNEL ONLY, tinted to one colour. `ic_launcher` is
+      // 96 percent opaque, so the lock screen and the shade drew a SOLID WHITE
+      // SQUARE where the logo should be. Reported from the 3T, 10 Sep 2026:
+      // "I can't see the logo on the locked screen and on the notifications".
+      //
+      // THE MARK IS A BELL, NOT THE BADGE, and `tool/build_app_icons.py`
+      // already explains why in its own words: reduced to one colour that
+      // artwork "is a grey blob". At 24 dp the train is mush and the sound
+      // arcs close up. The bell survives, and it is the element that means
+      // what this notification means.
+      //
+      // SET ONCE, HERE, AND NOT ON EVERY UPDATE. The station line is rewritten
+      // at every crossing through `updateService`, and the plugin's
+      // `NotificationContent.updateData` writes each field with `?.let`, so an
+      // update that omits the icon LEAVES THE STORED ONE ALONE. Read off the
+      // Kotlin rather than assumed, because clearing by omission is the exact
+      // shape of bug this project keeps finding.
+      //
+      // The string is the MANIFEST META-DATA NAME, not the drawable name. See
+      // android/app/src/main/AndroidManifest.xml and
+      // tool/build_notification_icon.py, which draws the thing.
+      notificationIcon: const NotificationIcon(
+        metaDataName: 'com.ballshank.commute_guardian.TRAVEL_MODE_ICON',
+      ),
       callback: geofenceTaskStartCallback,
     );
     return result is ServiceRequestSuccess;
