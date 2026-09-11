@@ -694,6 +694,18 @@ bool audioIsClear({
   required bool announcementsSilent,
 }) => earphonesConnected && !volumeLow && !announcementsSilent;
 
+/// Where the ride-start path asks about earphones. A provider for the same
+/// reason `permissionsGatewayProvider` is one: `AudioSession.instance` does not
+/// answer under the widget-test binding, so without this seam no test could
+/// drive a tap on Screen 1 into a ride.
+final audioOutputGatewayProvider = Provider<AudioOutputGateway>(
+  (ref) => const AudioOutputGateway(),
+);
+
+/// The commit window's voice, on the ride-start path. Null in production, where
+/// the window builds its own engine exactly as it always has.
+final commitAnnouncerProvider = Provider<CommitAnnouncer?>((ref) => null);
+
 /// Runs the probes that decide whether Screen 3 is needed at all.
 class PreparingGate {
   const PreparingGate({
@@ -704,28 +716,68 @@ class PreparingGate {
   final PermissionsGateway permissions;
   final AudioOutputGateway audio;
 
+  /// How long any one probe may take before its answer is assumed.
+  ///
+  /// The same two seconds the volume probes and `getDevices` already carry
+  /// inside themselves, so a probe that was answering in time before still is.
+  static const probeBudget = Duration(seconds: 2);
+
+  /// NOTHING HERE MAY THROW OR HANG, because the caller cannot say so. The
+  /// only caller is `prepareAndStart`, fired UNAWAITED from every card on
+  /// Screen 1 and from Screen 2's picker, so a throw or a hang in here was a
+  /// tap that did nothing: no ride, no screen, no log. Measured on 11 Sep 2026
+  /// by `prepare_and_start_test.dart`, which could not reach a ride through a
+  /// permission read that threw or an earphone probe that never answered.
+  ///
+  /// Two holes, both real. `hasAlways` had no catch at all. And
+  /// `earphonesConnected` bounds `getDevices` but not the
+  /// `AudioSession.instance` await in front of it, which is the await that
+  /// hangs under the test binding; the recheck button has bounded the whole
+  /// probe since 11 Aug, and this path never did.
+  ///
+  /// A PROBE THAT FAILS ANSWERS THE WAY THE PROBES ALREADY FAIL: OPEN. No
+  /// warning is drawn for a problem nobody could confirm, because a false
+  /// warning before every ride teaches a rider to tap past the screen that
+  /// matters. Permission counts too: `start()` asks for it again regardless,
+  /// and the service logs what it was actually given.
+  ///
+  /// ALL FOUR AT ONCE, NOT ONE AFTER ANOTHER. They have nothing to say to each
+  /// other, and in sequence a slow phone paid each budget in turn. The volumes
+  /// were put in one wait on 8 Sep 2026; the other two now join them, so the
+  /// worst case is one budget, not four.
   Future<PreparingReport> check(WidgetRef ref) async {
     final fix = ref.read(nearestStationProvider);
     final hasFix = fix.state == GpsState.located;
-    final granted = await permissions.hasAlways();
-    final earphones = await audio.earphonesConnected();
     final client = ref.read(rideServiceClientProvider);
-    // TOGETHER, NOT ONE AFTER THE OTHER. Each probe carries its own 2 second
-    // timeout, and this is the ride-start path: awaiting them in sequence
-    // spends that budget twice on a phone where the channel is slow to answer,
-    // for two questions that have nothing to say to each other. The recheck
-    // path has always put them in one wait; 8 Sep 2026 this one caught up.
-    final volumes = await Future.wait([
-      client.alarmVolume(),
-      client.mediaVolume(),
-    ]);
+    final (granted, earphones, alarmVolume, mediaVolume) = await (
+      _answer(permissions.hasAlways, whenUnknown: true),
+      _answer(audio.earphonesConnected, whenUnknown: true),
+      _answer(client.alarmVolume, whenUnknown: null),
+      _answer(client.mediaVolume, whenUnknown: null),
+    ).wait;
     return PreparingReport(
       hasFix: hasFix,
       originName: hasFix ? fix.stationName : null,
       backgroundLocationGranted: granted,
       earphonesConnected: earphones,
-      alarmVolume: volumes[0],
-      mediaVolume: volumes[1],
+      alarmVolume: alarmVolume,
+      mediaVolume: mediaVolume,
     );
+  }
+
+  /// One probe, bounded, with its unknown answer named at the call site.
+  ///
+  /// Takes the probe as a FUNCTION rather than a future, so a gateway that
+  /// throws before it has returned a future is caught here too and not in
+  /// the unawaited caller.
+  static Future<T> _answer<T>(
+    Future<T> Function() probe, {
+    required T whenUnknown,
+  }) async {
+    try {
+      return await probe().timeout(probeBudget, onTimeout: () => whenUnknown);
+    } catch (_) {
+      return whenUnknown;
+    }
   }
 }

@@ -1052,7 +1052,12 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       return;
     }
 
-    final report = await const PreparingGate().check(ref);
+    final permissions = ref.read(permissionsGatewayProvider);
+    final audio = ref.read(audioOutputGatewayProvider);
+    final report = await PreparingGate(
+      permissions: permissions,
+      audio: audio,
+    ).check(ref);
     if (!mounted) return;
 
     // ALWAYS PUSHED SINCE 26 AUG 2026, and the shortcut that used to sit here
@@ -1069,8 +1074,13 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     final destination = stationName(destinationId);
     final proceed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
-        builder: (_) =>
-            PreparingFlow(destinationName: destination, report: report),
+        builder: (_) => PreparingFlow(
+          destinationName: destination,
+          report: report,
+          permissions: permissions,
+          audio: audio,
+          announcer: ref.read(commitAnnouncerProvider),
+        ),
       ),
     );
     if (!mounted || proceed != true) return;
