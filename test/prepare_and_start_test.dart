@@ -13,7 +13,10 @@ import 'package:commute_guardian/screens/route_picker_sheet.dart';
 import 'package:commute_guardian/services/audio_output_gateway.dart';
 import 'package:commute_guardian/services/commit_announcer.dart';
 import 'package:commute_guardian/state/journey_providers.dart';
+import 'package:commute_guardian/screens/ride_orchestration.dart'
+    show rideDidNotStartMessage;
 import 'package:commute_guardian/state/ride_providers.dart';
+import 'package:commute_guardian/state/settings_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -119,9 +122,10 @@ void main() {
     testWidgets('AN EARPHONE PROBE THAT NEVER ANSWERS still reaches a ride', (
       tester,
     ) async {
-      // `earphonesConnected` bounds `getDevices` at two seconds but NOT the
-      // `AudioSession.instance` await in front of it. The recheck button has
-      // bounded the whole probe since 11 Aug; the ride-start path never did.
+      // `earphonesConnected` bounded `getDevices` at two seconds but not the
+      // `AudioSession.instance` await in front of it. The gateway now bounds
+      // both (audio_output_gateway_test.dart); this proves the gate holds even
+      // for a gateway that does not.
       final harness = await _Harness.pump(tester, audio: _SilentAudio());
       await harness.standAt(repo, 'kalyan');
 
@@ -155,6 +159,108 @@ void main() {
       await harness.runUntilRiding();
     });
   });
+
+  group('after the window closes, a start that fails must still say so', () {
+    // THE SAME HOLE ONE STEP LATER. The window has spoken "Starting Travel
+    // Mode" and popped, so the rider believes a ride began. Everything in
+    // `start()` after that point was uncaught, and `prepareAndStart` then
+    // called `showTravelMode`, which returns in silence when no ride is live.
+    // The rider was left on Screen 1 having been told a ride started.
+
+    testWidgets('A PERMISSION REQUEST THAT THROWS still reaches a ride', (
+      tester,
+    ) async {
+      // `start()` asks permission_handler for its runtime prompts with no
+      // catch. A second request while one is already in flight is a real
+      // PlatformException in that plugin, not a hypothetical.
+      final harness = await _Harness.pump(
+        tester,
+        permissionRequestsThrow: true,
+      );
+      await harness.standAt(repo, 'kalyan');
+
+      harness.tapDestination('dombivli');
+      await harness.runUntilRiding();
+
+      expect(harness.service.commands, contains('startRide:kalyan->dombivli'));
+    });
+
+    testWidgets(
+      'SETTINGS THAT WILL NOT READ still reach a ride, WITH ANALYTICS OFF',
+      (tester) async {
+        // The ride must not depend on a database read. But the defaults are
+        // not a neutral answer here: `AppSettings()` has sharing ON, and a
+        // rider who opted out would be reported on the one ride we could not
+        // read her choice for. The service client's own default is off for
+        // exactly this reason, "rather than sending without consent".
+        final harness = await _Harness.pump(tester, settingsBroken: true);
+        await harness.standAt(repo, 'kalyan');
+
+        harness.tapDestination('dombivli');
+        await harness.runUntilRiding();
+
+        expect(harness.service.shareAnonymousUsagePassed, isFalse);
+      },
+    );
+
+    testWidgets('A SERVICE THAT THROWS tells her the ride did not start', (
+      tester,
+    ) async {
+      final harness = await _Harness.pump(tester, service: _ThrowingService());
+      await harness.standAt(repo, 'kalyan');
+
+      harness.tapDestination('dombivli');
+      await harness.runUntil(
+        () => find.text(rideDidNotStartMessage).evaluate().isNotEmpty,
+      );
+
+      expect(find.text('End journey'), findsNothing);
+      expect(find.byType(HomeScreen), findsOneWidget, reason: 'back home');
+    });
+
+    testWidgets('A SERVICE THAT REFUSES tells her the ride did not start', (
+      tester,
+    ) async {
+      // `startService` answers ServiceRequestFailure without throwing, for
+      // example when Android refuses a foreground service from the
+      // background. That returned false, and false was also silent.
+      final harness = await _Harness.pump(tester, service: _RefusingService());
+      await harness.standAt(repo, 'kalyan');
+
+      harness.tapDestination('dombivli');
+      await harness.runUntil(
+        () => find.text(rideDidNotStartMessage).evaluate().isNotEmpty,
+      );
+
+      expect(find.text('End journey'), findsNothing);
+    });
+
+    testWidgets('AND THE RESUME CARD, the other door into startRide', (
+      tester,
+    ) async {
+      // A guard that covers the path you were looking at is not a guard.
+      // `resumeInterrupted` calls the same `startRide` from the same Screen 1,
+      // unawaited, and the offer staying on screen is not an answer: it looks
+      // exactly like a button that did nothing.
+      final service = _ThrowingService()
+        ..rideInFlight = true
+        ..originId = 'kalyan'
+        ..destinationId = 'dombivli'
+        ..startedAt = DateTime.now().subtract(const Duration(minutes: 5));
+      final harness = await _Harness.pump(tester, service: service);
+
+      await tester.tap(find.byKey(const Key('resume_ride_card')));
+      await harness.runUntil(
+        () => find.text(rideDidNotStartMessage).evaluate().isNotEmpty,
+      );
+
+      expect(
+        find.byKey(const Key('resume_ride_card')),
+        findsOneWidget,
+        reason: 'the offer stays, so she can try again',
+      );
+    });
+  });
 }
 
 class _Harness {
@@ -170,11 +276,14 @@ class _Harness {
     WidgetTester tester, {
     FakePermissions? permissions,
     AudioOutputGateway? audio,
+    FakeRideServiceClient? service,
+    bool permissionRequestsThrow = false,
+    bool settingsBroken = false,
   }) async {
-    final service = FakeRideServiceClient();
+    service ??= FakeRideServiceClient();
     final announcer = _RecordingAnnouncer();
     // `start()` asks permission_handler directly for its runtime prompts.
-    _grantPermissionChannel(tester);
+    _grantPermissionChannel(tester, requestsThrow: permissionRequestsThrow);
 
     await tester.pumpWidget(
       ProviderScope(
@@ -202,6 +311,8 @@ class _Harness {
             audio ?? _ConnectedAudio(),
           ),
           commitAnnouncerProvider.overrideWithValue(announcer),
+          if (settingsBroken)
+            appSettingsProvider.overrideWith(_BrokenSettings.new),
         ],
         child: const CommuteGuardianDebugApp(),
       ),
@@ -290,13 +401,68 @@ class _ThrowingPermissions extends FakePermissions {
       throw PlatformException(code: 'channel', message: 'no answer');
 }
 
-void _grantPermissionChannel(WidgetTester tester) {
+class _ThrowingService extends FakeRideServiceClient {
+  @override
+  Future<bool> startRide({
+    required String originStationId,
+    required String destinationStationId,
+    required String notificationText,
+    required bool sarvamGreeting,
+    required bool sarvamClips,
+    required DateTime startedAt,
+    int? startBatteryPct,
+    int? pulseIntervalSeconds,
+    bool pulseVibrate = true,
+    bool shareAnonymousUsage = false,
+    bool announceEveryStation = true,
+    AppLanguage language = AppLanguage.english,
+    bool routeAlreadySpoken = false,
+    List<String>? routeChainIds,
+  }) async => throw PlatformException(code: 'saveData', message: 'store');
+}
+
+/// `startService` answering ServiceRequestFailure: no throw, just no ride.
+class _RefusingService extends FakeRideServiceClient {
+  @override
+  Future<bool> startRide({
+    required String originStationId,
+    required String destinationStationId,
+    required String notificationText,
+    required bool sarvamGreeting,
+    required bool sarvamClips,
+    required DateTime startedAt,
+    int? startBatteryPct,
+    int? pulseIntervalSeconds,
+    bool pulseVibrate = true,
+    bool shareAnonymousUsage = false,
+    bool announceEveryStation = true,
+    AppLanguage language = AppLanguage.english,
+    bool routeAlreadySpoken = false,
+    List<String>? routeChainIds,
+  }) async => false;
+}
+
+class _BrokenSettings extends AppSettingsNotifier {
+  @override
+  Future<AppSettings> build() async => throw StateError('database locked');
+}
+
+void _grantPermissionChannel(
+  WidgetTester tester, {
+  bool requestsThrow = false,
+}) {
   const channel = MethodChannel('flutter.baseflow.com/permissions/methods');
   tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
     call,
   ) async {
     switch (call.method) {
       case 'requestPermissions':
+        if (requestsThrow) {
+          throw PlatformException(
+            code: 'PermissionHandler.PermissionManager',
+            message: 'A request for permissions is already running',
+          );
+        }
         return {for (final p in call.arguments as List) p as int: 1};
       case 'checkPermissionStatus':
       case 'checkServiceStatus':

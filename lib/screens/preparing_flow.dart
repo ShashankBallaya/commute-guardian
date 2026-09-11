@@ -363,12 +363,13 @@ class _PreparingFlowState extends ConsumerState<PreparingFlow>
 
     final startedAt = DateTime.now();
     // BOUNDED, because a probe that never answers would strand this control on
-    // "Checking…" for the rest of the ride. earphonesConnected times out its
-    // own getDevices call but NOT `AudioSession.instance`, which is the await
-    // that hangs under the widget-test binding and could hang on a device in a
-    // state nobody has met yet. Falling back to the values already on screen
-    // means a timeout reads as "no change", which is the honest answer: we
-    // asked and learned nothing.
+    // "Checking…" for the rest of the ride. earphonesConnected bounds its own
+    // session and route read since 11 Sep 2026, and the volume probes bound
+    // theirs, so this outer bound is now a belt: it is what holds if any of
+    // them grows an await nobody bounded, which is exactly how
+    // `AudioSession.instance` hung here before. Falling back to the values
+    // already on screen means a timeout reads as "no change", which is the
+    // honest answer: we asked and learned nothing.
     //
     // NULL means the probe did not answer, and a probe that did not answer must
     // change NOTHING. Returning "volume unreadable" on a timeout would clear a
@@ -730,10 +731,12 @@ class PreparingGate {
   /// permission read that threw or an earphone probe that never answered.
   ///
   /// Two holes, both real. `hasAlways` had no catch at all. And
-  /// `earphonesConnected` bounds `getDevices` but not the
+  /// `earphonesConnected` bounded `getDevices` but not the
   /// `AudioSession.instance` await in front of it, which is the await that
-  /// hangs under the test binding; the recheck button has bounded the whole
-  /// probe since 11 Aug, and this path never did.
+  /// hangs under the test binding. That one is now also fixed at the source,
+  /// in the gateway, because `startRide` reads the same probe after the
+  /// window; the bound here stays, so a probe that grows a new unbounded await
+  /// still cannot eat the tap.
   ///
   /// A PROBE THAT FAILS ANSWERS THE WAY THE PROBES ALREADY FAIL: OPEN. No
   /// warning is drawn for a problem nobody could confirm, because a false

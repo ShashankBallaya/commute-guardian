@@ -10,7 +10,27 @@ import 'package:audio_session/audio_session.dart';
 /// CLAUDE.md), so "are they even plugged in" is the single most useful thing
 /// this app can check before a rider falls asleep.
 class AudioOutputGateway {
-  const AudioOutputGateway();
+  const AudioOutputGateway({this._session = _liveSession});
+
+  /// Where the session comes from. A function rather than the session itself,
+  /// so the default stays `const` and a test can hand in one that never
+  /// answers.
+  ///
+  /// PRIVATE ON PURPOSE. Fakes elsewhere `implements` this class, and a public
+  /// field would be one more member each of them had to invent for nothing.
+  final Future<AudioSession> Function() _session;
+
+  static Future<AudioSession> _liveSession() => AudioSession.instance;
+
+  /// How long the WHOLE probe may take, session included.
+  ///
+  /// THE SESSION IS INSIDE THE BUDGET SINCE 11 SEP 2026. `getDevices` was
+  /// bounded and `AudioSession.instance` in front of it was not, and that is
+  /// the await that hangs under the widget-test binding. This probe runs on
+  /// the ride-start path twice: in the gate before Screen 3, and inside
+  /// `startRide` after the commit window has already said "Starting Travel
+  /// Mode", where a hang is a ride that never begins in silence.
+  static const probeBudget = Duration(seconds: 2);
 
   /// Below this the rider is told their volume is low.
   ///
@@ -61,15 +81,16 @@ class AudioOutputGateway {
   /// ambiguity it was meant to end.
   Future<bool?> earphonesConnectedOrUnknown() async {
     try {
-      final session = await AudioSession.instance;
-      final devices = await session
-          .getDevices(includeInputs: false)
-          .timeout(const Duration(seconds: 2));
-      if (devices.isEmpty) return null;
-      return devices.any((device) => _reachesEars(device.type));
+      return await _readRoute().timeout(probeBudget);
     } catch (_) {
       return null;
     }
+  }
+
+  Future<bool?> _readRoute() async {
+    final devices = await (await _session()).getDevices(includeInputs: false);
+    if (devices.isEmpty) return null;
+    return devices.any((device) => _reachesEars(device.type));
   }
 
   /// Anything the rider could plausibly have in or over their ears.

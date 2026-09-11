@@ -66,7 +66,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with RideOrchestration {
       onResumeRide: () {
         final ride = ref.read(interruptedRideProvider).valueOrNull;
         if (ride == null) return;
-        unawaited(resumeInterrupted(ride));
+        unawaited(resumeFromOffer(ride));
       },
       // Declining that offer. Routed through the orchestration rather than
       // answered on Screen 1, because a declined ride still owes History a row:

@@ -31,6 +31,14 @@ import 'speed_screen.dart';
 import 'travel_mode_screen.dart';
 import 'wake_alert_screen.dart';
 
+/// What a rider is told when a ride she asked for did not begin.
+///
+/// SAID, BECAUSE THE WINDOW ALREADY SPOKE. By the time a start can fail, the
+/// commit window has said "Starting Travel Mode" out loud and popped, so a
+/// silent failure leaves her on Screen 1 believing a ride is running. It names
+/// no cause because she cannot act on one, and it names the one thing she can.
+const rideDidNotStartMessage = "Travel Mode didn't start. Try again.";
+
 /// Everything a screen needs in order to OWN a ride: the isolate subscription,
 /// the start and stop paths, the history write, and the routes a ride opens.
 ///
@@ -549,15 +557,41 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     }
   }
 
+  /// NONE OF THESE MAY STOP A RIDE. They run after the commit window has said
+  /// "Starting Travel Mode", and until 11 Sep 2026 a throw from any of them
+  /// ended the start in silence. permission_handler really does throw here:
+  /// a second request while one is in flight is a PlatformException.
+  ///
+  /// EACH ONE CAUGHT ON ITS OWN, so a refused notification prompt cannot cost
+  /// the location prompts behind it. A ride that starts without a grant is
+  /// still a ride, and the service logs what it was actually given.
   Future<void> _requestPermissions() async {
-    await Permission.notification.request();
+    await _askQuietly('notification', Permission.notification.request);
 
-    final whileInUse = await Permission.locationWhenInUse.request();
-    if (whileInUse.isGranted) {
-      await Permission.locationAlways.request();
+    final whileInUse = await _askQuietly(
+      'location while in use',
+      Permission.locationWhenInUse.request,
+    );
+    if (whileInUse?.isGranted ?? false) {
+      await _askQuietly('location always', Permission.locationAlways.request);
     }
 
-    await service.requestBatteryOptimizationExemption();
+    await _askQuietly(
+      'battery exemption',
+      service.requestBatteryOptimizationExemption,
+    );
+  }
+
+  /// One runtime prompt, with its failure logged rather than thrown. Null when
+  /// it failed. Deliberately NOT bounded in time: a system dialog waits on the
+  /// rider, and cutting her off mid-read would be worse than waiting.
+  Future<R?> _askQuietly<R>(String what, Future<R> Function() ask) async {
+    try {
+      return await ask();
+    } catch (error) {
+      onOrchestrationLog('Permission request failed ($what): $error');
+      return null;
+    }
   }
 
   /// [routeAlreadySpoken] is true only when Screen 3's commit window has just
@@ -565,9 +599,15 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// a rider is not told their route twice in five seconds. Every other caller
   /// leaves it false, and must: on a resume and on the unattended relaunch the
   /// welcome is the ONLY route confirmation there is.
-  Future<void> start({bool routeAlreadySpoken = false}) async {
+  ///
+  /// RETURNS WHETHER THE SERVICE STARTED, and a caller that spoke to the rider
+  /// must act on false. This was a `Future<void>` until 11 Sep 2026, so a start
+  /// that failed and a start that worked looked identical to
+  /// [prepareAndStart], which then asked [showTravelMode] for a ride that did
+  /// not exist and got silence.
+  Future<bool> start({bool routeAlreadySpoken = false}) async {
     final journey = ref.read(plannedJourneyProvider).journey;
-    if (journey == null) return;
+    if (journey == null) return false;
 
     // The rider pressed Start on THIS journey, so its origin is now their
     // choice however it got there. Done before the awaits below, so the plan
@@ -584,7 +624,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // null. That silently handed the service "no pulse" on every ride, which is
     // exactly what the device showed twice before this line was fixed: settings
     // that persist are not settings that arrive.
-    final pulseSettings = await ref.read(appSettingsProvider.future);
+    final pulseSettings = await _settingsForRide();
 
     // THE RIDER'S PICK IS WHAT THE RIDE IS CALLED, not the platform the planner
     // chose for them. These two differ only across a foot overbridge, and
@@ -597,34 +637,36 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // is that they can still be told about the walk. Screen 5 already names
     // the real platform, from `alightStationId`, which WindDown publishes at
     // the start of every ride.
-    final started = await service.startRide(
-      routeAlreadySpoken: routeAlreadySpoken,
-      originStationId: journey.originStationId,
-      destinationStationId: journey.requestedDestinationId,
-      // THE CORRIDOR SHE CHOSE, from the draft the plan above was made from.
-      // Null for every rider who never opens a picker, which is everyone
-      // until it lands. Without this line the ordinary start stores no
-      // corridor at all and the whole of C7c only ever round-trips a chain
-      // nothing wrote.
-      routeChainIds: ref.read(journeyDraftProvider).routeChainIds,
-      notificationText:
-          '${stationName(journey.originStationId)} to '
-          '${stationName(journey.requestedDestinationId)}',
-      sarvamGreeting: sarvamGreeting,
-      sarvamClips: sarvamClips,
-      startedAt: DateTime.now(),
-      startBatteryPct: startBattery,
-      // Read at START, not only on change. pulseIntervalSeconds is the single
-      // place crowd mode is folded in, so the service is handed one number and
-      // never has to know the rule.
-      pulseIntervalSeconds: pulseSettings.pulseIntervalSeconds,
-      pulseVibrate: pulseSettings.vibrateWithPulse,
-      shareAnonymousUsage: pulseSettings.shareAnonymousUsage,
-      announceEveryStation: pulseSettings.announceEveryStation,
-      // From the same awaited read. The picker only ever offers a language
-      // this device reported a voice for (TtsLanguageGateway), so what
-      // arrives here is speakable.
-      language: pulseSettings.language,
+    final started = await _startService(
+      () => service.startRide(
+        routeAlreadySpoken: routeAlreadySpoken,
+        originStationId: journey.originStationId,
+        destinationStationId: journey.requestedDestinationId,
+        // THE CORRIDOR SHE CHOSE, from the draft the plan above was made from.
+        // Null for every rider who never opens a picker, which is everyone
+        // until it lands. Without this line the ordinary start stores no
+        // corridor at all and the whole of C7c only ever round-trips a chain
+        // nothing wrote.
+        routeChainIds: ref.read(journeyDraftProvider).routeChainIds,
+        notificationText:
+            '${stationName(journey.originStationId)} to '
+            '${stationName(journey.requestedDestinationId)}',
+        sarvamGreeting: sarvamGreeting,
+        sarvamClips: sarvamClips,
+        startedAt: DateTime.now(),
+        startBatteryPct: startBattery,
+        // Read at START, not only on change. pulseIntervalSeconds is the single
+        // place crowd mode is folded in, so the service is handed one number and
+        // never has to know the rule.
+        pulseIntervalSeconds: pulseSettings.pulseIntervalSeconds,
+        pulseVibrate: pulseSettings.vibrateWithPulse,
+        shareAnonymousUsage: pulseSettings.shareAnonymousUsage,
+        announceEveryStation: pulseSettings.announceEveryStation,
+        // From the same awaited read. The picker only ever offers a language
+        // this device reported a voice for (TtsLanguageGateway), so what
+        // arrives here is speakable.
+        language: pulseSettings.language,
+      ),
     );
 
     if (started) {
@@ -636,6 +678,50 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       // Liveness comes from the store, never from an assumption here.
       await ref.read(liveRideProvider.notifier).refresh();
     }
+    return started;
+  }
+
+  /// The rider's settings for a ride about to start, and never a reason for
+  /// it not to.
+  ///
+  /// THE FALLBACK IS NOT `AppSettings()`, and the difference is consent. The
+  /// constructor's default has anonymous usage sharing ON, so a rider who
+  /// opted out would be reported on exactly the ride we could not read her
+  /// choice for. Off is the answer that is safe without knowing, which is the
+  /// same reason `startRide`'s own default is off. The rest of the defaults
+  /// are the free product's, tuned for the worst realistic case.
+  Future<AppSettings> _settingsForRide() async {
+    try {
+      return await ref.read(appSettingsProvider.future);
+    } catch (error) {
+      onOrchestrationLog('Settings unreadable at ride start: $error');
+      return const AppSettings(shareAnonymousUsage: false);
+    }
+  }
+
+  /// Hands a ride to the service, and turns a throw into the same answer as a
+  /// refusal: it did not start. Every store write and the service start itself
+  /// cross a platform channel, and a throw escaping here used to vanish into
+  /// the unawaited tap that asked for the ride.
+  Future<bool> _startService(Future<bool> Function() startRide) async {
+    try {
+      final started = await startRide();
+      if (!started) onOrchestrationLog('The service refused to start.');
+      return started;
+    } catch (error) {
+      onOrchestrationLog('The service failed to start: $error');
+      return false;
+    }
+  }
+
+  /// Says a ride she asked for did not begin. See [rideDidNotStartMessage].
+  void _sayRideDidNotStart() {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text(rideDidNotStartMessage)));
   }
 
   /// Puts a rider back on a ride the OS killed under them.
@@ -665,27 +751,29 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
     await _requestPermissions();
 
-    final pulseSettings = await ref.read(appSettingsProvider.future);
+    final pulseSettings = await _settingsForRide();
 
-    final started = await service.startRide(
-      originStationId: ride.originId,
-      destinationStationId: ride.destinationId,
-      notificationText:
-          '${stationName(ride.originId)} to ${stationName(ride.destinationId)}',
-      sarvamGreeting: sarvamGreeting,
-      sarvamClips: sarvamClips,
-      startedAt: ride.startedAt,
-      startBatteryPct: ride.startBatteryPct,
-      pulseIntervalSeconds: pulseSettings.pulseIntervalSeconds,
-      pulseVibrate: pulseSettings.vibrateWithPulse,
-      shareAnonymousUsage: pulseSettings.shareAnonymousUsage,
-      announceEveryStation: pulseSettings.announceEveryStation,
-      language: pulseSettings.language,
-      // THE CORRIDOR, not just the endpoints. This resume already refuses to
-      // replan the ids from where the phone is standing (the 9 Aug
-      // stale-origin bug); it replanned the route BETWEEN them until C7c, so a
-      // rider who chose Thane came back on Vashi.
-      routeChainIds: ride.routeChainIds,
+    final started = await _startService(
+      () => service.startRide(
+        originStationId: ride.originId,
+        destinationStationId: ride.destinationId,
+        notificationText:
+            '${stationName(ride.originId)} to ${stationName(ride.destinationId)}',
+        sarvamGreeting: sarvamGreeting,
+        sarvamClips: sarvamClips,
+        startedAt: ride.startedAt,
+        startBatteryPct: ride.startBatteryPct,
+        pulseIntervalSeconds: pulseSettings.pulseIntervalSeconds,
+        pulseVibrate: pulseSettings.vibrateWithPulse,
+        shareAnonymousUsage: pulseSettings.shareAnonymousUsage,
+        announceEveryStation: pulseSettings.announceEveryStation,
+        language: pulseSettings.language,
+        // THE CORRIDOR, not just the endpoints. This resume already refuses to
+        // replan the ids from where the phone is standing (the 9 Aug
+        // stale-origin bug); it replanned the route BETWEEN them until C7c, so a
+        // rider who chose Thane came back on Vashi.
+        routeChainIds: ride.routeChainIds,
+      ),
     );
 
     if (started) {
@@ -713,6 +801,17 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // interrupted journey and nothing has changed about it; taking the offer
     // away would turn a retryable failure into a lost ride.
     return started;
+  }
+
+  /// The rider pressed the resume offer on Screen 1.
+  ///
+  /// SAYS SO WHEN IT FAILS, which [resumeInterrupted] cannot do for itself: the
+  /// unattended relaunch calls it too, from a phone that may be in a pocket.
+  /// Here somebody pressed a button, and an offer that stays on screen after
+  /// the press looks exactly like a button that did nothing. The offer DOES
+  /// stay, so she can press it again.
+  Future<void> resumeFromOffer(InterruptedRide ride) async {
+    if (!await resumeInterrupted(ride)) _sayRideDidNotStart();
   }
 
   /// The rider said "No, I finished this ride" to the offer on Screen 1.
@@ -1086,7 +1185,13 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     if (!mounted || proceed != true) return;
     // TRUE ONLY HERE. The window has just spoken the route, so the welcome
     // drops the two station names and keeps the rest.
-    await start(routeAlreadySpoken: true);
+    final started = await start(routeAlreadySpoken: true);
+    if (!started) {
+      // The window said "Starting Travel Mode" out loud a moment ago. Leaving
+      // her on Screen 1 without a word would contradict it.
+      _sayRideDidNotStart();
+      return;
+    }
     await showTravelMode();
   }
 
