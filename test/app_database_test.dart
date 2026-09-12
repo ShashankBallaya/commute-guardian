@@ -93,6 +93,64 @@ void main() {
     expect(row.batteryEndPct, 71);
   });
 
+  test('a ride records which route the rider took', () async {
+    // ADR 0004: the station COUNT is not the route's identity. Its own table
+    // has Ghansoli to Byculla and Ghansoli to CSMT at 20 stations each on
+    // different corridors, so "20 stations" cannot tell a via-Thane ride from
+    // a via-Vashi one. Once the picker exists, the row has to name the route.
+    await db.record(
+      originId: 'ghansoli',
+      destinationId: 'csmt',
+      originName: 'Ghansoli',
+      destinationName: 'CSMT',
+      startedAt: DateTime(2026, 9, 12, 9),
+      endedAt: DateTime(2026, 9, 12, 10),
+      reachedDestination: true,
+      stationCount: 20,
+      viaLabel: 'via Thane',
+    );
+
+    expect((await db.recent()).single.viaLabel, 'via Thane');
+  });
+
+  test('two rides of the same length are told apart by their route', () async {
+    // The pair the ADR measured, one number of stations, two corridors. This
+    // is the whole reason for the column: BEFORE it, these two rows read
+    // identically in History.
+    await db.record(
+      originId: 'ghansoli',
+      destinationId: 'csmt',
+      originName: 'Ghansoli',
+      destinationName: 'CSMT',
+      startedAt: DateTime(2026, 9, 12, 9),
+      endedAt: DateTime(2026, 9, 12, 10),
+      reachedDestination: true,
+      stationCount: 20,
+      viaLabel: 'via Vashi',
+    );
+    await db.record(
+      originId: 'ghansoli',
+      destinationId: 'byculla',
+      originName: 'Ghansoli',
+      destinationName: 'Byculla',
+      startedAt: DateTime(2026, 9, 12, 18),
+      endedAt: DateTime(2026, 9, 12, 19),
+      reachedDestination: true,
+      stationCount: 20,
+      viaLabel: 'via Thane',
+    );
+
+    final rides = await db.recent();
+    expect(rides.map((r) => r.stationCount).toSet(), {20});
+    expect(rides.map((r) => r.viaLabel).toList(), ['via Thane', 'via Vashi']);
+  });
+
+  test('a direct ride names no route, because there was no choice', () async {
+    await ride('kalyan', 'Kalyan', DateTime(2026, 9, 12, 19));
+
+    expect((await db.recent()).single.viaLabel, isNull);
+  });
+
   test('a ride whose battery could not be read still records', () async {
     // A platform that refuses the reading must never cost the rider their
     // history row: the ride is the record, the battery is a note on it.

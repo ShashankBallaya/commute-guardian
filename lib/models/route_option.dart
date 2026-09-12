@@ -74,13 +74,8 @@ class RouteOption {
   /// NEVER KILOMETRES. m-Indicator shows them and they are the least useful
   /// number here: 41 km on an hourly MEMU and 41 km of fast local are not the
   /// same commute.
-  String? get viaLabel {
-    final names = [for (final station in via) station.name];
-    if (names.isEmpty) return null;
-    if (names.length == 1) return 'via ${names.single}';
-    final head = names.sublist(0, names.length - 1).join(', ');
-    return 'via $head and ${names.last}';
-  }
+  String? get viaLabel =>
+      viaLabelFrom([for (final station in via) station.name]);
 
   /// Stops, changes, and frequency ONLY WHEN IT IS UNUSUAL.
   ///
@@ -125,4 +120,23 @@ class RouteOption {
   List<String> get chainIds => [
     for (final station in journey.chain) station.id,
   ];
+}
+
+/// The ONE spelling of "via", for every screen that names a route.
+///
+/// Top-level rather than a method because the HISTORY ROW names a route too
+/// and it has no [RouteOption]: it replans a finished ride from stored ids and
+/// holds a bare [Journey]. A second join written over there would be one
+/// sentence in two files, and the first change to the wording would leave the
+/// picker saying "via Thane and Dadar" over a row saying "via Thane, Dadar".
+///
+/// NULL FOR A DIRECT RIDE, for the reason [RouteOption.viaLabel] gives: the
+/// callers want different words for that case, and one of them wants none.
+String? viaLabelFrom(List<String> interchangeNames) {
+  if (interchangeNames.isEmpty) return null;
+  if (interchangeNames.length == 1) return 'via ${interchangeNames.single}';
+  final head = interchangeNames
+      .sublist(0, interchangeNames.length - 1)
+      .join(', ');
+  return 'via $head and ${interchangeNames.last}';
 }

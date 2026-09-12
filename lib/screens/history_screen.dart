@@ -208,9 +208,9 @@ String durationLabel(DateTime startedAt, DateTime endedAt) {
   return rest == 0 ? '$hours h' : '$hours h $rest min';
 }
 
-/// "Thu 23 Jul • 14:55 • 2 stations". The outcome is NOT part of this; it is
-/// rendered separately by [_RideRow] so it can carry its own emphasis. See
-/// [outcomeLabel].
+/// "Thu 23 Jul • 14:55 • 2 stations • via Dadar". The outcome is NOT part of
+/// this; it is rendered separately by [_RideRow] so it can carry its own
+/// emphasis. See [outcomeLabel].
 ///
 /// Bullet separators and no dashes, per the copy rule. The time is when the
 /// ride ENDED, which is what the debug sheet has always shown and what the
@@ -238,7 +238,16 @@ String metaLine(JourneyRecord ride) {
   final stations = ride.stationCount == 1
       ? '1 station'
       : '${ride.stationCount} stations';
-  return '$day ${t.day} ${months[t.month - 1]} • $hh:$mm • $stations';
+  // LAST, and only when there was a choice. A direct ride has no "which way"
+  // to answer and rows written before schema 4 were never asked, so both say
+  // nothing rather than saying "direct" at a rider who never picked.
+  final via = ride.viaLabel;
+  return [
+    '$day ${t.day} ${months[t.month - 1]}',
+    '$hh:$mm',
+    stations,
+    ?via,
+  ].join(' • ');
 }
 
 /// Whether the ride got there. Kept as its own function because it is the only

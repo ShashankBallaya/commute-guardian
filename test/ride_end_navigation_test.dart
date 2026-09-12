@@ -197,6 +197,87 @@ void main() {
     expect(service.commands, contains('clearRideRecordSeed'));
   });
 
+  testWidgets('THE HISTORY ROW NAMES THE CORRIDOR THE RIDER CHOSE', (
+    tester,
+  ) async {
+    // ADR 0004, the part left undone when the picker shipped: the row stored
+    // the station COUNT, and a count is not an identity. Ghansoli to CSMT is
+    // three different rides (via Sanpada, via Juinagar, via Thane) and until
+    // now History wrote all three down the same way.
+    //
+    // THE TEST RIDES THE ONE THE PLANNER WOULD NOT HAVE PICKED. via Sanpada is
+    // the default at 20 stations; this ride is the 23-station via Thane, which
+    // is what the Ghansoli tester told us she actually takes. A row that
+    // replanned from the endpoints instead of from the stored corridor would
+    // say "via Sanpada", so the assertion cannot pass by accident.
+    final repo = StationRepository.parse(
+      File(StationRepository.assetPath).readAsStringSync(),
+    );
+    final viaThane = repo.planner
+        .planAlternatives(originId: 'ghansoli', destinationId: 'csmt')
+        .firstWhere((option) => option.viaLabel == 'via Thane');
+
+    final service = FakeRideServiceClient(
+      running: false,
+      rideInFlight: true,
+      originId: 'ghansoli',
+      destinationId: 'csmt',
+      startedAt: DateTime.now().subtract(const Duration(minutes: 55)),
+      routeChainIds: viaThane.chainIds,
+    );
+    final db = await _pumpProductStack(tester, service);
+
+    await tester.tap(find.byKey(const Key('decline_resume_ride')));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    final row = (await db.recent()).single;
+    expect(row.viaLabel, 'via Thane');
+    // And the count comes off the same replan, so the two can never describe
+    // different rides.
+    expect(row.stationCount, viaThane.chainIds.length);
+  });
+
+  testWidgets('A CORRIDOR THAT NO LONGER PLANS IS NOT NAMED IN THE ROW', (
+    tester,
+  ) async {
+    // `planAlong` falls back to the DEFAULT route whenever the stored chain
+    // no longer plans, which is right for a resume and would be a lie in a
+    // record: the row would read "via Sanpada" for a ride the rider took
+    // through Thane. Station data is regenerated from OSM and Dadar has
+    // already been split once, so a chain can outlive the network it was
+    // planned on.
+    //
+    // The row is still written, with the default route's count, exactly as it
+    // was before this column existed. What it does not do is add a name that
+    // could be false.
+    final service = FakeRideServiceClient(
+      running: false,
+      rideInFlight: true,
+      originId: 'ghansoli',
+      destinationId: 'csmt',
+      startedAt: DateTime.now().subtract(const Duration(minutes: 55)),
+      // A chain no planner will ever answer with: the stations are real, the
+      // route is not.
+      routeChainIds: const ['ghansoli', 'karjat', 'csmt'],
+    );
+    final db = await _pumpProductStack(tester, service);
+
+    await tester.tap(find.byKey(const Key('decline_resume_ride')));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+
+    final row = (await db.recent()).single;
+    expect(row.destinationId, 'csmt', reason: 'the row is still written');
+    expect(
+      row.viaLabel,
+      isNull,
+      reason: 'the default route is via Sanpada, and she did not choose it',
+    );
+  });
+
   testWidgets('and declining still takes the offer away', (tester) async {
     // The behaviour the button already had. Writing a row must not cost the
     // rider the dismissal, which is the half they can actually see.

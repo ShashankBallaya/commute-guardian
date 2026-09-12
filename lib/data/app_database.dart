@@ -39,6 +39,23 @@ class JourneyRecords extends Table {
   /// it depended on somebody remembering to look twice.
   IntColumn get batteryStartPct => integer().nullable()();
   IntColumn get batteryEndPct => integer().nullable()();
+
+  /// WHICH ROUTE THE RIDER TOOK, spelled the way the picker spelled it:
+  /// "via Thane", "via Dadar and Kurla". NULL means a direct ride with no
+  /// change, and null also means a row written before schema 4, which is the
+  /// same thing this column has always been able to say: nothing.
+  ///
+  /// [stationCount] IS NOT AN IDENTITY. ADR 0004's own table has Ghansoli to
+  /// Byculla and Ghansoli to CSMT at 20 stations each on different corridors,
+  /// so a row reading "20 stations" cannot tell a via-Thane ride from a
+  /// via-Vashi one. Once the rider picks the route, the row has to name it or
+  /// it is a record of a journey rather than of a ride.
+  ///
+  /// DENORMALIZED TEXT, for the reason the station names above are: history
+  /// must render a finished ride even after the generated station data moves
+  /// under it. Storing the chain ids instead would make every old row depend
+  /// on a station table that Dadar has already been split in once.
+  TextColumn get viaLabel => text().nullable()();
 }
 
 /// One route the rider saved, so Screen 1 can offer it as a card.
@@ -102,7 +119,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   /// Existing installs already hold rides (the 3T has recorded some), so the
   /// battery columns are ADDED to the live table rather than the database
@@ -122,6 +139,13 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(savedRoutes);
         await m.createTable(appFlags);
       }
+      // 12 Sep 2026, the route identity ADR 0004 asked for. Added to the live
+      // table for the same reason the batteries were: the 3T holds real rides
+      // and they are evidence. Old rows keep a null via, which is honest, they
+      // were ridden before the rider was ever asked which way.
+      if (from < 4) {
+        await m.addColumn(journeyRecords, journeyRecords.viaLabel);
+      }
     },
   );
 
@@ -134,6 +158,7 @@ class AppDatabase extends _$AppDatabase {
     required DateTime endedAt,
     required bool reachedDestination,
     required int stationCount,
+    String? viaLabel,
     int? batteryStartPct,
     int? batteryEndPct,
   }) {
@@ -147,6 +172,7 @@ class AppDatabase extends _$AppDatabase {
         endedAt: endedAt,
         reachedDestination: reachedDestination,
         stationCount: stationCount,
+        viaLabel: Value(viaLabel),
         batteryStartPct: Value(batteryStartPct),
         batteryEndPct: Value(batteryEndPct),
       ),

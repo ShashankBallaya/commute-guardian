@@ -257,6 +257,77 @@ void main() {
     );
   });
 
+  testWidgets('a row names the corridor when the rider picked one', (
+    tester,
+  ) async {
+    // ADR 0004. Two Ghansoli rides, both 20 stations, different corridors: the
+    // count cannot tell them apart and the via can. Written straight to the
+    // database rather than through the helper above, because the helper's
+    // rides are the ones that have no choice to record.
+    final db = AppDatabase.inMemory();
+    addTearDown(db.close);
+    await db.record(
+      originId: 'ghansoli',
+      destinationId: 'csmt',
+      originName: 'Ghansoli',
+      destinationName: 'CSMT',
+      startedAt: DateTime(2026, 9, 12, 9, 5),
+      endedAt: DateTime(2026, 9, 12, 10, 2),
+      reachedDestination: true,
+      stationCount: 20,
+      viaLabel: 'via Thane',
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [appDatabaseProvider.overrideWith((ref) => db)],
+        child: const MaterialApp(home: HistoryScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining(
+        'Sat 12 Sep • 10:02 • 20 stations • via Thane',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a direct ride says nothing about a route it never chose', (
+    tester,
+  ) async {
+    // Absence is the label for "there was no choice", the same rule the picker
+    // card follows. A row reading "direct" would answer a question nobody was
+    // asked, and every row written before this column existed would have to
+    // lie to say it.
+    await pumpHistory(
+      tester,
+      rides: [
+        (
+          from: 'Shahad',
+          to: 'Kalyan',
+          start: DateTime(2026, 7, 28, 21, 20),
+          end: DateTime(2026, 7, 28, 21, 34),
+          stations: 2,
+          reached: true,
+        ),
+      ],
+    );
+
+    // ' • via ', not 'via'. A bare substring over the whole screen reds the
+    // day a station or a line is named something containing those three
+    // letters, which is the trap the source guards fell into.
+    expect(find.textContaining(' • via ', findRichText: true), findsNothing);
+    expect(
+      find.textContaining(
+        'Tue 28 Jul • 21:34 • 2 stations',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('there is a way back out', (tester) async {
     await pumpHistory(tester, rides: []);
     expect(find.byKey(const Key('history_back')), findsOneWidget);

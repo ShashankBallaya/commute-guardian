@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../models/app_settings.dart';
 import '../models/journey.dart';
+import '../models/route_option.dart';
 import '../models/station.dart';
 import '../services/analytics.dart';
 import '../services/build_info.dart';
@@ -973,6 +974,16 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
       await service.clearRideRecordSeed();
       return;
     }
+    // WHETHER THIS PLAN IS STILL HER PLAN. `planAlong` falls back to `plan`
+    // whenever the stored chain no longer plans, which is the right call for
+    // a resume (wrong about the corridor, right about the destination) and a
+    // quiet lie in a RECORD: the row would name a corridor she never rode,
+    // written down as fact. Station data is regenerated from OSM and Dadar
+    // has already been split once, so this is a real path.
+    final rodeTheStoredCorridor = _isStoredCorridor(
+      persisted.routeChainIds,
+      journey,
+    );
 
     try {
       await ref
@@ -988,6 +999,21 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
             // The chain ends at the destination now; the overshoot pins live
             // outside it, so the journey length is simply the chain.
             stationCount: journey.chain.length,
+            // WHICH ROUTE, not how many stations. Off the SAME replan the
+            // count comes off, so the row cannot name one corridor and count
+            // another, and through `viaLabelFrom` so it cannot spell the
+            // route differently from the card the rider tapped.
+            viaLabel: rodeTheStoredCorridor
+                ? viaLabelFrom([
+                    for (final interchange in journey.interchanges)
+                      stationName(interchange.stationId),
+                  ])
+                // SILENT, NOT WRONG. Null reads on the row as "no corridor to
+                // name", which is what we honestly have: the count is the
+                // default route's, as it has been since the row was invented,
+                // and adding a name to it would be the one new claim that
+                // could be false.
+                : null,
             batteryStartPct: persisted.startBatteryPct,
             batteryEndPct: await _batteryPct(),
           );
@@ -1047,6 +1073,30 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     }
     if (!mounted) return;
     ref.invalidate(savedRoutesProvider);
+  }
+
+  /// Whether [planned] is the corridor the rider actually chose.
+  ///
+  /// TRUE WHEN SHE CHOSE NOTHING, because then the default route IS the ride:
+  /// a rider who never opens the picker is riding what the planner planned,
+  /// and that is the ordinary case for everyone.
+  bool _isStoredCorridor(List<String>? chosen, Journey planned) {
+    if (chosen == null || chosen.isEmpty) return true;
+    final planner = ref.read(stationRepositoryProvider).valueOrNull?.planner;
+    // Unreadable station data cannot say the corridor is wrong, and the row
+    // is written either way. Fail towards the quieter row.
+    if (planner == null) return false;
+    final matched = planner.sameChain([
+      for (final station in planned.chain) station.id,
+    ], chosen);
+    if (!matched) {
+      onOrchestrationLog(
+        'History: the stored corridor no longer plans, so the row names no '
+        'route (${chosen.length} stations stored, '
+        '${planned.chain.length} written)',
+      );
+    }
+    return matched;
   }
 
   /// The journey the service is riding, replanned from the stored ids.
