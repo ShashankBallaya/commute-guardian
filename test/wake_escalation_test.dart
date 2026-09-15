@@ -55,6 +55,7 @@ Announcement _arrival(String stationId) => Announcement(
 
 void main() {
   _wakeToggleTests();
+  _etaTrustDistanceTests();
   group('rung escalation while unacknowledged', () {
     test('25 seconds of silence after the check-in escalates to rung 1', () {
       final wake = WakeEscalation(
@@ -292,23 +293,30 @@ void main() {
         destinationStationId: 'digha',
       );
 
-      // Last good fixES near Mumbra: Digha ~213 s out at 15 m/s. Two of them,
-      // a second apart, because a seed inside the coastable envelope must be
-      // corroborated before it may count down into a ladder. A real 1 Hz
-      // stream hands over dozens; the second is the one that seeds. Then the
-      // GPS goes dark (the real 13 Jul Kalwa..Dombivli blackout pattern).
+      // Last good fixES 1150 m short of Digha at 5.424 m/s, so ~212 s out.
+      // Two of them, a second apart, because a seed inside the coastable
+      // envelope must be corroborated before it may count down into a ladder.
+      // A real 1 Hz stream hands over dozens; the second is the one that
+      // seeds. Then the GPS goes dark (the real 13 Jul Kalwa..Dombivli
+      // blackout pattern).
+      //
+      // 1150 m, NOT the 3188 m this test used until 14 Sep 2026: a seed
+      // outside WakeEscalation.maxEtaTrustM no longer arms anything, because
+      // that is the distance band where distance-over-speed stops being an
+      // ETA and starts being a guess. The projection itself is unchanged and
+      // this test still proves it fires.
       wake.onFix(
-        lat: 19.18979,
-        lng: 73.02325,
+        lat: 19.184096,
+        lng: 73.004802,
         accuracyM: 20,
-        speedMps: 15,
+        speedMps: 5.424,
         now: _t0.subtract(const Duration(seconds: 1)),
       );
       wake.onFix(
-        lat: 19.18979,
-        lng: 73.02325,
+        lat: 19.184096,
+        lng: 73.004802,
         accuracyM: 20,
-        speedMps: 15,
+        speedMps: 5.424,
         now: _t0,
       );
 
@@ -454,24 +462,31 @@ void main() {
       test('THE BOUND CAN STILL FAIL TO WITHHOLD: a blackout in the final '
           'approach fires exactly as before', () {
         // The pair that proves the bound is a bound and not an off switch.
-        // Mumbra is 3188 m from Digha. At 12 m/s that is a 266 s seed, which
-        // crosses the 90 s lead window at 176 s of staleness, INSIDE the
-        // 180 s coast. This is what dead reckoning is for.
+        // 1150 m short of Digha at 4.330 m/s is a 265.6 s seed, which crosses
+        // the 90 s lead window at 176 s of staleness, INSIDE the 180 s coast.
+        // This is what dead reckoning is for.
+        //
+        // The geometry moved on 14 Sep 2026 and the point did not. It used to
+        // stand at Mumbra, 3188 m out at 12 m/s, which is the same shape as
+        // the iPhone fix that armed Rabale 343 s early that evening: 3198 m at
+        // line speed. A seed that far out no longer arms anything
+        // (WakeEscalation.maxEtaTrustM), so the bound is now tested from
+        // inside the approach, where the bound is what actually decides.
         final wake = newWake();
-        // Two fixes: a 266 s seed is inside the coastable envelope, so it must
-        // be corroborated before it may coast into a ladder.
+        // Two fixes: a 265.6 s seed is inside the coastable envelope, so it
+        // must be corroborated before it may coast into a ladder.
         wake.onFix(
-          lat: 19.18979,
-          lng: 73.02325,
+          lat: 19.184096,
+          lng: 73.004802,
           accuracyM: 20,
-          speedMps: 12,
+          speedMps: 4.330,
           now: _t0.subtract(const Duration(seconds: 1)),
         );
         wake.onFix(
-          lat: 19.18979,
-          lng: 73.02325,
+          lat: 19.184096,
+          lng: 73.004802,
           accuracyM: 20,
-          speedMps: 12,
+          speedMps: 4.330,
           now: _t0,
         );
 
@@ -483,22 +498,24 @@ void main() {
 
       test('and the same approach at 11.5 m/s is withheld, because the '
           'crossing falls 7 s past the bound', () {
-        // The other half of the pair. Identical position, 0.5 m/s slower: a
+        // The other half of the pair. Identical position, a touch slower: a
         // 277 s seed crossing at 187 s of staleness, just outside the coast.
-        // Nothing about this test differs except the number the bound tests.
+        // Nothing about this test differs except the number the bound tests,
+        // and it sits inside maxEtaTrustM for the same reason its twin does,
+        // so the coast bound is still the thing doing the withholding.
         final wake = newWake();
         wake.onFix(
-          lat: 19.18979,
-          lng: 73.02325,
+          lat: 19.184096,
+          lng: 73.004802,
           accuracyM: 20,
-          speedMps: 11.5,
+          speedMps: 4.152,
           now: _t0.subtract(const Duration(seconds: 1)),
         );
         wake.onFix(
-          lat: 19.18979,
-          lng: 73.02325,
+          lat: 19.184096,
+          lng: 73.004802,
           accuracyM: 20,
-          speedMps: 11.5,
+          speedMps: 4.152,
           now: _t0,
         );
 
@@ -1832,6 +1849,148 @@ void _oneStationJourneyTests() {
 
       expect(wake.onStationEvent(_arrival('kalyan'), _t0), isEmpty);
       expect(wake.isLadderLive, isFalse);
+    });
+  });
+}
+
+/// THE 14 SEP 2026 RIDE, where the ladder armed 343 s early on a real train.
+///
+/// Kalyan to Ghansoli, iPhone, mobile data on, fixes healthy. The last fix
+/// before a blackout sat 3198 m from Rabale doing 22.9 m/s, which is line
+/// speed, so `distance / speed` returned 140 s. The train took 342 s, because
+/// it was about to brake for a station it stops at. 140 s is well inside the
+/// coastable envelope, so [WakeEscalation.maxDeadReckonCoast] never fired: the
+/// bound limits how LONG a seed may coast, never how wrong it was when taken.
+///
+/// Measured over all 47 archived ride logs, the share of fixes whose ETA was
+/// short by more than half runs 2.3 % at 400-800 m and 27.6 % at 2600-3400 m.
+/// [WakeEscalation.maxEtaTrustM] is where that rate triples.
+void _etaTrustDistanceTests() {
+  group('THE ETA IS ONLY EVIDENCE FROM THE APPROACH, 14 Sep 2026', () {
+    WakeEscalation toDigha() => WakeEscalation(
+      chain: _chain,
+      interchangeStationIds: const [],
+      destinationStationId: 'digha',
+    );
+
+    // Mumbra, 3188 m from Digha: the 14 Sep geometry to within ten metres.
+    void seedAtLineSpeed(WakeEscalation wake) {
+      for (final offset in [-1, 0]) {
+        wake.onFix(
+          lat: 19.18979,
+          lng: 73.02325,
+          accuracyM: 20,
+          speedMps: 22.9,
+          now: _t0.add(Duration(seconds: offset)),
+        );
+      }
+    }
+
+    test('a 140 s ETA taken 3188 m out never arms the ladder, however long '
+        'its countdown runs', () {
+      final wake = toDigha();
+      seedAtLineSpeed(wake);
+
+      // 139 s of seed means the old countdown crossed the 90 s lead at 49 s
+      // of staleness and spoke. Every tick from there to the coast bound must
+      // now be silent instead.
+      for (var s = 1; s <= 180; s++) {
+        expect(
+          wake.onTick(_t0.add(Duration(seconds: s))),
+          isEmpty,
+          reason: 'armed at $s s of staleness from a fix 3188 m out',
+        );
+      }
+      expect(wake.isLadderLive, isFalse);
+    });
+
+    test('and the blackout is still REPORTED, because the log is how this bug '
+        'was found', () {
+      // The seed is still taken at any distance. What the distance decides is
+      // only whether its countdown may arm. Silencing the note instead would
+      // have blinded the ride log on exactly the rides worth reading.
+      final wake = toDigha();
+      seedAtLineSpeed(wake);
+
+      final crossing = wake.onTick(_t0.add(const Duration(seconds: 181)));
+      expect(
+        (crossing.single as WakeNote).message,
+        contains('dead reckoning abandoned'),
+      );
+    });
+
+    test('the station event still arms it, which is what the rider actually '
+        'got once GPS returned', () {
+      // On the real ride the ladder eventually armed at Rabale and the rider
+      // had 2 minutes. That path is untouched: this gate is about ETAs.
+      final wake = toDigha();
+      seedAtLineSpeed(wake);
+      for (var s = 1; s <= 200; s++) {
+        wake.onTick(_t0.add(Duration(seconds: s)));
+      }
+
+      final armed = wake.onStationEvent(
+        _arrival('thane'),
+        _t0.add(const Duration(seconds: 210)),
+      );
+
+      expect(wake.isLadderLive, isTrue);
+      expect(armed.whereType<Speak>(), hasLength(1));
+    });
+
+    test('the DIRECT ETA leg is gated too: 87 s of ETA two kilometres out is '
+        'still two kilometres out', () {
+      // Ninety seconds of lead time is over two kilometres of track at line
+      // speed, so gating only the projection would leave the same wrong number
+      // arming the ladder through the other door.
+      final wake = toDigha();
+      for (final offset in [-1, 0]) {
+        final actions = wake.onFix(
+          lat: 19.186431,
+          lng: 73.012509,
+          accuracyM: 20,
+          speedMps: 22.9,
+          now: _t0.add(Duration(seconds: offset)),
+        );
+        expect(actions, isEmpty);
+      }
+      expect(wake.isLadderLive, isFalse);
+    });
+
+    test('and the destination override is gated hardest, because it spends '
+        'every ladder the rider had left', () {
+      // This branch can jump the cursor past every remaining change from
+      // anywhere on the route. Digha is 2000 m away and nearer than Thane, and
+      // at line speed its ETA is 87 s, so before the gate one pair of fixes
+      // here resolved the interchange the rider still needed.
+      final wake = WakeEscalation(
+        chain: _chain,
+        interchangeStationIds: const ['thane'],
+        destinationStationId: 'digha',
+      );
+
+      for (final offset in [-1, 0]) {
+        expect(
+          wake.onFix(
+            lat: 19.186431,
+            lng: 73.012509,
+            accuracyM: 20,
+            speedMps: 22.9,
+            now: _t0.add(Duration(seconds: offset)),
+          ),
+          isEmpty,
+        );
+      }
+
+      expect(wake.isLadderLive, isFalse);
+      // The Thane ladder must still be there to arm.
+      expect(
+        wake.onStationEvent(
+          _arrival('kalwa'),
+          _t0.add(const Duration(seconds: 30)),
+        ).whereType<Speak>(),
+        hasLength(1),
+      );
     });
   });
 }

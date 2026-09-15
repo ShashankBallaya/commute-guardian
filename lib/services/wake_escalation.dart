@@ -244,6 +244,47 @@ class WakeEscalation {
   /// station event, and [WakeNote] says in the log that it did.
   static const maxDeadReckonCoast = Duration(seconds: 180);
 
+  /// How near the critical station a fix must be before its ETA is allowed to
+  /// arm a ladder or seed the projection.
+  ///
+  /// [maxDeadReckonCoast] bounded how LONG a seed may coast. It did not touch
+  /// how wrong the seed can be the moment it is taken, and on 14 Sep 2026 that
+  /// was the whole bug. The iPhone's last fix before a blackout sat 3198 m from
+  /// Rabale doing 22.9 m/s, which is line speed, so the model returned
+  /// `3198 / 22.9 = 140 s`. The train took 342 s, because it was about to brake
+  /// for a station it stops at. 140 s is comfortably inside the coastable
+  /// envelope, so the bound never fired: the ladder armed 343 s early and the
+  /// owner noticed from the train.
+  ///
+  /// MEASURED, not guessed, over all 47 archived ride logs: for every arrival,
+  /// every usable fix before it, the ratio of the time the train ACTUALLY took
+  /// to what `distance / speed` predicted. The model is not biased, it is
+  /// NOISE, and the noise grows with distance. Share of fixes whose ETA was
+  /// short by more than half:
+  ///
+  ///      400-800 m    2.3 %
+  ///     800-1200 m    3.6 %
+  ///    1200-1600 m    9.4 %
+  ///    1600-2000 m   15.2 %
+  ///    2000-2600 m   18.3 %
+  ///    2600-3400 m   27.6 %
+  ///
+  /// 1200 m is where that rate triples. Inside it the ETA is worth acting on;
+  /// outside it the ETA is a guess wearing a number, and [leadTimeS] of ninety
+  /// seconds cannot survive being multiplied by two.
+  ///
+  /// IT ALSO MATCHES WHAT THE PROJECTION IS FOR, which the coast bound already
+  /// says in words: "a blackout in the final approach". A fix 3.2 km out is not
+  /// the final approach of anything.
+  ///
+  /// THE TRADE, stated rather than hidden: GPS that dies further out than this
+  /// and never returns now produces NO ladder instead of an early one. That is
+  /// deliberate and it is the direction `CLAUDE.md` locks, because an early
+  /// ladder does not annoy, it SPENDS the alarm: the rider acks it and the real
+  /// alarm can never fire (21 Aug 2026). A missing alarm is a phone with no
+  /// idea where it is; a spent alarm is the app taking the rider's stop away.
+  static const maxEtaTrustM = 1200.0;
+
   /// The critical stations (locked decision 6: the rider's destination plus
   /// the interchanges THEIR route requires, nothing else), one ladder each,
   /// armed in chain order. [interchangeStationIds] comes from the planner
@@ -270,6 +311,11 @@ class WakeEscalation {
   /// can keep counting down after fixes stop arriving.
   DateTime? _lastFixAt;
   double? _lastEtaS;
+
+  /// Whether the fix that set [_lastEtaS] was inside [maxEtaTrustM] of the
+  /// target. A seed taken further out still counts as a fix for blackout
+  /// reporting, but its countdown may not arm a ladder on its own.
+  bool _seedWithinApproach = false;
 
   /// The two claims a fix can make, each counted on its own.
   ///
@@ -558,6 +604,17 @@ class WakeEscalation {
     if (targetCorroborated || etaS > coastableS) {
       _lastFixAt = now;
       _lastEtaS = etaS;
+      // WHETHER THIS SEED MAY ARM, recorded with it (14 Sep 2026).
+      //
+      // The seed itself is still taken at any distance, because [onTick]'s
+      // blackout reporting reads [_lastFixAt]: refusing to record it would
+      // silence the ride log on exactly the blackouts worth explaining, and
+      // the log is how the 14 Sep bug was found in the first place.
+      //
+      // What the distance decides is narrower and is the actual fix: whether
+      // a countdown started from this fix is allowed to arm a ladder with no
+      // further evidence. See [maxEtaTrustM].
+      _seedWithinApproach = toTargetM <= maxEtaTrustM;
     }
     // A usable fix ends the blackout, so the next one may be reported. This
     // is about fixes ARRIVING, not about the gate, so it sits outside the
@@ -568,7 +625,10 @@ class WakeEscalation {
     // No ladder starts into the rider's conversation.
     if (_inCall) return const [];
 
-    if (etaS <= leadTimeS) {
+    // The distance gate sits with the ETA everywhere it is read, not only on
+    // the seed: at line speed, ninety seconds of ETA is over two kilometres of
+    // track, which is exactly the band [maxEtaTrustM] was measured to exclude.
+    if (etaS <= leadTimeS && toTargetM <= maxEtaTrustM) {
       if (!targetCorroborated) {
         return [_holdingNote(_targets[_cursor], _targetClaim.fixes)];
       }
@@ -604,8 +664,13 @@ class WakeEscalation {
       // wide and the stop can be nearer than the change inside it), so one
       // shared counter would have them resetting each other on alternate
       // fixes and neither would ever reach two.
-      final stopClaim =
-          toDestination / speedMps <= leadTimeS && toDestination < toTargetM;
+      // [maxEtaTrustM] applies here hardest of all. This branch can jump the
+      // cursor past every remaining change from anywhere on the route, so an
+      // ETA it should never have trusted costs the rider every ladder they had
+      // left, not just this one.
+      final stopClaim = toDestination <= maxEtaTrustM &&
+          toDestination / speedMps <= leadTimeS &&
+          toDestination < toTargetM;
       _stopClaim.record(holds: stopClaim, now: now);
       if (stopClaim) {
         // The gate matters most here: this branch is the one that can jump the
@@ -680,6 +745,7 @@ class WakeEscalation {
     // the next one.
     _lastFixAt = null;
     _lastEtaS = null;
+    _seedWithinApproach = false;
   }
 
   /// Great-circle distance in metres between two lat/lng points (haversine).
@@ -899,7 +965,7 @@ class WakeEscalation {
         return const [];
       }
       final remainingS = _lastEtaS! - staleness.inSeconds;
-      if (remainingS <= leadTimeS) {
+      if (remainingS <= leadTimeS && _seedWithinApproach) {
         return _startLadder(now);
       }
     }

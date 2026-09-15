@@ -81,3 +81,6 @@ secrets.json
 /android/key.properties
 *.jks
 *.keystore
+
+# Ride logs pulled off a phone: real coordinates, local evidence only.
+.rides-*/
