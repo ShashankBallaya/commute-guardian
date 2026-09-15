@@ -14,6 +14,60 @@ enum AnalyticsIsolate {
   service,
 }
 
+/// What became of the `ride_ended` event at teardown, so the ride log can say
+/// it instead of leaving it to be inferred from timestamps.
+///
+/// ADDED 15 SEP 2026. Until then `Analytics` wrote nothing to any log, in
+/// either direction, so "did yesterday's event leave the phone" could only be
+/// answered from the dashboard. When the dashboard was missing rows, the only
+/// evidence available at the desk was the gap between the farewell line and
+/// the chain-stopped line, two lines that have nothing to do with analytics.
+enum DrainOutcome {
+  /// The queue emptied inside the budget: the SDK's timer sent it.
+  sent,
+
+  /// The budget ran out with the event still queued. NOT a loss: it is on disk
+  /// and the next ride's `Aptabase.init` sends it, which is the behaviour
+  /// `awaitQueueDrain` replaced. It IS the signal that [Analytics.drainLimit]
+  /// is too small for this phone and this network.
+  timedOut,
+
+  /// Opted out, or no usable key compiled in. Nothing was ever going to send.
+  inactive,
+
+  /// The SDK never published a queue, so there is nothing to wait on.
+  noQueue,
+
+  /// Something threw. Swallowed, as everything in this file is, but named.
+  failed,
+}
+
+/// [DrainOutcome] plus how long it took, because the duration is the number
+/// that sets [Analytics.drainLimit] and nobody has ever measured it.
+class DrainResult {
+  const DrainResult(this.outcome, this.elapsed);
+
+  final DrainOutcome outcome;
+  final Duration elapsed;
+
+  /// One short line for the ride log, in the shape the rest of the log uses.
+  String get logLine => switch (outcome) {
+    DrainOutcome.sent =>
+      'TELEMETRY ride_ended sent in ${elapsed.inMilliseconds} ms.',
+    DrainOutcome.timedOut =>
+      'TELEMETRY ride_ended NOT SENT: gave up after '
+          '${elapsed.inMilliseconds} ms. It is on disk and the next ride will '
+          'send it. Raise Analytics.drainLimit if this repeats.',
+    DrainOutcome.inactive =>
+      'TELEMETRY off: opted out, or no key compiled into this build.',
+    DrainOutcome.noQueue =>
+      'TELEMETRY ride_ended: the SDK published no queue to wait on.',
+    DrainOutcome.failed =>
+      'TELEMETRY ride_ended: the drain threw after '
+          '${elapsed.inMilliseconds} ms, and was swallowed.',
+  };
+}
+
 /// How a ride finished. The only thing analytics ever learns about a journey.
 ///
 /// Deliberately a closed set of five words. Anything richer (which station,
@@ -356,33 +410,71 @@ class Analytics {
   /// Returns at once when the rider has opted out, when no usable key is
   /// compiled in, or when the queue is already empty, which is the ordinary
   /// case once the tick is 2 seconds.
-  Future<void> awaitQueueDrain({
+  /// RETURNS WHAT HAPPENED, since 15 Sep 2026, so the caller can put it in the
+  /// ride log. Until then this method was silent in both directions: nothing
+  /// it did reached any log, and the only way to ask "did the event leave the
+  /// phone" was to read the dashboard and infer. On 14 Sep both iOS rides sat
+  /// within 110 ms of the old 3 second ceiling, which had to be diagnosed from
+  /// the gap between two unrelated log lines. A ride should be able to say
+  /// this itself.
+  Future<DrainResult> awaitQueueDrain({
     required Future<void> queued,
     Duration limit = drainLimit,
   }) async {
-    if (!isActive) return;
-    final giveUpAt = DateTime.now().add(limit);
+    final startedAt = DateTime.now();
+    if (!isActive) {
+      return DrainResult(DrainOutcome.inactive, Duration.zero);
+    }
+    final giveUpAt = startedAt.add(limit);
+    Duration elapsed() => DateTime.now().difference(startedAt);
     try {
       await queued.timeout(limit, onTimeout: () {});
       final queue = pendingQueue;
-      if (queue == null) return;
+      if (queue == null) {
+        return DrainResult(DrainOutcome.noQueue, elapsed());
+      }
       while (true) {
-        if ((await queue.getItems(1)).isEmpty) return;
-        if (!DateTime.now().isBefore(giveUpAt)) return;
+        if ((await queue.getItems(1)).isEmpty) {
+          return DrainResult(DrainOutcome.sent, elapsed());
+        }
+        if (!DateTime.now().isBefore(giveUpAt)) {
+          return DrainResult(DrainOutcome.timedOut, elapsed());
+        }
         await Future<void>.delayed(pollInterval);
       }
     } catch (_) {
       // Same rule as [_send]. Counting a ride may not endanger ending one.
+      return DrainResult(DrainOutcome.failed, elapsed());
     }
   }
 
   /// The whole budget [awaitQueueDrain] may spend, disk write included.
   ///
-  /// Three seconds against a farewell already allowed eight. It is spent in
+  /// EIGHT SINCE 15 SEP 2026, RAISED FROM THREE, and the reason is measured.
+  /// On the 14 Sep rides both iPhone teardowns took 3.093 s and 3.107 s from
+  /// the farewell to the chain stopping, against a 3 second budget: within
+  /// 110 ms of the ceiling and within 15 ms of each other, twice. That is what
+  /// a timeout looks like, not what a send looks like.
+  ///
+  /// THREE SECONDS COULD NOT HAVE WORKED, and reading [tickFor] says why.
+  /// Nothing here triggers a send; this waits for the SDK's own timer, which
+  /// is 2 seconds in the service isolate. So the budget has to cover the wait
+  /// for the next tick AND the network round trip after it, and 3 seconds left
+  /// about one second for an HTTP request made from a moving train. The old
+  /// value was sized against the teardown it must not overrun, and never
+  /// against the work it was waiting for.
+  ///
+  /// EIGHT is the farewell's own allowance, already in this codebase, which
+  /// makes it a precedent rather than a fresh guess: 2 seconds of worst-case
+  /// tick plus about 6 for a send on a poor mobile connection. It is spent in
   /// full only when the send is failing, which is the case where it buys
-  /// nothing, and the case where the event was going to wait for the next ride
-  /// anyway.
-  static const drainLimit = Duration(seconds: 3);
+  /// nothing and where the event was going to wait for the next ride anyway.
+  ///
+  /// IT IS STILL NOT A MEASUREMENT OF THE SEND, and it should become one. The
+  /// drain now reports its own elapsed time into the ride log, so the next
+  /// ride says how long a real send actually takes and this number can be set
+  /// from that instead of from a bound.
+  static const drainLimit = Duration(seconds: 8);
 
   /// How often [awaitQueueDrain] re-reads the queue. An in-memory map read, so
   /// the cost is the wakeup and not the work.

@@ -438,6 +438,81 @@ void main() {
       );
     });
 
+    test('THE DRAIN NOW SAYS WHAT IT DID, and how long it took', () async {
+      // 15 SEP 2026. The 14 Sep iOS rides went missing from the dashboard and
+      // the only evidence at the desk was the gap between the farewell line
+      // and the chain-stopped line, two lines that have nothing to do with
+      // analytics. A ride has to be able to answer this itself.
+      final queue = await queueHolding('aptabase_1_ride_ended');
+      unawaited(
+        Future<void>.delayed(
+          const Duration(milliseconds: 150),
+          () => queue.deleteEvents({'aptabase_1_ride_ended'}),
+        ),
+      );
+
+      final result = await Analytics.configured(
+        enabled: true,
+        client: _RecordingAptabase(),
+      ).awaitQueueDrain(queued: Future<void>.value());
+
+      expect(result.outcome, DrainOutcome.sent);
+      expect(result.elapsed, greaterThan(Duration.zero));
+      expect(result.logLine, contains('ride_ended sent in'));
+    });
+
+    test('and a timeout is REPORTED as one, not left to be inferred', () async {
+      await queueHolding('aptabase_1_ride_ended');
+
+      final result = await Analytics.configured(
+        enabled: true,
+        client: _RecordingAptabase(),
+      ).awaitQueueDrain(
+        queued: Future<void>.value(),
+        limit: const Duration(milliseconds: 300),
+      );
+
+      expect(result.outcome, DrainOutcome.timedOut);
+      expect(
+        result.logLine,
+        contains('NOT SENT'),
+        reason: 'the log line is the whole point: a silent give-up is what '
+            'made 14 Sep guesswork',
+      );
+      expect(result.logLine, contains('next ride will send it'));
+    });
+
+    test('a build with no key says so rather than saying nothing', () async {
+      await queueHolding('aptabase_1_ride_ended');
+
+      final result = await Analytics.configured(
+        enabled: false,
+        client: _RecordingAptabase(),
+      ).awaitQueueDrain(queued: Future<void>.value());
+
+      expect(result.outcome, DrainOutcome.inactive);
+      expect(result.logLine, contains('no key compiled into this build'));
+    });
+
+    test('THE BUDGET COVERS A TICK PLUS A SEND, which three seconds did not',
+        () async {
+      // Nothing here triggers a send: the drain waits for the SDK's own timer,
+      // which is 2 s in the service isolate. So the budget must cover the wait
+      // for the next tick AND the network round trip after it. Three seconds
+      // left about one second for an HTTP request from a moving train, and on
+      // 14 Sep both iPhone teardowns landed within 110 ms of the ceiling.
+      expect(
+        Analytics.drainLimit,
+        greaterThan(Analytics.tickFor(AnalyticsIsolate.service) * 2),
+        reason: 'a budget that cannot outlast two ticks cannot see a send',
+      );
+      expect(
+        Analytics.drainLimit,
+        lessThanOrEqualTo(const Duration(seconds: 10)),
+        reason: 'and it still may not hold a dying isolate open indefinitely',
+      );
+    });
+
     test('the flush returns as soon as the queue is empty', () async {
       final queue = await queueHolding('aptabase_1_ride_ended');
       // Stands in for the SDK's timer getting there while we wait.

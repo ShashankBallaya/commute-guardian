@@ -559,6 +559,15 @@ class GeofenceChainService {
     // rides in a week, so this event carries no properties at all. Not
     // awaited, because nothing about starting a ride may wait on a network.
     unawaited(_analytics.trackRideStarted());
+    // QUEUED, not sent, and the log says the difference. `trackEvent` writes to
+    // disk and the SDK's own timer transmits, so this line means the event
+    // exists, never that it arrived. The matching TELEMETRY line at the bottom
+    // of `stop()` is the one that reports a send.
+    _log(
+      _analytics.isActive
+          ? 'TELEMETRY ride_started queued.'
+          : 'TELEMETRY off: opted out, or no key compiled into this build.',
+    );
     if (pulseIntervalS > 0) {
       _log(
         'PULSE every ${pulseIntervalS}s'
@@ -2030,7 +2039,12 @@ class GeofenceChainService {
     // One budget of `Analytics.drainLimit` covers the disk write and the send
     // together, and on timeout the event is still on disk for the next ride,
     // which is the old behaviour rather than a new failure.
-    await _analytics.awaitQueueDrain(queued: ended);
+    // AND IT SAYS SO IN THE LOG, since 15 Sep 2026. Before this line the whole
+    // telemetry path was invisible to a ride log, so when the 14 Sep iOS rides
+    // went missing from the dashboard the only evidence at the desk was the
+    // gap between two unrelated log lines. A ride should be able to answer
+    // "did the event leave the phone" by itself.
+    _log(await _analytics.awaitQueueDrain(queued: ended).then((r) => r.logLine));
     _log('Geofence chain stopped.');
     _logFile = null;
   }
