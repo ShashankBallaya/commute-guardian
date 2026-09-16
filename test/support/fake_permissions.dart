@@ -14,6 +14,7 @@ class FakePermissions implements PermissionsGateway {
     this.alwaysGranted = false,
     this.notificationsGranted = true,
     this.batteryExempt = false,
+    this.settingsPageOpens = true,
   });
 
   final bool android;
@@ -22,6 +23,12 @@ class FakePermissions implements PermissionsGateway {
   bool alwaysGranted;
   bool notificationsGranted;
   bool batteryExempt;
+
+  /// Whether the app's own settings page opens at all. FALSE IS A REAL PHONE,
+  /// not a theoretical one: some skins simply do not answer the intent, and a
+  /// Fix button that opens nothing and says nothing is a dead tap on the one
+  /// screen a worried rider reads carefully.
+  bool settingsPageOpens;
 
   /// Every call, in order. Tests assert on WHAT WAS ASKED as much as on what
   /// came back: the Android 11+ trap is about which door gets opened, not
@@ -52,7 +59,7 @@ class FakePermissions implements PermissionsGateway {
   @override
   Future<bool> openSettings() async {
     asked.add('openSettings');
-    return true;
+    return settingsPageOpens;
   }
 
   @override

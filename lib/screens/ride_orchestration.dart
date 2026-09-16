@@ -1585,6 +1585,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   static List<ReadinessItem> readinessRows(
     TravelReadiness? readiness, {
     required VoidCallback onFixed,
+    required VoidCallback onNothingOpened,
     required PermissionsGateway gateway,
   }) {
     ReadinessState stateOf(bool? granted) => switch (granted) {
@@ -1601,9 +1602,28 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     // `requestIgnoreBatteryOptimizations` shows an in-app system dialog and
     // returns the rider's actual answer. Kept on both so no Fix can ever be
     // the one that leaves the card stale.
-    Future<void> fix(Future<void> Function() action) async {
+    Future<void> fix(Future<bool> Function() action) async {
       await action();
       onFixed();
+    }
+
+    /// For the doors where the platform's `false` CAN ONLY MEAN "nothing
+    /// opened", so the rider can be told.
+    ///
+    /// THE ANSWER WAS BEING DROPPED ON THE FLOOR until 16 Sep 2026. Both calls
+    /// below return a bool, and [fix] typed its action as
+    /// `Future<void> Function()`, which discards it. On a skin where the app's
+    /// settings page does not open, a rider tapped Fix on the screen whose
+    /// whole job is telling them how to fix something and got no page, no
+    /// message and no change: a dead tap in the one place the app cannot
+    /// afford one. Those skins are not a hypothetical here. MIUI and ColorOS
+    /// are this project's named OEM risk, and the guidance screen next door
+    /// already answers the same question properly, by swapping its button for
+    /// a sentence when the deep link resolves to nothing.
+    Future<void> openOrSaySo(Future<bool> Function() action) async {
+      final opened = await action();
+      onFixed();
+      if (!opened) onNothingOpened();
     }
 
     return [
@@ -1617,7 +1637,10 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         // asking for background location shows no dialog with an "Allow all the
         // time" option at all, which is the trap onboarding already works
         // around; a request here would appear to do nothing.
-        onFix: () => fix(gateway.openSettings),
+        //
+        // The rider is never shown a dialog on this path, so a false answer
+        // cannot be a refusal. It can only mean the page did not open.
+        onFix: () => openOrSaySo(gateway.openSettings),
       ),
       ReadinessItem(
         label: 'Notifications',
@@ -1625,7 +1648,7 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
         detail:
             'The ride notification carries "I\'m awake" and "End now". '
             'Without it those live only on screen.',
-        onFix: () => fix(gateway.openSettings),
+        onFix: () => openOrSaySo(gateway.openSettings),
       ),
       // ANDROID ONLY, and absent rather than grey on iOS: a row that can never
       // go green is worse than no row. Null here means the question does not
@@ -1639,6 +1662,14 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
           // MIUI and ColorOS, this project's named OEM risk, are exactly the
           // ROMs that refuse it, and the re-read after it returns is what
           // tells the rider whether it worked.
+          //
+          // [fix], NOT [openOrSaySo], and the difference is not an oversight.
+          // False here is AMBIGUOUS: the rider may have been shown the dialog
+          // and said no. Telling someone who just declined that their phone
+          // would not open the screen is a lie, and the row staying amber is
+          // already the honest answer. What this path may still be missing is
+          // a fall back to `openBatterySettings` for the ROMs that show no
+          // dialog at all, which is a product decision rather than a bug.
           onFix: () => fix(gateway.requestIgnoreBatteryOptimizations),
         ),
     ];
@@ -1731,6 +1762,20 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
                 // card still showing amber after the rider did what it asked
                 // is worse than the hardcoded row this replaced.
                 onFixed: () => ref.invalidate(travelReadinessProvider),
+                // A FIX THAT OPENS NOTHING MUST SAY SO. Same shape as the
+                // ride-log share's problem message, and the same reason: the
+                // rider is on this screen because something is wrong, so
+                // silence reads as the app being broken too.
+                onNothingOpened: () => ScaffoldMessenger.of(context)
+                    .showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'This phone would not open that settings page. '
+                          'Open Settings, find Commute Guardian, and change '
+                          'it there.',
+                        ),
+                      ),
+                    ),
                 gateway: ref.read(permissionsGatewayProvider),
               ),
               // THE PHONE BRAND'S OWN SECOND PERMISSION. Present only on the

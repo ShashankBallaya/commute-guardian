@@ -406,7 +406,13 @@ class _Panel extends StatelessWidget {
               ),
             ),
           ],
-          if (quiet != null) ...[
+          // BOTH, not just the label. It used to render on `quiet != null`
+          // alone and fall back to `onTap: onQuiet ?? () {}`, which is a
+          // target that scales under the thumb and does nothing: a dead tap on
+          // the first screen a new rider ever sees. No caller passes one
+          // without the other today, so this closes a trap rather than a bug,
+          // and it is the pattern `_PlainButton` on Screen 3 already uses.
+          if (quiet != null && onQuiet != null) ...[
             const SizedBox(height: 6),
             // PRESSABLE, NOT TextButton (punchlist item 11). This was the only
             // surface left in the app that flashed Material's InkWell ripple,
@@ -420,7 +426,7 @@ class _Panel extends StatelessWidget {
             // Measure, never infer.
             Pressable(
               key: const Key('onboarding_skip'),
-              onTap: onQuiet ?? () {},
+              onTap: onQuiet!,
               child: Container(
                 constraints: const BoxConstraints(minHeight: 48),
                 alignment: Alignment.center,

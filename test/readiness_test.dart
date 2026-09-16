@@ -1,5 +1,6 @@
 import 'package:commute_guardian/screens/ride_orchestration.dart';
 import 'package:commute_guardian/screens/settings_screen.dart';
+import 'package:commute_guardian/services/permissions_gateway.dart';
 import 'package:commute_guardian/state/readiness_providers.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -26,12 +27,25 @@ import 'support/fake_permissions.dart';
 void main() {
   final gateway = FakePermissions();
 
-  List<ReadinessItem> rows(TravelReadiness? readiness) =>
-      RideOrchestration.readinessRows(
-        readiness,
-        onFixed: () {},
-        gateway: gateway,
-      );
+  /// Both callbacks are recorded, because what this card does when a Fix
+  /// opens NOTHING is now part of what it means.
+  final fixedCalls = <int>[];
+  final nothingOpened = <int>[];
+
+  List<ReadinessItem> rows(
+    TravelReadiness? readiness, {
+    PermissionsGateway? withGateway,
+  }) => RideOrchestration.readinessRows(
+    readiness,
+    onFixed: () => fixedCalls.add(1),
+    onNothingOpened: () => nothingOpened.add(1),
+    gateway: withGateway ?? gateway,
+  );
+
+  setUp(() {
+    fixedCalls.clear();
+    nothingOpened.clear();
+  });
 
   ReadinessItem row(List<ReadinessItem> items, String label) =>
       items.firstWhere((i) => i.label == label);
@@ -142,6 +156,75 @@ void main() {
       // row. Dropping it during the read would make the card lose a row and
       // then grow it back, on the screen a worried rider is staring at.
       expect(rows(null).length, 3);
+    });
+  });
+
+  group('A FIX THAT OPENS NOTHING MUST SAY SO, 16 Sep 2026', () {
+    // The dead-tap audit's one real finding. `openAppSettings` returns a bool
+    // and the row's `fix` helper typed its action as `Future<void> Function()`,
+    // which discards it. On a skin that does not answer the intent the rider
+    // tapped Fix, on the screen whose whole job is telling them how to fix
+    // something, and got no page, no message and no change. MIUI and ColorOS
+    // are this project's named OEM risk, so that skin is not hypothetical.
+    const unmet = TravelReadiness(
+      locationAlways: false,
+      notifications: false,
+      batteryExempt: false,
+    );
+
+    test('the rider is told when the settings page does not open', () async {
+      final refuses = FakePermissions(settingsPageOpens: false);
+      row(rows(unmet, withGateway: refuses), 'Location, always').onFix!();
+      await pumpEventQueue();
+
+      expect(refuses.asked, ['openSettings']);
+      expect(
+        nothingOpened,
+        hasLength(1),
+        reason: 'a Fix that opens nothing and says nothing is a dead tap',
+      );
+    });
+
+    test('and is NOT told when it does open', () async {
+      final opens = FakePermissions();
+      row(rows(unmet, withGateway: opens), 'Location, always').onFix!();
+      await pumpEventQueue();
+
+      expect(nothingOpened, isEmpty);
+    });
+
+    test('the notifications row answers the same way', () async {
+      final refuses = FakePermissions(settingsPageOpens: false);
+      row(rows(unmet, withGateway: refuses), 'Notifications').onFix!();
+      await pumpEventQueue();
+
+      expect(nothingOpened, hasLength(1));
+    });
+
+    test('BUT THE BATTERY ROW STAYS SILENT, because its false is ambiguous',
+        () async {
+      // The battery Fix shows an in-app system dialog, so false can mean the
+      // rider looked at it and said no. Telling someone who just declined that
+      // their phone would not open the screen is a lie, and the row staying
+      // amber is already the honest answer.
+      final declined = FakePermissions(batteryExempt: false);
+      row(rows(unmet, withGateway: declined), 'Battery use').onFix!();
+      await pumpEventQueue();
+
+      expect(declined.asked, ['requestIgnoreBattery']);
+      expect(nothingOpened, isEmpty);
+    });
+
+    test('every Fix re-reads the card, opened or not', () async {
+      // The re-read is what stops a card sitting amber after the rider did
+      // what it asked. It must not become conditional on the new message.
+      final refuses = FakePermissions(settingsPageOpens: false);
+      row(rows(unmet, withGateway: refuses), 'Location, always').onFix!();
+      await pumpEventQueue();
+      row(rows(unmet, withGateway: refuses), 'Battery use').onFix!();
+      await pumpEventQueue();
+
+      expect(fixedCalls, hasLength(2));
     });
   });
 }
