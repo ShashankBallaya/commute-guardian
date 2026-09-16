@@ -45,10 +45,16 @@ enum DrainOutcome {
 /// [DrainOutcome] plus how long it took, because the duration is the number
 /// that sets [Analytics.drainLimit] and nobody has ever measured it.
 class DrainResult {
-  const DrainResult(this.outcome, this.elapsed);
+  const DrainResult(this.outcome, this.elapsed, {this.reason});
 
   final DrainOutcome outcome;
   final Duration elapsed;
+
+  /// Why, when the outcome alone does not say. Only [DrainOutcome.inactive]
+  /// carries one, and it is [Analytics.inactiveReason]: the rider's own
+  /// opt-out and a build with no key in it are not the same problem, and the
+  /// line that reported them used to name both at once.
+  final String? reason;
 
   /// One short line for the ride log, in the shape the rest of the log uses.
   String get logLine => switch (outcome) {
@@ -58,8 +64,7 @@ class DrainResult {
       'TELEMETRY ride_ended NOT SENT: gave up after '
           '${elapsed.inMilliseconds} ms. It is on disk and the next ride will '
           'send it. Raise Analytics.drainLimit if this repeats.',
-    DrainOutcome.inactive =>
-      'TELEMETRY off: opted out, or no key compiled into this build.',
+    DrainOutcome.inactive => 'TELEMETRY off: ${reason ?? 'inactive'}.',
     DrainOutcome.noQueue =>
       'TELEMETRY ride_ended: the SDK published no queue to wait on.',
     DrainOutcome.failed =>
@@ -222,6 +227,26 @@ class Analytics {
 
   /// True only when there is a key to send to AND the rider has not opted out.
   bool get isActive => (isConfigured || _forceConfigured) && enabled;
+
+  /// WHICH of the two reasons telemetry is off, for the ride log.
+  ///
+  /// THE TWO WERE CONFLATED UNTIL 16 SEP 2026 and it cost real time. Both ride
+  /// logs said "opted out, or no key compiled into this build", which are not
+  /// remotely the same problem: one is the rider's choice working correctly,
+  /// the other is a BROKEN BUILD that reports nothing from anybody. The
+  /// 14 Sep iPhone rides were missing from Aptabase and a day went into
+  /// diagnosing the drain budget, when this line was already on the screen and
+  /// could not say which half it meant.
+  ///
+  /// Null when telemetry is on, so a caller cannot print a reason that is not
+  /// a reason.
+  String? get inactiveReason {
+    if (isActive) return null;
+    if (!isConfigured && !_forceConfigured) {
+      return 'NO KEY COMPILED INTO THIS BUILD';
+    }
+    return 'the rider opted out';
+  }
 
   /// IDEMPOTENT ON PURPOSE. The UI isolate boots this from a provider that
   /// re-runs whenever any setting changes, and a second init would start a
@@ -423,7 +448,11 @@ class Analytics {
   }) async {
     final startedAt = DateTime.now();
     if (!isActive) {
-      return DrainResult(DrainOutcome.inactive, Duration.zero);
+      return DrainResult(
+        DrainOutcome.inactive,
+        Duration.zero,
+        reason: inactiveReason,
+      );
     }
     final giveUpAt = startedAt.add(limit);
     Duration elapsed() => DateTime.now().difference(startedAt);

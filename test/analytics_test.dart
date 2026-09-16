@@ -482,16 +482,44 @@ void main() {
       expect(result.logLine, contains('next ride will send it'));
     });
 
-    test('a build with no key says so rather than saying nothing', () async {
+    test('AN OPT-OUT AND A KEYLESS BUILD ARE TOLD APART, 16 Sep 2026',
+        () async {
+      // THIS TEST USED TO BE WRONG IN ITS OWN NAME, and the message it checked
+      // is why nobody saw it. It read "a build with no key says so", and it
+      // builds a CONFIGURED analytics with `enabled: false`, which is the
+      // rider's opt-out and not a missing key at all. The old line said
+      // "opted out, or no key compiled into this build" for both, so the
+      // mismatch was invisible.
+      //
+      // IT COST A DAY. The 14 Sep iPhone rides never reached Aptabase, that
+      // line was in both ride logs, and it could not say which half it meant,
+      // so the drain budget was investigated instead. The answer, confirmed on
+      // the phone 16 Sep, was simply that Share anonymous usage was off.
       await queueHolding('aptabase_1_ride_ended');
 
-      final result = await Analytics.configured(
+      final optedOut = await Analytics.configured(
         enabled: false,
         client: _RecordingAptabase(),
       ).awaitQueueDrain(queued: Future<void>.value());
 
-      expect(result.outcome, DrainOutcome.inactive);
-      expect(result.logLine, contains('no key compiled into this build'));
+      expect(optedOut.outcome, DrainOutcome.inactive);
+      expect(optedOut.logLine, contains('opted out'));
+      expect(
+        optedOut.logLine,
+        isNot(contains('NO KEY')),
+        reason: 'a rider exercising a privacy switch is not a broken build',
+      );
+
+      // No `configured`, so `isConfigured` is false: the state every build
+      // that shipped without secrets.json was in, which is the one worth
+      // shouting about.
+      final keyless = await Analytics(
+        enabled: true,
+        client: _RecordingAptabase(),
+      ).awaitQueueDrain(queued: Future<void>.value());
+
+      expect(keyless.outcome, DrainOutcome.inactive);
+      expect(keyless.logLine, contains('NO KEY COMPILED INTO THIS BUILD'));
     });
 
     test('THE BUDGET COVERS A TICK PLUS A SEND, which three seconds did not',

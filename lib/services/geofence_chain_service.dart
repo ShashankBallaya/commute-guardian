@@ -570,10 +570,13 @@ class GeofenceChainService {
     // disk and the SDK's own timer transmits, so this line means the event
     // exists, never that it arrived. The matching TELEMETRY line at the bottom
     // of `stop()` is the one that reports a send.
+    // AND WHEN IT IS OFF, WHICH OF THE TWO REASONS. See
+    // [Analytics.inactiveReason]: a rider's opt-out and a build with no key in
+    // it are not the same problem, and this line used to name both at once.
     _log(
       _analytics.isActive
           ? 'TELEMETRY ride_started queued.'
-          : 'TELEMETRY off: opted out, or no key compiled into this build.',
+          : 'TELEMETRY off: ${_analytics.inactiveReason}.',
     );
     if (pulseIntervalS > 0) {
       _log(
