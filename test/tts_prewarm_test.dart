@@ -23,41 +23,79 @@ void main() {
   });
 
   test('THE VOLUME IS RESTORED BEFORE THE WELCOME IS QUEUED', () {
-    // The pre-warm drops the volume to speak one silent space. Both the drop
-    // and the restore chain onto `_audioChain`, the same queue every utterance
-    // uses, so the welcome can only run after the restore. Reordering these,
-    // or moving the restore off the chain, speaks the welcome at volume zero.
-    // That is a silent first impression on the one line whose whole job is to
-    // prove through the earphones that the audio path works.
+    // The pre-warm drops the volume to speak one silent space. The drop, the
+    // space and the restore are ONE job on the announcer queue, so the welcome
+    // can only run after the restore. Reordering these, or moving the restore
+    // off the queue, speaks the welcome at volume zero. That is a silent first
+    // impression on the one line whose whole job is to prove through the
+    // earphones that the audio path works.
     //
     // The queue was called `_speaking` until 13 Aug 2026, when it was merged
-    // with the clip queue so a clip could not start on top of a half-spoken
-    // welcome. Only the name changed here; the ordering this test pins did
-    // not.
+    // with the clip queue, and `_audioChain` until 16 Sep 2026, when it became
+    // an `AudioQueue` that an urgent wake line may jump. Only the name changed
+    // here; the ordering this test pins did not.
     final warm = source.indexOf('Future<void> _preWarmTts()');
     expect(warm, greaterThan(-1), reason: 'the pre-warm is gone');
 
     final body = source.substring(warm, source.indexOf('\n  }', warm));
     final drop = body.indexOf('setVolume(0)');
-    final speak = body.indexOf("_speak(' ')");
+    final speak = body.indexOf("_speakNow(' ')");
     final restore = body.indexOf('setVolume(1)');
 
     expect(drop, greaterThan(-1));
     expect(speak, greaterThan(drop), reason: 'volume drops before the space');
     expect(restore, greaterThan(speak), reason: 'volume restores after it');
-    // On the chain, not fired loose: `_audioChain = _audioChain.then` is what
-    // orders it against the welcome.
-    expect(body, contains('_audioChain = _audioChain.then'));
   });
 
-  test('the pre-warm goes through _speak, never straight at the plugin', () {
-    // Calling `_tts.speak` directly would skip the audio-session discipline
+  test('IT IS ONE JOB, so no urgent line can land inside the muted window',
+      () {
+    // ADDED 16 SEP 2026 WITH THE PRIORITY QUEUE, and it is the reason the
+    // pre-warm was rewritten rather than left alone. It used to be three jobs
+    // (mute, space, restore), which left two gaps a jumping wake line could be
+    // inserted into, and both gaps sit between the mute and the restore. A
+    // wake line spoken at volume zero is the silent welcome this file guards,
+    // aimed at the one sentence that must never be missed.
+    final warm = source.indexOf('Future<void> _preWarmTts()');
+    final body = source.substring(warm, source.indexOf('\n  }', warm));
+    // COMMENTS STRIPPED. This method's own comments talk about urgent lines
+    // and about _speak, so a guard read off the raw text would be answering
+    // the prose rather than the code. See the substring-guard note: this is
+    // the repeat mistake in this repo.
+    final code = body
+        .split('\n')
+        .where((line) => !line.trimLeft().startsWith('//'))
+        .join('\n');
+
+    expect(
+      '_audio.add('.allMatches(code).length,
+      1,
+      reason: 'the mute, the space and the restore must be ONE job',
+    );
+    expect(
+      code,
+      isNot(contains('urgent')),
+      reason: 'the pre-warm must never jump the queue itself',
+    );
+    // _speakNow, not _speak: a job that enqueues a job and awaits it cannot
+    // complete, because the queue runs one job at a time. The boundary matters
+    // because `_speakNow(` contains `_speak` but not `_speak(`.
+    expect(
+      RegExp(r'[^A-Za-z_]_speak\(').hasMatch(code),
+      isFalse,
+      reason: 'enqueueing from inside a job deadlocks the announcer',
+    );
+  });
+
+  test('the pre-warm goes through the speak path, not the plugin', () {
+    // _speakNow is the speak path minus the enqueue, which is what a caller
+    // already inside a queue job must use. Calling `_tts.speak` directly would
+    // skip the audio-session discipline
     // every other utterance obeys, and inside the plugin that call activates
     // the session. Doing that raw at ride start is the shape of the 13 Jul
     // bench bug, where Travel Mode grabbed audio focus the moment it began.
     final warm = source.indexOf('Future<void> _preWarmTts()');
     final body = source.substring(warm, source.indexOf('\n  }', warm));
-    expect(body, contains("_speak(' ')"));
+    expect(body, contains("_speakNow(' ')"));
     expect(body, isNot(contains('_tts.speak')));
   });
 

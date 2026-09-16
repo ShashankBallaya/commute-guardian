@@ -314,25 +314,40 @@ void main() {
       // because "Android TTS gives no completion to await mid-ride". That
       // premise died on 30 Jul when _utteranceDone was added.
       final code = serviceCode();
+      // The chain became an AudioQueue on 16 Sep 2026 so that the wake ladder
+      // could overtake a catch-up batch. The property this test pins did not
+      // change: ONE queue, reached by both paths.
       expect(
         code,
-        contains('_audioChain = _audioChain'),
-        reason: 'the clip queue and the speech queue must be the same future',
+        contains('_audio.add('),
+        reason: 'the clip queue and the speech queue must be the same queue',
       );
       expect(
         code,
         isNot(contains('_clipChain')),
         reason: 'a second queue is the bug coming back',
       );
+      final speak = code.indexOf('Future<void> _speak(String text');
+      expect(speak, greaterThan(-1), reason: '_speak has been renamed');
+      expect(
+        code.substring(speak, code.indexOf('\n  }', speak)),
+        contains('_audio.add('),
+        reason: 'speech must go through the same queue clips do',
+      );
+      final clip = code.indexOf('void _enqueueClip(');
+      expect(
+        code.substring(clip, code.indexOf('\n  }', clip)),
+        contains('_audio.add('),
+        reason: 'clips must go through the same queue speech does',
+      );
     });
 
     test('AND THE CLIP FALLBACK MUST NOT RE-ENTER THAT QUEUE, or the ride '
         'deadlocks on its first failed clip', () {
-      // _enqueueClip's catch runs INSIDE _audioChain. Calling _speak there
-      // appends to the same chain and awaits it, which cannot complete until
-      // the code doing the awaiting returns. Two separate queues hid this;
-      // one queue makes it fatal, and a failed clip is not rare (4 of 14 on
-      // the 13 Aug ride).
+      // _enqueueClip's catch runs INSIDE a queue job. Calling _speak there
+      // enqueues a NEW job, whose future cannot complete until the job doing
+      // the awaiting returns. Two separate queues hid this; one queue makes it
+      // fatal, and a failed clip is not rare (4 of 14 on the 13 Aug ride).
       final code = serviceCode();
       final start = code.indexOf('void _enqueueClip(');
       expect(start, greaterThan(-1), reason: '_enqueueClip has been renamed');

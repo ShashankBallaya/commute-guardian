@@ -17,6 +17,7 @@ import '../models/journey.dart';
 import '../models/station.dart';
 import 'analytics.dart';
 import 'announcement_templates.dart';
+import 'audio_queue.dart';
 import 'audio_session_idle.dart';
 import 'bundled_clips.dart';
 import 'clip_library.dart';
@@ -274,7 +275,7 @@ class GeofenceChainService {
   /// (the session is released only when the last one finishes) and Pocket
   /// Pulse's "the announcer is busy" suppression.
   ///
-  /// The queue itself is [_audioChain] now, shared with clips. It used to be a
+  /// The queue itself is [_audio] now, shared with clips. It used to be a
   /// separate `_speaking` future, which is exactly what let a clip start on top
   /// of a half-spoken welcome.
   int _pendingSpeaks = 0;
@@ -332,7 +333,13 @@ class GeofenceChainService {
   ///
   /// Merging the chains costs one ordering guarantee and buys the obvious one:
   /// nothing the app says can start until the last thing it said has finished.
-  Future<void> _audioChain = Future<void>.value();
+  /// THE QUEUE ITSELF, and the one place a line may overtake another.
+  ///
+  /// Everything that makes a voice goes through it: clips, announcements, the
+  /// pre-warm, the farewell. The wake ladder's lines go through it URGENT.
+  /// [AudioQueue] carries the evidence for both rules, and it lives in its own
+  /// file with no plugins in it so that those rules have real tests.
+  late final AudioQueue _audio = AudioQueue(onLog: _log);
 
   /// Mirrors the spike's live state so [_speak] knows not to release the
   /// shared audio session while the alarm tone is looping.
@@ -803,49 +810,46 @@ class GeofenceChainService {
   /// the nicer voice, never the information.
   void _enqueueClip(File clip, {required String floorText}) {
     _pendingClips++;
-    _audioChain = _audioChain
-        .then((_) async {
-          try {
-            // THE SESSION, exactly as _speakNow takes it. Clips used to duck
-            // only through the audioplayers AudioContext and never touched
-            // _session at all, so nothing ever handed the ducking back: on the
-            // 13 Aug 2026 ride the owner's music dipped for a clip and stayed
-            // quiet for the rest of the journey, unducking once at Kalyan,
-            // which is the one clip on that ride whose player failed. Speech
-            // was always paired; clips never were.
-            //
-            // STAMPED FIRST, added 14 Aug 2026. befaca4 took the session here
-            // but left the stamp inside _playClipFile, after activation, so an
-            // interruption raised by this very line reached the wake engine as
-            // a real call. _speakNow has always opened the window before
-            // setActive and its comment says why. The stamp inside
-            // _playClipFile stays: the two calls cover the two separate
-            // moments our own audio can disturb the session.
-            _selfInterruption.noteOwnAudioStarted(DateTime.now());
-            await _session?.setActive(true);
-            _log('CLIP ${clip.uri.pathSegments.last}');
-            await _playClipFile(clip);
-          } catch (error) {
-            _log('CLIP failed, using device TTS: $error');
-            // _speakNow, NOT _speak. This code is already running INSIDE
-            // _audioChain, and _speak appends to that same chain, so awaiting
-            // it here would wait for a future that cannot complete until this
-            // one does. One shared queue makes that deadlock possible where
-            // two separate queues hid it.
-            _pendingSpeaks++;
-            await _speakNow(floorText);
-          } finally {
-            _pendingClips--;
-            await _releaseAudioSessionIfIdle();
-          }
-          // Nothing may escape into the chain itself. A rejected future here
-          // poisons every clip queued after it for the rest of the ride, which
-          // would silence announcements one by one instead of dropping a single
-          // one to the floor.
-        })
-        .catchError((Object error) {
-          _log('CLIP chain error, queue continues: $error');
-        });
+    unawaited(
+      _audio.add(() async {
+        try {
+          // THE SESSION, exactly as _speakNow takes it. Clips used to duck
+          // only through the audioplayers AudioContext and never touched
+          // _session at all, so nothing ever handed the ducking back: on the
+          // 13 Aug 2026 ride the owner's music dipped for a clip and stayed
+          // quiet for the rest of the journey, unducking once at Kalyan,
+          // which is the one clip on that ride whose player failed. Speech
+          // was always paired; clips never were.
+          //
+          // STAMPED FIRST, added 14 Aug 2026. befaca4 took the session here
+          // but left the stamp inside _playClipFile, after activation, so an
+          // interruption raised by this very line reached the wake engine as
+          // a real call. _speakNow has always opened the window before
+          // setActive and its comment says why. The stamp inside
+          // _playClipFile stays: the two calls cover the two separate
+          // moments our own audio can disturb the session.
+          _selfInterruption.noteOwnAudioStarted(DateTime.now());
+          await _session?.setActive(true);
+          _log('CLIP ${clip.uri.pathSegments.last}');
+          await _playClipFile(clip);
+        } catch (error) {
+          _log('CLIP failed, using device TTS: $error');
+          // _speakNow, NOT _speak. This code is already running INSIDE a queue
+          // job, and _speak enqueues a NEW one, whose future cannot complete
+          // until this job returns. Awaiting it here deadlocks the ride's
+          // announcer on its first failed clip, and a failed clip is not rare
+          // (4 of 14 on the 13 Aug 2026 ride).
+          _pendingSpeaks++;
+          await _speakNow(floorText);
+        } finally {
+          _pendingClips--;
+          await _releaseAudioSessionIfIdle();
+        }
+        // The pump catches what escapes, so one bad clip drops to the floor
+        // instead of silencing every clip queued behind it for the rest of
+        // the ride.
+      }),
+    );
   }
 
   /// Plays one clip file through the announcement duck: music dips while
@@ -1314,13 +1318,17 @@ class GeofenceChainService {
     _finishUtterance();
   }
 
-  Future<void> _speak(String text) {
+  /// Queues one line and returns when THAT line has been spoken, not when the
+  /// queue has emptied.
+  ///
+  /// `urgent` is the wake ladder's, and only the wake ladder's. See
+  /// [AudioQueue.add] for what it may and may not overtake.
+  Future<void> _speak(String text, {bool urgent = false}) {
     _pendingSpeaks++;
-    _audioChain = _audioChain.then((_) => _speakNow(text));
-    return _audioChain;
+    return _audio.add(() => _speakNow(text), urgent: urgent);
   }
 
-  /// Speaks one line WITHOUT queueing it. Callers already inside [_audioChain]
+  /// Speaks one line WITHOUT queueing it. Callers already inside a queue job
   /// use this; everyone else uses [_speak]. The caller owns the matching
   /// `_pendingSpeaks++`.
   Future<void> _speakNow(String text) async {
@@ -1344,7 +1352,8 @@ class GeofenceChainService {
         // rider acked the Kalyan ladder MID-SENTENCE, standing it down
         // reconfigured the audio session under a live AVSpeechSynthesizer, and
         // iOS fired neither didFinish nor didCancel. The speak() future never
-        // completed, so `_audioChain` wedged and `_pendingSpeaks` stuck at 1.
+        // completed, so the announcer queue wedged and `_pendingSpeaks`
+        // stuck at 1.
         // Every announcement for the remaining nine minutes of the ride was
         // queued and never spoken: the arrival at the destination, the
         // wind-down, and the farewell. The log's only trace was one line,
@@ -1446,16 +1455,24 @@ class GeofenceChainService {
   /// impression on the one line that proves the audio path works at all.
   Future<void> _preWarmTts() {
     final startedAt = DateTime.now();
-    _audioChain = _audioChain.then((_) => _tts.setVolume(0));
-    unawaited(_speak(' '));
-    _audioChain = _audioChain.then((_) async {
+    // ONE JOB, NOT THREE, and that is the whole reason this was rewritten when
+    // the queue learned to be jumped. Three jobs left two gaps where an urgent
+    // wake line could be inserted, and either gap sits between the mute and
+    // the restore: the line would be spoken at volume zero, which is the
+    // silent-welcome failure this method's own guard test exists to stop,
+    // pointed at the one sentence that must never be missed.
+    return _audio.add(() async {
+      await _tts.setVolume(0);
+      // _speakNow, not _speak: this is already inside a job, so enqueueing a
+      // second one and awaiting it here would deadlock the queue.
+      _pendingSpeaks++;
+      await _speakNow(' ');
       await _tts.setVolume(1);
       _log(
         'TTS pre-warm done in '
         '${DateTime.now().difference(startedAt).inMilliseconds}ms',
       );
     });
-    return _audioChain;
   }
 
   /// Debug-only: speaks a test line through the same [FlutterTts] instance
@@ -1780,7 +1797,13 @@ class GeofenceChainService {
           _log(message);
         case Speak(:final text):
           _log('WAKE speak: $text');
-          unawaited(_speak(text));
+          // URGENT, the only caller that is. The check-in and the ladder's
+          // spoken rungs are the lines the whole product exists to deliver,
+          // and on 14 Sep 2026 the check-in queued behind six catch-up clips
+          // for the stations a GPS blackout had hidden. It still cannot cut
+          // into a line already speaking: two voices at once is the 13 Aug
+          // 2026 bug and costs more than 10 s of lateness.
+          unawaited(_speak(text, urgent: true));
         case Tone(:final volume):
           _log('WAKE tone ${volume.toStringAsFixed(1)}.');
           _wakeToneVolume = volume;
