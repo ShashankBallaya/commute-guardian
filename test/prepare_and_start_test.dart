@@ -261,6 +261,63 @@ void main() {
       );
     });
   });
+
+  group('THE ALARM IS ARMED AT THE START OF EVERY RIDE', () {
+    // HE ASKED FOR THIS EXPLICITLY on 16 Sep 2026: "make sure it should always
+    // be on by default on every fresh new ride". It is a safety property, so
+    // it gets a test rather than an assurance.
+    //
+    // THE SERVICE HAS ALWAYS DONE ITS HALF: `GeofenceChainService.start` sets
+    // `_wakeEnabled = true` on every start, not only on construction. The UI
+    // half did not exist. `wakeEnabled` was a field on the host whose own doc
+    // claimed it "resets to true at every Start", and no line of code ever
+    // did, so a rider who switched the alarm off on Monday began Tuesday's
+    // ride with the engine armed and the screen saying "Wake-up off". The
+    // screen contradicted the engine on the one fact this product is for.
+
+    testWidgets('a ride that starts re-arms it, whatever the last ride left', (
+      tester,
+    ) async {
+      final harness = await _Harness.pump(tester);
+      await harness.standAt(repo, 'kalyan');
+
+      // The rider switched it off, on some earlier ride, and nothing since.
+      harness.setWakeEnabled(false);
+      expect(harness.wakeEnabled, isFalse, reason: 'the fixture must take');
+
+      harness.tapDestination('dombivli');
+      await harness.runUntilRiding();
+
+      expect(
+        harness.wakeEnabled,
+        isTrue,
+        reason: 'a fresh ride is armed, or the screen lies about the engine',
+      );
+    });
+
+    testWidgets('AND SO DOES A RESUME, because the service re-arms too', (
+      tester,
+    ) async {
+      // The resume is the other door into the same start path. It matters more
+      // than it looks: the service is REBUILT here, so it runs `start()` and
+      // arms itself. A UI that kept "off" across that would disagree with the
+      // engine for the rest of the journey.
+      final service = FakeRideServiceClient()
+        ..rideInFlight = true
+        ..originId = 'kalyan'
+        ..destinationId = 'dombivli'
+        ..startedAt = DateTime.now().subtract(const Duration(minutes: 5));
+      final harness = await _Harness.pump(tester, service: service);
+
+      harness.setWakeEnabled(false);
+
+      await tester.tap(find.byKey(const Key('resume_ride_card')));
+      await harness.runUntilRiding();
+
+      expect(harness.wakeEnabled, isTrue);
+    });
+  });
+
 }
 
 class _Harness {
@@ -323,6 +380,14 @@ class _Harness {
 
   ProviderContainer get _container =>
       ProviderScope.containerOf(tester.element(find.byType(HomeScreen)));
+
+  /// The wake toggle's real state, read through the provider Screen 4 watches.
+  bool get wakeEnabled => _container.read(wakeEnabledProvider);
+
+  /// Switches it the way the rider's own tap does.
+  // ignore: avoid_positional_boolean_parameters, it mirrors the notifier
+  void setWakeEnabled(bool enabled) =>
+      _container.read(wakeEnabledProvider.notifier).set(enabled);
 
   /// A fix on the platform, through the one gate every fix source uses, so the
   /// origin is filled the way GPS fills it and not by a setter.

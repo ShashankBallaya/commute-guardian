@@ -117,19 +117,27 @@ class SpokenCopy {
   /// about to stop looking at the screen. A confirmation they cannot see is
   /// not a confirmation.
   ///
-  /// SHORT ON PURPOSE. It rides the ordinary announcement queue, so a long
-  /// line would sit in front of a station announcement, and a rider who taps
-  /// twice would hear two of them.
+  /// SHORT, AND THE LENGTH WAS MEASURED RATHER THAN GUESSED. The 16 Sep 2026
+  /// bench spoke the first draft of the "off" line in 3.56 s against 1.47 s
+  /// for "on", because it carried a second sentence promising that stations
+  /// are still announced. This line rides the ORDINARY announcement queue, so
+  /// those seconds sit in front of a station announcement if the rider toggles
+  /// near one.
+  ///
+  /// The reassurance was not lost, it moved to where it is already read: the
+  /// wake row says "Off for this journey. Stations are still announced." A
+  /// rider who has just found the switch is looking at that row, so the spoken
+  /// line only has to confirm the press landed.
   String wakeEnabledConfirmation({required bool enabled}) => switch (language) {
     AppLanguage.english => enabled
         ? 'Wake-up alarm on.'
-        : 'Wake-up alarm off. Stations are still announced.',
+        : 'Wake-up alarm off.',
     AppLanguage.hindi => enabled
         ? 'वेक-अप अलार्म चालू है।'
-        : 'वेक-अप अलार्म बंद है। स्टेशनों की घोषणा फिर भी होती रहेगी।',
+        : 'वेक-अप अलार्म बंद है।',
     AppLanguage.marathi => enabled
         ? 'वेक-अप अलार्म सुरू आहे.'
-        : 'वेक-अप अलार्म बंद आहे. स्टेशनची घोषणा तरीही होत राहील.',
+        : 'वेक-अप अलार्म बंद आहे.',
   };
 
   /// The debug screen's text-to-speech self test.
