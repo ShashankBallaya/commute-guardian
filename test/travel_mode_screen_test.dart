@@ -394,26 +394,59 @@ void main() {
         crowdTaps: taps,
       );
 
-      await tester.tap(find.byType(PulseSwitch));
+      // KEYED, because there are TWO switches on this card since 16 Sep 2026:
+      // the wake row gained one. `find.byType` would match both and throw.
+      await tester.tap(find.byKey(const Key('pulse_switch')));
       await tester.pumpAndSettle();
 
       expect(taps, [false], reason: 'an on control turns it off');
     });
 
-    testWidgets('the wake line is still a statement, with no control', (
+    testWidgets('THE WAKE ROW OFFERS TOO, and says so with a switch', (
       tester,
     ) async {
-      // Row one states, row two offers. What will happen, so the rider can
-      // pocket the phone; the pre-warning DISTANCE stays a Guardian Plus
-      // surface and must not become a second way to change leadTimeS.
+      // REVERSED 16 SEP 2026, and the old test is worth keeping in the record.
+      // It read "the wake line is still a statement, with no control", pinning
+      // a decision called "row one states, row two offers": the alarm was
+      // described here and switched by a pill up beside the headline.
+      //
+      // THE OWNER COULD NOT FIND IT. A row with a switch is this screen's word
+      // for "you may change this", and the Pocket Pulse row directly below has
+      // one, so a wake row without one taught the rider that the alarm was not
+      // theirs to change. That made the one control this product exists for
+      // the hardest thing on the screen to discover.
+      //
+      // What the old test was really protecting is untouched: the pre-warning
+      // DISTANCE is still a Guardian Plus surface, and nothing here offers a
+      // second way to change leadTimeS. This switches the alarm on and off,
+      // which the rider has always been allowed to do.
       await pump(tester, reachedIndex: 1);
 
       expect(find.text('Wake me up'), findsOneWidget);
       expect(
         find.byType(PulseSwitch),
-        findsOneWidget,
-        reason: 'exactly one control on this card, and it is the pulse',
+        findsNWidgets(2),
+        reason: 'both rows offer now: the alarm and the pulse',
       );
+      expect(find.byKey(const Key('wake_switch')), findsOneWidget);
+    });
+
+    testWidgets('the wake switch and the whole wake row both toggle it', (
+      tester,
+    ) async {
+      // The same pair of properties the pulse row is held to. A rider aims a
+      // thumb at this on a moving train, so the label has to work as well as
+      // the control.
+      final taps = <bool>[];
+      await pump(tester, reachedIndex: 1, wakeTaps: taps);
+
+      await tester.tap(find.byKey(const Key('wake_switch')));
+      await tester.pumpAndSettle();
+      expect(taps, [false], reason: 'an armed alarm switches off');
+
+      await tester.tap(find.text('Wake me up'));
+      await tester.pumpAndSettle();
+      expect(taps, [false, false], reason: 'the label is the target too');
     });
   });
 

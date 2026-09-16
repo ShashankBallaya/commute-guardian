@@ -165,6 +165,7 @@ class TravelModeScreen extends StatelessWidget {
               _WakeCard(
                 choice: wakeChoice,
                 wakeEnabled: wakeEnabled,
+                onWakeEnabled: onWakeEnabled,
                 destinationName: _destinationName,
                 chainLength: _chain.length,
                 crowdMode: crowdMode,
@@ -365,43 +366,106 @@ class _ShieldBadge extends StatelessWidget {
   final bool enabled;
   final ValueChanged<bool> onChanged;
 
+  /// 180 ms, the band this app's press feedback already lives in, and the
+  /// band a state change belongs in: past about 300 ms a UI transition stops
+  /// reading as a response and starts reading as a scene change.
+  static const _swap = Duration(milliseconds: 180);
+
+  /// The strong ease-out [Pressable] uses. Flutter's stock curves are too soft
+  /// to read at this length: the movement has to be over almost before it is
+  /// seen.
+  static const _curve = Cubic(0.23, 1, 0.32, 1);
+
   @override
   Widget build(BuildContext context) {
+    // Reduced motion takes the MOVEMENT and keeps the colour, which is the
+    // rule the rest of this app follows: a fade still explains the change and
+    // causes nobody motion sickness, and the state must never be conveyed by
+    // animation alone.
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    final duration = reduced ? Duration.zero : _swap;
+
     return Pressable(
       key: const Key('wake_toggle'),
       onTap: () {
-        // The tick lands with the commit, as it does on Screen 1's cards and
-        // on PulseSwitch. Switching your own alarm off is worth feeling.
-        unawaited(HapticFeedback.selectionClick());
+        // ASYMMETRIC ON PURPOSE. The tick is the app's acknowledgement on the
+        // way ON; switching your own alarm OFF is the consequential direction
+        // and gets the heavier one, so the two are told apart through a
+        // pocket.
+        //
+        // THIS DOES NOT BREAK THE VOCABULARY RULE. `HapticFeedback` is the
+        // OS's UI language. The rule that a UI control may not speak the
+        // alarm's vocabulary is about the `vibration` package's own patterns,
+        // which the wake ladder and Pocket Pulse own and nothing else uses.
+        unawaited(
+          enabled
+              ? HapticFeedback.mediumImpact()
+              : HapticFeedback.selectionClick(),
+        );
         onChanged(!enabled);
       },
-      child: Container(
+      child: AnimatedContainer(
+        duration: duration,
+        curve: _curve,
         constraints: const BoxConstraints(minHeight: 48),
         alignment: Alignment.center,
-        decoration: Palette.glassCard(radius: 24),
+        // GREEN WHEN IT IS SHIELDING, and green is already this palette's word
+        // for a good live state (the located dot, the travelled track). NOT
+        // crimson when off: crimson ends a ride and nothing else, and this
+        // ends no ride, it declines an alarm.
+        decoration: Palette.glassCard(radius: 24).copyWith(
+          border: Border.all(
+            color: enabled
+                ? Palette.dotGreen.withValues(alpha: 0.85)
+                : Palette.hairline,
+            width: enabled ? 1.5 : 1,
+          ),
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              // The glyph carries the state as well as the words, because the
-              // words are short and a rider checks this at a glance before
-              // pocketing the phone.
-              enabled ? Icons.shield : Icons.shield_outlined,
-              color: enabled ? Palette.text : Palette.textDim(0.5),
-              size: 18,
+            AnimatedSwitcher(
+              duration: duration,
+              switchInCurve: _curve,
+              switchOutCurve: _curve,
+              // NEVER FROM scale(0). Nothing in the world appears out of
+              // nothing, and a glyph that pops from a point reads as a
+              // glitch rather than as a change of state. 0.85 with a fade is
+              // enough to carry the swap.
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 0.85, end: 1).animate(animation),
+                  child: child,
+                ),
+              ),
+              child: Icon(
+                // The glyph carries the state as well as the words, because
+                // the words are short and a rider checks this at a glance
+                // before pocketing the phone.
+                enabled ? Icons.shield : Icons.shield_outlined,
+                // KEYED, or AnimatedSwitcher cannot tell the two apart: it
+                // compares by widget type and key, and two Icons of the same
+                // type would swap with no transition at all.
+                key: ValueKey(enabled),
+                color: enabled ? Palette.dotGreen : Palette.textDim(0.5),
+                size: 18,
+              ),
             ),
             const SizedBox(width: 8),
             Flexible(
-              child: Text(
-                enabled ? 'Wake-up on' : 'Wake-up off',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: AnimatedDefaultTextStyle(
+                duration: duration,
+                curve: _curve,
                 style: TextStyle(
                   fontSize: TypeScale.caption,
-                  // Dim when off, and NOT crimson. Crimson ends a ride and
-                  // nothing else; this ends no ride, it declines an alarm.
                   color: Palette.textDim(enabled ? 0.85 : 0.5),
+                ),
+                child: Text(
+                  enabled ? 'Wake-up on' : 'Wake-up off',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ),
@@ -726,6 +790,7 @@ class _WakeCard extends StatelessWidget {
   const _WakeCard({
     required this.choice,
     required this.wakeEnabled,
+    required this.onWakeEnabled,
     required this.destinationName,
     required this.chainLength,
     required this.crowdMode,
@@ -735,6 +800,7 @@ class _WakeCard extends StatelessWidget {
 
   final WakeChoice choice;
   final bool wakeEnabled;
+  final ValueChanged<bool> onWakeEnabled;
   final String destinationName;
 
   /// How many stations the route holds, origin and destination included. The
@@ -799,16 +865,36 @@ class _WakeCard extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ROW ONE STATES, ROW TWO OFFERS. The wake row is deliberately still
-          // a sentence with no control: what will happen, so the rider can
-          // pocket the phone. The pulse row is the one decision that belongs to
-          // the train they are standing in rather than to their setup.
+          // BOTH ROWS OFFER NOW, changed 16 Sep 2026 on the owner's report
+          // that he could not tell the alarm could be switched at all.
+          //
+          // IT USED TO READ "ROW ONE STATES, ROW TWO OFFERS": the wake row was
+          // deliberately a sentence with no control, and the real toggle was
+          // the pill up beside the headline. That decision taught the rider
+          // the opposite of the truth. A row with a switch is this screen's
+          // word for "you may change this", and the Pocket Pulse row directly
+          // below has one, so the wake row having none said the alarm was not
+          // yours to change. The one control on this screen the product exists
+          // for was the hardest one to find.
+          //
+          // The pill stays, as the at-a-glance state and a second door, the
+          // same way the wake ack answers from both the screen and the
+          // notification.
           _CardRow(
             icon: wakeEnabled
                 ? Icons.notifications
                 : Icons.notifications_off_outlined,
             title: 'Wake me up',
             detail: _line,
+            trailing: PulseSwitch(
+              key: const Key('wake_switch'),
+              value: wakeEnabled,
+              onChanged: onWakeEnabled,
+            ),
+            // The whole row is the target, for the reason the pulse row gives:
+            // a rider on a moving train is aiming with a thumb at a 40 px
+            // control.
+            onTap: () => onWakeEnabled(!wakeEnabled),
           ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
@@ -823,7 +909,11 @@ class _WakeCard extends StatelessWidget {
             // it would have fixed only the visible half: it also gives nothing
             // on touch-down, runs a fixed-duration curve rather than a spring,
             // and cannot be grabbed mid-flight. See [PulseSwitch].
-            trailing: PulseSwitch(value: crowdMode, onChanged: onCrowdMode),
+            trailing: PulseSwitch(
+              key: const Key('pulse_switch'),
+              value: crowdMode,
+              onChanged: onCrowdMode,
+            ),
             // The whole row is the target, not just the switch. A rider on a
             // moving train is aiming with a thumb at a 40 px control.
             onTap: () => onCrowdMode(!crowdMode),

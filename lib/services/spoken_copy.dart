@@ -110,6 +110,28 @@ class SpokenCopy {
                 'End journey बटण दाबून धरून ठेवा.',
         };
 
+  /// Said when the rider switches the wake alarm for this journey.
+  ///
+  /// SPOKEN BECAUSE THE PHONE IS IN A POCKET. Audio is this app's primary
+  /// channel, and the whole reason the control exists is that the rider is
+  /// about to stop looking at the screen. A confirmation they cannot see is
+  /// not a confirmation.
+  ///
+  /// SHORT ON PURPOSE. It rides the ordinary announcement queue, so a long
+  /// line would sit in front of a station announcement, and a rider who taps
+  /// twice would hear two of them.
+  String wakeEnabledConfirmation({required bool enabled}) => switch (language) {
+    AppLanguage.english => enabled
+        ? 'Wake-up alarm on.'
+        : 'Wake-up alarm off. Stations are still announced.',
+    AppLanguage.hindi => enabled
+        ? 'वेक-अप अलार्म चालू है।'
+        : 'वेक-अप अलार्म बंद है। स्टेशनों की घोषणा फिर भी होती रहेगी।',
+    AppLanguage.marathi => enabled
+        ? 'वेक-अप अलार्म सुरू आहे.'
+        : 'वेक-अप अलार्म बंद आहे. स्टेशनची घोषणा तरीही होत राहील.',
+  };
+
   /// The debug screen's text-to-speech self test.
   String testAnnouncement() => switch (language) {
     AppLanguage.english =>

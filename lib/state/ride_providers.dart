@@ -576,3 +576,39 @@ final relaunchLifelineProvider = Provider<RelaunchLifeline>(
 final oemGuidanceDoneProvider = FutureProvider<bool>((ref) {
   return ref.watch(appDatabaseProvider).hasAcknowledgedOemGuidance();
 });
+
+/// THE RIDER'S WAKE TOGGLE ON SCREEN 4, for THIS ride only.
+///
+/// A PROVIDER RATHER THAN A FIELD, AND THAT IS THE WHOLE POINT. It lived as a
+/// plain `bool wakeEnabled` on `RideOrchestration`, which is the HOST. Screen 4
+/// lives in a pushed `MaterialPageRoute`, and a `setState` on the host does not
+/// rebuild a pushed route: only a provider the route's own `Consumer` watches
+/// does. So the badge redrew whenever `liveRideProvider` next happened to emit,
+/// which mid-ride is on the next fix or tick, seconds later. The haptic fired
+/// at once and the words changed later, which is exactly what "it is either
+/// slow or unresponsive" describes.
+///
+/// The comment that used to sit on the field claimed the opposite, that a host
+/// setState was "enough here", and named the identical earlier bug (punchlist
+/// item 2, reported as "I can't toggle it") three lines above itself.
+///
+/// NOT PERSISTED, deliberately, for the reason `RideServiceClient
+/// .setWakeEnabled` gives: the service re-arms at every Start, so a stored
+/// "off" would outlive the journey it was meant for. [reset] is what keeps the
+/// two ends agreeing at the start of a ride.
+class WakeEnabledNotifier extends Notifier<bool> {
+  @override
+  bool build() => true;
+
+  // ignore: avoid_positional_boolean_parameters, it is a setter in all but name
+  void set(bool enabled) => state = enabled;
+
+  /// Back to armed, to match the service's own default at Start.
+  void reset() => state = true;
+}
+
+/// Whether the wake alarm is armed for the ride now running. Always true at
+/// the start of a ride; only the rider's own toggle changes it.
+final wakeEnabledProvider = NotifierProvider<WakeEnabledNotifier, bool>(
+  WakeEnabledNotifier.new,
+);

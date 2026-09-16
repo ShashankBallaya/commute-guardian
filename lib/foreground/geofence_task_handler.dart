@@ -630,10 +630,6 @@ class GeofenceTaskHandler extends TaskHandler {
   @override
   void onNotificationButtonPressed(String id) {
     switch (id) {
-      case final String message when message.startsWith(wakeEnabledPrefix):
-        _chain?.setWakeEnabled(
-          message.substring(wakeEnabledPrefix.length) == 'true',
-        );
       case wakeAckButtonId:
         // Named apart from the screen button so the ride log says which
         // surface answered, the way the earphone tap already does.
@@ -689,6 +685,23 @@ class GeofenceTaskHandler extends TaskHandler {
   @override
   void onReceiveData(Object data) {
     switch (data) {
+      // THE RIDER'S WAKE TOGGLE, AND IT NEVER ARRIVED UNTIL 16 SEP 2026.
+      //
+      // This case was written in `onNotificationButtonPressed`, which only
+      // ever receives NOTIFICATION BUTTON IDS. `RideServiceClient
+      // .setWakeEnabled` sends through `sendDataToTask`, and that is delivered
+      // here. So the message was pattern-matched in a handler it could never
+      // reach, and the toggle on Screen 4 did nothing at all: the rider could
+      // switch their alarm to "Wake-up off" and the ladder stayed armed.
+      //
+      // The ride log is what proved it. Three benches on 16 Sep, the toggle
+      // pressed in each, and not one `WAKE armed` or `WAKE DISARMED` line.
+      // `setWakeEnabled` logs on every real change, so its silence was the
+      // evidence.
+      case final String message when message.startsWith(wakeEnabledPrefix):
+        _chain?.setWakeEnabled(
+          message.substring(wakeEnabledPrefix.length) == 'true',
+        );
       case 'test_tts':
         _chain?.testAnnounce();
       case 'test_wake_alert':

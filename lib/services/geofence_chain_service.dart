@@ -1764,6 +1764,20 @@ class GeofenceChainService {
     if (_wakeEnabled == enabled) return;
     _wakeEnabled = enabled;
     _log('WAKE ${enabled ? 'armed' : 'DISARMED'} by the rider for this ride.');
+    // SPOKEN, because the rider is about to pocket the phone and this is the
+    // one switch that decides whether they are woken. A confirmation they can
+    // only see is no use to the person the control is for.
+    //
+    // ORDINARY PRIORITY, never urgent. Urgency belongs to the ladder alone:
+    // this line jumping a queue would put a confirmation in front of the
+    // station announcement it was queued behind, which is the ordering bug
+    // the queue was given a priority to FIX. See [AudioQueue].
+    //
+    // BEHIND THE NO-OP GUARD ABOVE, so a repeated command says nothing. It is
+    // the same guard that made this bug invisible: the toggle never reached
+    // this method at all until 16 Sep 2026, and its silence in three ride logs
+    // is what proved it.
+    unawaited(_speak(_copy.wakeEnabledConfirmation(enabled: enabled)));
     _syncWakeSuspension(DateTime.now());
   }
 

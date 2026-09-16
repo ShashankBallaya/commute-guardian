@@ -77,13 +77,6 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
   /// ride. It must never become a second way to change leadTimeS.
   WakeChoice wakeChoice = WakeChoice.oneStationBefore;
 
-  /// Whether the alarm is armed for THIS ride. Screen 4's shield pill owns it.
-  ///
-  /// A field on the host rather than a setting, which is the whole design: it
-  /// resets to true at every Start (see [start]), and the SERVICE resets its
-  /// own copy too, so neither side can remember an "off" into next week.
-  bool wakeEnabled = true;
-
   /// The freshest fix streamed up from the running service. At ride end this is
   /// seconds old and free, so it names the rider's position instantly; a cold
   /// GPS acquisition indoors can hang instead (13 Jul bench).
@@ -708,6 +701,16 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
     try {
       final started = await startRide();
       if (!started) onOrchestrationLog('The service refused to start.');
+      // RE-ARMED WITH THE RIDE, and until 16 Sep 2026 nothing did this. The
+      // flag's own doc claimed it "resets to true at every Start", and no line
+      // of code ever had. A rider who switched the alarm off on Monday started
+      // Tuesday's ride with the service armed (it resets its own copy in
+      // `start`) and the pill saying "Wake-up off", so the screen contradicted
+      // the engine on the one fact the product exists to get right.
+      //
+      // HERE, because this is the single funnel both start paths go through:
+      // the ordinary ride and the resume of a ride the OS killed.
+      if (started) ref.read(wakeEnabledProvider.notifier).reset();
       return started;
     } catch (error) {
       onOrchestrationLog('The service failed to start: $error');
@@ -1347,13 +1350,13 @@ mixin RideOrchestration<T extends ConsumerStatefulWidget> on ConsumerState<T> {
               ref.watch(appSettingsProvider).valueOrNull ?? const AppSettings();
           final screen = TravelModeScreen(
             journey: journey,
-            wakeEnabled: wakeEnabled,
-            // setState on the HOST is enough here ONLY because this route is
-            // rebuilt by the Consumer around it; the flag is read on every
-            // build. Punchlist item 2 was the same shape and did not have
-            // that, which is why it looked dead.
+            // WATCHED, NOT READ OFF THE HOST. A setState on the host does
+            // NOT rebuild a pushed route, so the old field only reached the
+            // screen when some OTHER provider next emitted. See
+            // [wakeEnabledProvider] for what that looked like to the rider.
+            wakeEnabled: ref.watch(wakeEnabledProvider),
             onWakeEnabled: (on) {
-              setState(() => wakeEnabled = on);
+              ref.read(wakeEnabledProvider.notifier).set(on);
               service.setWakeEnabled(on);
             },
             reachedIndex: live?.reachedIndex ?? -1,
