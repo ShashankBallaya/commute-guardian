@@ -15,8 +15,14 @@ sealed class WakeAction {
 }
 
 class Speak extends WakeAction {
-  const Speak(this.text);
+  const Speak(this.text, {this.whenNoEarphoneAck});
   final String text;
+
+  /// The same line for a phone where the earphone tap cannot reach us, or
+  /// null when [text] makes no earphone promise. Only the check-in has one.
+  /// The service chooses, because only it hears the iPhone's session answer;
+  /// see check_in_choice.dart.
+  final String? whenNoEarphoneAck;
 }
 
 /// Ensure the looping alarm tone is playing at [volume]. Idempotent on the
@@ -713,7 +719,7 @@ class WakeEscalation {
     _ladderLive = true;
     _rung = 0;
     _nextTransitionAt = now.add(checkInToFirstRung);
-    return [Speak(_checkInText())];
+    return [Speak(_checkInText(), whenNoEarphoneAck: _checkInScreenText())];
   }
 
   String _checkInText() =>
@@ -721,6 +727,11 @@ class WakeEscalation {
         _target.nameIn(language),
         language: language,
       );
+
+  String _checkInScreenText() => (_targetIsDestination
+          ? WakeLine.checkInScreen
+          : WakeLine.checkInChangeScreen)
+      .render(_target.nameIn(language), language: language);
 
   // The doubled "Wake up!" is owner-approved aggressive copy. It lives in
   // announcement_templates.dart with the station lines, because the same

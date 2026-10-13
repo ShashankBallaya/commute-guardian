@@ -55,6 +55,10 @@ void main() {
       null,
       'wake_up_stop',
       'wake_up_change',
+      // The screen-only check-ins (13 Oct 2026). No clip yet, so the device
+      // voice speaks them.
+      null,
+      null,
     ]);
     expect(FixedLine.values.map((k) => k.fileSuffix), [
       'farewell',
@@ -140,5 +144,25 @@ void main() {
     // sentence that is NOT in the Python file must be reported missing.
     final source = File('tool/build_clip_pack.py').readAsStringSync();
     expect(source.contains('"Now approaching {n}, probably."'), isFalse);
+  });
+
+  test('the screen-only check-ins never mention earphones, in any language', () {
+    // They exist for the moment the earphone tap CANNOT reach us (an iPhone
+    // whose music owns the buttons). A sentence that still says "tap your
+    // earphones" there teaches the rider the one gesture that will fail.
+    const earphoneWords = ['earphone', 'ईयरफ़ोन', 'ईअरफोन'];
+    for (final line in [WakeLine.checkInScreen, WakeLine.checkInChangeScreen]) {
+      for (final language in AppLanguage.values) {
+        final text = line.render('{n}', language: language);
+        for (final word in earphoneWords) {
+          expect(text.contains(word), isFalse, reason: '$line ${language.tag}');
+        }
+      }
+    }
+    expect(
+      WakeLine.checkInScreen.render('CSMT'),
+      'Your stop, CSMT, is next. Press the I am awake button on your screen, '
+      'to show you are awake.',
+    );
   });
 }

@@ -20,6 +20,7 @@ import 'announcement_templates.dart';
 import 'audio_queue.dart';
 import 'audio_session_idle.dart';
 import 'bundled_clips.dart';
+import 'check_in_choice.dart';
 import 'clip_library.dart';
 import 'duck_audio_context.dart';
 import 'player_completion.dart';
@@ -1253,10 +1254,78 @@ class GeofenceChainService {
   /// earphone tap can reach us; "ducked" means the rider's music kept the
   /// buttons and only the on-screen button will ack.
   ///
-  /// iOS only. Android's tone runs through audioplayers, which reports its own
-  /// failures on the Dart side already.
+  /// Mostly iOS. Android's tone runs through audioplayers, which reports its
+  /// own failures on the Dart side; since 13 Oct 2026 Android sends only the
+  /// alarm-volume raise and restore notes here.
+  ///
+  /// THE FULL STOP IS ADDED ONLY WHEN MISSING. Native notes that already end
+  /// in one were logged with two ("restored to 65%..") until 13 Oct 2026.
+  ///
+  /// AND IT ANSWERS A HELD CHECK-IN. The ladder-start note is the one moment
+  /// the service learns whether the earphone tap can reach us at all, so the
+  /// iPhone check-in waits for it. See [_holdCheckIn].
   void onNativeAudioNote(String note) {
-    _log('WAKE audio: $note.');
+    _log(note.endsWith('.') ? 'WAKE audio: $note' : 'WAKE audio: $note.');
+    final earphoneAck = earphoneAckFromSessionNote(note);
+    if (earphoneAck == null) return;
+    final held = _takeHeldCheckIn();
+    if (held == null) return;
+    if (earphoneAck) {
+      _speakWakeLine(held.text);
+    } else {
+      _log(
+        'WAKE check-in: the earphone tap cannot reach us, asking for the '
+        'screen button instead.',
+      );
+      _speakWakeLine(held.screen);
+    }
+  }
+
+  /// How long an iPhone check-in waits for the session answer.
+  ///
+  /// The slowest answer on record is 1.38 s (23 Sep 2026 evening, a NONE).
+  /// The check-in leads rung 1 by 25 s, so waiting costs the rider nothing,
+  /// and past this limit the earphone version is spoken anyway: a check-in
+  /// that waits forever is a silent alarm.
+  static const checkInHoldLimit = Duration(milliseconds: 2500);
+
+  ({String text, String screen})? _heldCheckIn;
+  Timer? _checkInHoldTimer;
+
+  /// Holds the check-in until the ladder's session answer says which version
+  /// is true. iOS only: Android acks earphone taps through its own media
+  /// session whatever else is playing, so its check-in never waits.
+  void _holdCheckIn(String text, String screen) {
+    _checkInHoldTimer?.cancel();
+    _heldCheckIn = (text: text, screen: screen);
+    _checkInHoldTimer = Timer(checkInHoldLimit, () {
+      final held = _takeHeldCheckIn();
+      if (held == null) return;
+      _log(
+        'WAKE check-in: no session answer in '
+        '${checkInHoldLimit.inMilliseconds} ms, speaking the earphone version.',
+      );
+      _speakWakeLine(held.text);
+    });
+  }
+
+  ({String text, String screen})? _takeHeldCheckIn() {
+    _checkInHoldTimer?.cancel();
+    _checkInHoldTimer = null;
+    final held = _heldCheckIn;
+    _heldCheckIn = null;
+    return held;
+  }
+
+  void _speakWakeLine(String text) {
+    _log('WAKE speak: $text');
+    // URGENT, the only caller that is. The check-in and the ladder's spoken
+    // rungs are the lines the whole product exists to deliver, and on 14 Sep
+    // 2026 the check-in queued behind six catch-up clips for the stations a
+    // GPS blackout had hidden. It still cannot cut into a line already
+    // speaking: two voices at once is the 13 Aug 2026 bug and costs more than
+    // 10 s of lateness.
+    unawaited(_speak(text, urgent: true));
   }
 
   /// Speaks [text], ducking other audio only for the duration of the speech.
@@ -1812,15 +1881,12 @@ class GeofenceChainService {
           // Log only. The engine uses this to record a decision that makes NO
           // sound, which is the only kind a ride log cannot otherwise show.
           _log(message);
-        case Speak(:final text):
-          _log('WAKE speak: $text');
-          // URGENT, the only caller that is. The check-in and the ladder's
-          // spoken rungs are the lines the whole product exists to deliver,
-          // and on 14 Sep 2026 the check-in queued behind six catch-up clips
-          // for the stations a GPS blackout had hidden. It still cannot cut
-          // into a line already speaking: two voices at once is the 13 Aug
-          // 2026 bug and costs more than 10 s of lateness.
-          unawaited(_speak(text, urgent: true));
+        case Speak(:final text, :final whenNoEarphoneAck):
+          if (whenNoEarphoneAck != null && Platform.isIOS) {
+            _holdCheckIn(text, whenNoEarphoneAck);
+          } else {
+            _speakWakeLine(text);
+          }
         case Tone(:final volume):
           _log('WAKE tone ${volume.toStringAsFixed(1)}.');
           _wakeToneVolume = volume;
@@ -1876,6 +1942,8 @@ class GeofenceChainService {
       if (changedLive) {
         _log('WAKE ladder ${live ? 'live' : 'stood down'}.');
         if (!live) {
+          // A rider who answers inside the hold has nothing left to be asked.
+          _takeHeldCheckIn();
           _wakeTestCeilingAt = null;
           _wakeTestCeiling = null;
           // Second belt on the iOS burst. WakeAlertOutput.stopTone already
@@ -2085,6 +2153,7 @@ class GeofenceChainService {
     // gap between two unrelated log lines. A ride should be able to answer
     // "did the event leave the phone" by itself.
     _log(await _analytics.awaitQueueDrain(queued: ended).then((r) => r.logLine));
+    _takeHeldCheckIn();
     _log('Geofence chain stopped.');
     _logFile = null;
   }

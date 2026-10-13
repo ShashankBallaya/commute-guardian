@@ -100,7 +100,15 @@ enum WakeLine {
   wakeUpStop('wake_up_stop'),
 
   /// The firm rung for an interchange.
-  wakeUpChange('wake_up_change');
+  wakeUpChange('wake_up_change'),
+
+  /// The check-in when the earphone tap CANNOT reach us: an iPhone whose
+  /// music owns the buttons (see check_in_choice.dart). Screen button only.
+  /// No clip yet, so the device voice speaks it.
+  checkInScreen(null),
+
+  /// The same, for an interchange.
+  checkInChangeScreen(null);
 
   const WakeLine(this.fileSuffix);
 
@@ -122,6 +130,12 @@ enum WakeLine {
         'Wake up! Wake up. Your stop, $stationName, is next.',
       WakeLine.wakeUpChange =>
         'Wake up! Wake up. Your train change at $stationName is next.',
+      WakeLine.checkInScreen =>
+        'Your stop, $stationName, is next. Press the I am awake button on '
+            'your screen, to show you are awake.',
+      WakeLine.checkInChangeScreen =>
+        'Your train change at $stationName is next. Press the I am awake '
+            'button on your screen, to show you are awake.',
     },
     AppLanguage.hindi => switch (this) {
       WakeLine.checkIn =>
@@ -134,6 +148,12 @@ enum WakeLine {
       WakeLine.wakeUpStop => 'जागिए! जागिए। आपका स्टॉप $stationName अगला है।',
       WakeLine.wakeUpChange =>
         'जागिए! जागिए। $stationName पर ट्रेन बदलनी है, वह अगला स्टेशन है।',
+      WakeLine.checkInScreen =>
+        'आपका स्टॉप $stationName अगला है। जागने का संकेत देने के लिए '
+            'स्क्रीन पर दिए बटन को दबाएँ।',
+      WakeLine.checkInChangeScreen =>
+        '$stationName पर ट्रेन बदलनी है, वह अगला स्टेशन है। जागने का संकेत '
+            'देने के लिए स्क्रीन पर दिए बटन को दबाएँ।',
     },
     AppLanguage.marathi => switch (this) {
       WakeLine.checkIn =>
@@ -148,6 +168,12 @@ enum WakeLine {
       WakeLine.wakeUpChange =>
         'जागे व्हा! जागे व्हा. $stationName येथे ट्रेन बदलायची आहे, हे पुढचे '
             'स्टेशन आहे.',
+      WakeLine.checkInScreen =>
+        'आपला थांबा $stationName पुढचा आहे. आपण जागे आहात हे दाखवण्यासाठी '
+            'स्क्रीनवरील बटण दाबा.',
+      WakeLine.checkInChangeScreen =>
+        '$stationName येथे ट्रेन बदलायची आहे, हे पुढचे स्टेशन आहे. आपण जागे '
+            'आहात हे दाखवण्यासाठी स्क्रीनवरील बटण दाबा.',
     },
   };
 }

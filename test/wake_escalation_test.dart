@@ -215,6 +215,13 @@ void main() {
         'Your stop, Digha Gaon, is next. Tap your earphones, or press the '
         'I am awake button, to show you are awake.',
       );
+      // And the version for a phone whose music owns the earphone buttons,
+      // which the service picks once the session answer is in (13 Oct 2026).
+      expect(
+        (checkIn.single as Speak).whenNoEarphoneAck,
+        'Your stop, Digha Gaon, is next. Press the I am awake button on your '
+        'screen, to show you are awake.',
+      );
 
       // And it escalates on its own clock, with destination copy.
       final destRung1 = wake.onTick(
