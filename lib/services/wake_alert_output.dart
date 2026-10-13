@@ -180,6 +180,21 @@ class WakeAlertOutput {
   static const iosBurstCount = 3;
   static const iosBurstGap = Duration(milliseconds: 800);
 
+  /// The Android burst: three pulses, the last one long, at FULL strength.
+  ///
+  /// WAS `[0, 500, 250, 500, 250, 800]` AT THE DEFAULT AMPLITUDE, which is
+  /// whatever the phone maker chose and is often well short of the motor's
+  /// maximum. A tester riding on the phone speaker (Vinith, 4 Sep) lost the
+  /// tone in station noise and asked for the vibration to change, so the
+  /// pulses are longer (2.6 s of buzz, was 1.8 s) and every one of them is
+  /// asked for at 255. A phone with no amplitude control ignores the
+  /// intensities and still gets the longer pattern.
+  ///
+  /// Still nothing like Pocket Pulse's single short tap, so a pocket can tell
+  /// the two apart without looking.
+  static const androidPattern = [0, 700, 300, 700, 300, 1200];
+  static const androidIntensities = [0, 255, 0, 255, 0, 255];
+
   /// One insistent vibration, on both platforms now.
   ///
   /// Audio remains the PRIMARY channel and this is a second one. It is worth
@@ -188,7 +203,10 @@ class WakeAlertOutput {
   Future<void> vibrate() async {
     if (Platform.isAndroid) {
       try {
-        await Vibration.vibrate(pattern: [0, 500, 250, 500, 250, 800]);
+        await Vibration.vibrate(
+          pattern: androidPattern,
+          intensities: androidIntensities,
+        );
       } catch (error) {
         log('WAKE vibration failed: $error');
       }
@@ -224,9 +242,19 @@ class WakeAlertOutput {
     log('WAKE buzz burst requested: $sent at ${iosBurstGap.inMilliseconds}ms.');
   }
 
-  /// Stops an iOS burst that is still mid-flight. A no-op on Android, where
-  /// the pattern is handed to the platform in one call and is over in 2.8 s.
-  void cancelVibration() => _burst++;
+  /// Stops a burst that is still mid-flight, on both platforms.
+  ///
+  /// Android used to be a no-op here, because its pattern was over in 2.8 s.
+  /// It is 3.2 s now and at full strength, and a buzz that outlives the ack is
+  /// the one outcome this feature must never produce, so Android cancels too.
+  void cancelVibration() {
+    _burst++;
+    if (Platform.isAndroid) {
+      Vibration.cancel().catchError((Object error) {
+        log('WAKE vibration cancel failed: $error');
+      });
+    }
+  }
 
   Future<void> dispose() async {
     // Through the nullable field, so disposing a ride that never played a

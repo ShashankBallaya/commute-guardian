@@ -70,7 +70,7 @@ void main() {
       expect(early, isEmpty);
 
       final rung1 = wake.onTick(_t0.add(const Duration(seconds: 25)));
-      expect(rung1, hasLength(2));
+      expect(rung1, hasLength(3));
       expect(rung1[0], isA<Tone>());
       expect((rung1[0] as Tone).volume, 0.3);
       expect(rung1[1], isA<Speak>());
@@ -78,6 +78,10 @@ void main() {
         (rung1[1] as Speak).text,
         'Wake up! Wake up. Your stop, Digha Gaon, is next.',
       );
+      // The FIRST rung buzzes, not the second. A tester on the phone speaker
+      // (Vinith, 4 Sep) lost the tone in station noise, and with the old order
+      // the first buzz came 40 s after the check-in.
+      expect(rung1[2], isA<Vibrate>());
     });
 
     test('later rungs climb every 15 seconds and repeat at full volume', () {
@@ -1780,12 +1784,13 @@ void _oneStationJourneyTests() {
 
       final rung1 = wake.onTick(_t0.add(const Duration(seconds: 25)));
 
-      expect(rung1, hasLength(2));
+      expect(rung1, hasLength(3));
       expect(rung1[0], isA<Tone>());
       expect(
         (rung1[1] as Speak).text,
         'Wake up! Wake up. Your stop, Ambivli, is next.',
       );
+      expect(rung1[2], isA<Vibrate>());
     });
 
     test('an acknowledgement still stands it down', () {

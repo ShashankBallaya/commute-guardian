@@ -984,7 +984,11 @@ class WakeEscalation {
         ? rungVolumes[_rung - 1]
         : rungVolumes.last;
     if (_rung == 1) {
-      return [Tone(volume), Speak(_firmText())];
+      // THE FIRST BUZZ IS HERE, NOT ON RUNG 2 (13 Oct 2026). It used to wait
+      // for rung 2, 40 s after the check-in, and a tester riding on the phone
+      // speaker lost the tone in station noise and asked for the vibration to
+      // change. A pocket that never hears the tone has only this channel.
+      return [Tone(volume), Speak(_firmText()), const Vibrate()];
     }
     return [Tone(volume), const Vibrate()];
   }

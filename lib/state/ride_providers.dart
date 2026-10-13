@@ -450,12 +450,13 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
   /// The rider's own media volume, remembered only while WE raised it.
   ///
   /// Null means the ladder never touched it, and their slider is not ours to
-  /// move: a rider who was already loud enough, or an Android phone, or a
-  /// platform that refused, all end here and are left exactly alone.
+  /// move: a rider who was already loud enough, or a platform that refused,
+  /// all end here and are left exactly alone.
   double? _volumeBeforeLadder;
 
   /// Raises the media volume while an alarm is live and puts it back after.
-  /// See the note at [WakeLadderChanged]. iOS only, enforced in the client.
+  /// See the note at [WakeLadderChanged]. iOS (media) and, since 13 Oct 2026,
+  /// Android (the alarm stream); the platform gate lives in the client.
   Future<void> _followAlarmVolume(bool live) async {
     final client = ref.read(rideServiceClientProvider);
     if (live) {
@@ -464,8 +465,8 @@ class RideAlertsNotifier extends Notifier<RideAlerts> {
       _volumeBeforeLadder ??= await client.raiseAlarmVolume();
       return;
     }
-    // NOTHING WE DID NOT TAKE. A rider already loud enough, an Android phone,
-    // or a platform that refused all land here with nothing remembered, and
+    // NOTHING WE DID NOT TAKE. A rider already loud enough, or a platform that
+    // refused, all land here with nothing remembered, and
     // the correct action is to make no call at all. The client would also
     // refuse a null, but "we never touch a slider we did not move" is a
     // promise worth keeping in the one place that decides it.

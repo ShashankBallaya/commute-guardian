@@ -160,4 +160,29 @@ void main() {
       expect(log, isEmpty);
     });
   });
+
+  group('THE ANDROID BURST', () {
+    // The plugin pairs pattern[i] with intensities[i]. Lists of different
+    // lengths are not an error it reports, they are a pattern it plays wrong,
+    // so the pairing is pinned here, where it costs nothing to check.
+    test('every step has an intensity, and every buzz asks for full strength',
+        () {
+      const pattern = WakeAlertOutput.androidPattern;
+      const intensities = WakeAlertOutput.androidIntensities;
+      expect(intensities, hasLength(pattern.length));
+      for (var i = 0; i < pattern.length; i++) {
+        // Even steps are waits, odd steps are buzzes: Android's own layout.
+        expect(intensities[i], i.isOdd ? 255 : 0, reason: 'step $i');
+      }
+    });
+
+    test('it buzzes for longer than the 1.8 s it replaced', () {
+      var buzz = 0;
+      const pattern = WakeAlertOutput.androidPattern;
+      for (var i = 1; i < pattern.length; i += 2) {
+        buzz += pattern[i];
+      }
+      expect(buzz, greaterThan(1800));
+    });
+  });
 }

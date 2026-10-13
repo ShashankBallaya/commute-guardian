@@ -579,6 +579,12 @@ class RideServiceClient {
     }
   }
 
+  /// The Android alarm-stream floor while a ladder is live. Above the iPhone's
+  /// 0.7 because Android's alarm stream carries only the alarm, so raising it
+  /// disturbs nothing else the rider is listening to. On a 7-step slider (the
+  /// 3T) this is step 6 of 7.
+  static const androidAlarmFloor = 0.8;
+
   /// Raises the iPhone's media volume to [floor] for the duration of an alarm,
   /// and returns the rider's own volume so it can be put back.
   ///
@@ -601,11 +607,18 @@ class RideServiceClient {
   /// Now the answer comes from the side that acts. `raisedFrom` is absent
   /// unless the slider really moved, and absent means null, which
   /// [restoreAlarmVolume] and its caller both read as "leave them alone".
+  ///
+  /// ANDROID TOO, since 13 Oct 2026 (owner decision). There it raises the
+  /// ALARM stream the tone rides, to [androidAlarmFloor], and MainActivity
+  /// answers in the same shape. Same rule both ways: absent means untouched.
   Future<double?> raiseAlarmVolume({double floor = 0.7}) async {
-    if (!Platform.isIOS) return null;
+    if (!Platform.isIOS && !Platform.isAndroid) return null;
     try {
       final answer = await _mediaAckChannel
-          .invokeMapMethod<String, Object?>('raiseAlarmVolume', floor)
+          .invokeMapMethod<String, Object?>(
+            'raiseAlarmVolume',
+            Platform.isAndroid ? androidAlarmFloor : floor,
+          )
           .timeout(const Duration(seconds: 2));
       _forwardAudioNote(answer?['note'] as String?);
       // volumeTakenFrom, not an inline cast. This line cannot be reached by a
@@ -621,7 +634,7 @@ class RideServiceClient {
   /// Puts the rider's volume back after an alarm. A null [previous] means the
   /// ladder never raised it, and their slider is not ours to move.
   Future<void> restoreAlarmVolume(double? previous) async {
-    if (!Platform.isIOS || previous == null) return;
+    if ((!Platform.isIOS && !Platform.isAndroid) || previous == null) return;
     try {
       final note = await _mediaAckChannel
           .invokeMethod<String>('restoreAlarmVolume', previous)

@@ -33,6 +33,9 @@ class MainActivity : FlutterActivity() {
     private var session: MediaSessionCompat? = null
     private var nowPlayingClaim: AudioTrack? = null
 
+    /** The alarm-stream step WE set for a ladder, or null when we set none. */
+    private var raisedToIndex: Int? = null
+
     private companion object {
         val MEDIA_KEY_CODES = setOf(
             KeyEvent.KEYCODE_HEADSETHOOK,
@@ -63,6 +66,14 @@ class MainActivity : FlutterActivity() {
                 }
                 "getAlarmVolume" -> result.success(alarmVolume())
                 "getMediaVolume" -> result.success(mediaVolume())
+                "raiseAlarmVolume" -> {
+                    val floor = (call.arguments as? Number)?.toDouble() ?: 0.8
+                    result.success(raiseAlarmVolume(floor))
+                }
+                "restoreAlarmVolume" -> {
+                    val previous = (call.arguments as? Number)?.toDouble() ?: -1.0
+                    result.success(restoreAlarmVolume(previous))
+                }
                 else -> result.notImplemented()
             }
         }
@@ -140,6 +151,77 @@ class MainActivity : FlutterActivity() {
             audio.getStreamVolume(AudioManager.STREAM_ALARM).toDouble() / max
         } catch (e: Exception) {
             null
+        }
+    }
+
+    /**
+     * Raises the ALARM stream to at least [floor] while a wake ladder is live,
+     * and answers in the shape the iPhone side answers.
+     *
+     * OWNER DECISION, 13 Oct 2026, the Android half of the 13 Aug iPhone one.
+     * The tone rides STREAM_ALARM, so a rider whose alarm slider sits low got a
+     * quiet alarm even at the top rung, and the pre-ride check could only warn.
+     * An alarm the rider armed should not obey a low slider.
+     *
+     * `raisedFrom` is present ONLY when the slider really moved. Absent means
+     * "leave the rider alone afterwards", which is what a rider already at or
+     * above the floor gets, and what every failure gets.
+     *
+     * Raising from above zero never toggles Do Not Disturb, so no policy access
+     * is needed. A phone that refuses anyway lands in the catch, and the ladder
+     * runs at the rider's own level, exactly as it always did.
+     */
+    private fun raiseAlarmVolume(floor: Double): Map<String, Any?> {
+        return try {
+            val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+            if (max <= 0) {
+                raisedToIndex = null
+                return mapOf("note" to "Alarm volume unreadable, left alone")
+            }
+            val index = audio.getStreamVolume(AudioManager.STREAM_ALARM)
+            val target = Math.ceil(floor * max).toInt().coerceIn(1, max)
+            if (index >= target) {
+                raisedToIndex = null
+                return mapOf(
+                    "note" to "Alarm volume $index/$max, at or above the floor, left alone",
+                )
+            }
+            audio.setStreamVolume(AudioManager.STREAM_ALARM, target, 0)
+            raisedToIndex = target
+            mapOf(
+                "raisedFrom" to index.toDouble() / max,
+                "note" to "Alarm volume raised $index/$max to $target/$max for the ladder",
+            )
+        } catch (e: Exception) {
+            raisedToIndex = null
+            mapOf("note" to "Alarm volume raise refused: ${e.message}")
+        }
+    }
+
+    /**
+     * Puts the alarm slider back to [previous] after the ladder stands down.
+     *
+     * ONLY IF IT IS STILL WHERE WE LEFT IT. A rider who moved it during the
+     * alarm has made a choice, and putting our remembered number over theirs
+     * would undo it.
+     */
+    private fun restoreAlarmVolume(previous: Double): String? {
+        val ours = raisedToIndex ?: return null
+        raisedToIndex = null
+        if (previous < 0) return null
+        return try {
+            val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+            val max = audio.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+            val now = audio.getStreamVolume(AudioManager.STREAM_ALARM)
+            if (now != ours) {
+                return "Alarm volume moved by the rider to $now/$max, left alone"
+            }
+            val back = Math.round(previous * max).toInt().coerceIn(0, max)
+            audio.setStreamVolume(AudioManager.STREAM_ALARM, back, 0)
+            "Alarm volume restored $now/$max to $back/$max"
+        } catch (e: Exception) {
+            "Alarm volume restore refused: ${e.message}"
         }
     }
 
